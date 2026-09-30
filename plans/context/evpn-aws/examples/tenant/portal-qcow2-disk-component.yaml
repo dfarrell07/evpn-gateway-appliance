@@ -1,0 +1,47 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/tenants-config/cluster/stone-prod-p02/tenants/ansible-plugins-tenant/components/automation-portal-qcow2-disk-image-main.yaml
+# Copied on 2026-09-29 as a reference example; the SBOM webhook URL is replaced by a placeholder.
+# It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  namespace: ansible-plugins-tenant
+  name: automation-portal-qcow2-disk-image-main
+  annotations:
+    build.appstudio.openshift.io/build-nudge-simple-branch: "true"
+    build.appstudio.openshift.io/request: configure-pac
+    git-provider: github
+    git-provider-url: https://github.com/
+    mintmaker.appstudio.redhat.com/disabled: "true"
+spec:
+  application: automation-portal-installer-main
+  componentName: automation-portal-qcow2-disk-image-main
+  skipGitOpsResourceGeneration: true
+  source:
+    git:
+      context: disk-images
+      dockerfileUrl: bib-portal-qcow2.yaml
+      revision: main
+      url: https://github.com/ansible-automation-platform/automation-portal-bootc-container
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ImageRepository
+metadata:
+  annotations:
+    image-controller.appstudio.redhat.com/update-component-image: "true"
+  name: imagerepository-for-automation-portal-qcow2-disk-image-main
+  namespace: ansible-plugins-tenant
+  labels:
+    appstudio.redhat.com/application: automation-portal-installer-main
+    appstudio.redhat.com/component: automation-portal-qcow2-disk-image-main
+spec:
+  image:
+    name: ansible-plugins-tenant/portal-disk-images/automation-portal-qcow2
+    visibility: private
+  notifications:
+    - config:
+        url: <sbom-ingestion-webhook-url>
+      event: repo_push
+      method: webhook
+      title: SBOM-event-to-Bombino

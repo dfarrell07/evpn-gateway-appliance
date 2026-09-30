@@ -1,0 +1,119 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/config/stone-prod-p02.hjvn.p1/product/ReleasePlanAdmission/rhel-bootc-xks/rhel-bootc-xks-disk-images-aws-marketplace-9-8-stage.yaml
+# Copied on 2026-09-29 as a reference example, condensed: the product name, product codes, file
+# names and IDs, the AWS account ID and the listing's launch instructions are replaced by
+# placeholders. It is not EVPN configuration; see examples/README.md for what to reuse and what
+# not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  labels:
+    pp.engineering.redhat.com/business-unit: rhel-platforms
+    release.appstudio.openshift.io/block-releases: "false"
+  annotations:
+    stream_name: rhel-9.8.z
+    cpe_name: a:redhat:enterprise_linux:9::appstream
+  name: rhel-bootc-xks-disk-images-aws-marketplace-9-8-stage
+  namespace: rhtap-releng-tenant
+spec:
+  applications:
+    - rhel-bootc-xks
+  origin: rhel-bootc-xks-tenant
+  policy: registry-rhel-bootc-xks-disk-images-stage
+  data:
+    mapping:
+      components:
+        - name: <disk-image-component>
+          contentType: disk-image
+          staged:
+            destination: <pulp-repository>
+            version: "9.8"
+            files:
+              - filename: <product>-9.8-{{ release_timestamp }}-x86_64.raw.gz
+                source: disk.raw.gz
+              - filename: <product>-9.8-{{ release_timestamp }}-aarch64.raw.gz
+                source: disk.raw.gz
+          productInfo:
+            filePrefix: "<product>-9.8"
+            productCode: "<product-code>"
+            productName: "<product-name>"
+            productVersionName: "9.8"
+          pushSourceContainer: false
+          starmap:
+            - cloud: aws
+              mappings:
+                aws-emea:
+                  destinations:
+                    - architecture: x86_64
+                      destination: "00000000-0000-0000-0000-000000000000"
+                      overwrite: false
+                      restrict_version: true
+                    - architecture: aarch64
+                      destination: "00000000-0000-0000-0000-000000000000"
+                      overwrite: false
+                      restrict_version: true
+                  meta:
+                    description: Provided by Red Hat Limited.
+                  provider:
+                aws-na:
+                  destinations:
+                    - architecture: x86_64
+                      destination: "00000000-0000-0000-0000-000000000000"
+                      overwrite: false
+                      restrict_version: true
+                    - architecture: aarch64
+                      destination: "00000000-0000-0000-0000-000000000000"
+                      overwrite: false
+                      restrict_version: true
+                  meta:
+                    description: Provided by Red Hat, Inc.
+                  provider:
+              meta:
+                ena_support: true
+                marketplace_entity_type: AmiProduct
+                recommended_instance_type: m5.xlarge
+                release_notes: |-
+                  <launch and SSH access instructions shown to the customer>
+                root_device: /dev/sda1
+                scanning_port: 22
+                security_groups:
+                  - from_port: 22
+                    ip_protocol: tcp
+                    ip_ranges:
+                      - 0.0.0.0/0
+                    to_port: 22
+                sharing_accounts:
+                  - '<REDACTED-AWS-ACCOUNT-ID>' # internal dev account
+                sriov_net_support: simple
+                usage_instructions: ""
+                user_name: ec2-user
+                virtualization: hvm
+                volume: gp3
+              name: <listing-name>
+              workflow: stratosphere
+      cloudMarketplacesSecret: aws-stratosphere-secret
+      cloudMarketplacesPrePush: true
+      defaults:
+        pushSourceContainer: false
+    releaseNotes:
+      product_name: <product-name>
+      product_version: "9.8"
+      product_id: [<engineering-id>, <engineering-id>]
+    intention: staging
+    sign:
+      configMapName: "hacbs-signing-pipeline-config-staging-e2e"
+      cosignSecretName: konflux-cosign-signing-stage
+  pipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: "https://github.com/konflux-ci/release-service-catalog.git"
+        - name: revision
+          value: release2758
+        - name: pathInRepo
+          value: "pipelines/managed/push-disk-images-to-marketplaces/push-disk-images-to-marketplaces.yaml"
+    serviceAccountName: release-stratosphere
+    timeouts:
+      pipeline: "8h0m0s"
+      tasks: 8h0m0s

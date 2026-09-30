@@ -1,0 +1,18 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/tenants-config/cluster/kflux-prd-rh02/tenants/bgp-cloud-connector-tenant/bgp-cloud-connector-release-plan-stage.yaml
+# Copied on 2026-09-29 as a reference example; the author label's user ID is replaced by a
+# placeholder. It is not EVPN configuration; see examples/README.md for what to reuse and
+# what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlan
+metadata:
+  labels:
+    release.appstudio.openshift.io/auto-release: "true"
+    release.appstudio.openshift.io/releasePlanAdmission: bgp-cloud-connector-stage
+    release.appstudio.openshift.io/standing-attribution: "true"
+    release.appstudio.openshift.io/author: "<accountable-release-owner>"
+  name: bgp-cloud-connector-release-plan-stage
+  namespace: bgp-cloud-connector-tenant
+spec:
+  application: bgp-cloud-connector
+  target: rhtap-releng-tenant

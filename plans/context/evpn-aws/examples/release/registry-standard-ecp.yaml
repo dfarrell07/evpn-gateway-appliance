@@ -1,0 +1,31 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/config/common/product/EnterpriseContractPolicy/registry-standard.yaml
+# Copied unmodified on 2026-09-29 as a reference example. It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: EnterpriseContractPolicy
+metadata:
+  name: registry-standard
+  namespace: rhtap-releng-tenant
+spec:
+  description: 'Rules for shipping content to registry.redhat.io'
+  publicKey: 'k8s://openshift-pipelines/public-key'
+  sources:
+    - name: Release Policies
+      data:
+        - oci::quay.io/redhat-konflux/policy-data:latest
+        - oci::quay.io/konflux-ci/tekton-catalog/data-acceptable-bundles:latest
+        # Tasks from https://github.com/konflux-ci/tekton-tools/tree/main/tasks
+        - oci::quay.io/konflux-ci/konflux-vanguard/data-acceptable-bundles:latest
+        # Tasks from https://github.com/konflux-ci/konflux-test-tasks/tree/main/task
+        - oci::quay.io/konflux-ci/integration-service-catalog/data-acceptable-bundles:latest
+      policy:
+        - oci::quay.io/conforma/release-policy:konflux
+      volatileConfig:
+        exclude: []
+      config:
+        include:
+          - '@redhat'
+        exclude:
+          # https://issues.redhat.com/browse/KONFLUX-7113
+          - cve.cve_blockers

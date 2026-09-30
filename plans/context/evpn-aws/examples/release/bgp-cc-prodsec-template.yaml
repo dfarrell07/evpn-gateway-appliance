@@ -1,0 +1,6 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/prodsec/bgp-cloud-connector.yaml
+# Copied unmodified on 2026-09-29 as a reference example. It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+stream: bgp-cc-{.spec.data.releaseNotes.product_version | split(".") | .[0] + "." + .[1]}
+cpe: cpe:/a:redhat:bgp_cloud_connector:{.spec.data.releaseNotes.product_version | split(".") | .[0] + "." + .[1]}::{.metadata.annotations.rhel_target}
