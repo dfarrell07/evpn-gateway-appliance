@@ -131,8 +131,9 @@ yet; run them yourself.
 
 Five checkers live in `tools/`; run them before committing and again before pushing
 (`tools/check-all.sh`, or `tools/check-all.sh --offline`, runs them all). `--history RANGE`
-sets the commits the scanner reads (`origin/main..HEAD` by default), and `--allow-skip`
-turns a missing `jq` or history range into a warning; nothing else may skip:
+sets the commits the scanner reads (`origin/main..HEAD` by default; `--no-history` skips that
+scan for a job with no pull request), and `--allow-skip` turns a missing `jq` into a warning;
+nothing else may skip:
 
 - `check-pins.py` confirms that every pinned GitHub link still resolves (all did on
   2026-09-29). It proves the path exists at that revision, not that the claim made
