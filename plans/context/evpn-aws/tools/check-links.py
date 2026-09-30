@@ -59,7 +59,7 @@ def check_relative():
 
 TRANSIENT = {"000", "429", "500", "502", "503", "504"}
 HOST_SLOTS = collections.defaultdict(lambda: threading.Semaphore(3))
-DELAYS = (0, 10, 30)
+DELAYS = (0, 5, 10, 20, 30, 30)  # docs.ansible.com sent 429 to 6 of 12 sampled requests (2026-09-30)
 
 
 def fetch_once(url):
