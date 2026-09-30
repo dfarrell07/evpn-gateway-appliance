@@ -70,7 +70,8 @@ Each row is detailed under the gate that first needs it; owners are proposed.
   releng.*
 - **Source CI.** Prow onboarding in `openshift/release` (its
   [#86165](https://github.com/openshift/release/pull/86165) is open with OWNERS, a tide query,
-  plugins and a skeleton ci-operator config; tests and a test image remain); tide's required
+  plugins and a skeleton ci-operator config; tests and a test image remain, and the [first
+  test](ci-bootstrap-spec.md#first-prow-test) should run this directory's checkers); tide's required
   contexts, including Konflux checks, which it otherwise does not wait for, and whether Konflux
   nudge PRs merge automatically or by owned review ([merge
   policy](ci-bootstrap-spec.md#konflux-implementation-checks)). GitHub Actions is off by default in

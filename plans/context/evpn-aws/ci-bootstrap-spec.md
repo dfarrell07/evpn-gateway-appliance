@@ -49,8 +49,53 @@ inline `script` blocks; the release catalog is moving its own managed tasks that
 checks.
 
 Build a small pinned CI/tool image, or use an approved equivalent, instead of
-installing tooling at runtime. Record its digest and tool versions. Do not let
-the test job mutate AWS or depend on a developer workstation.
+installing tooling at runtime. Record its digest and tool versions. Add a test that finishes in
+seconds, names every required tool with its resolved path and version, and then fails if any is
+missing or below its version floor, so a stale or incomplete image is found before a long job
+pays for it; BGP Cloud Connector's `e2e-runner-image` test does this ([BGP Cloud Connector
+configuration](https://github.com/openshift/release/blob/ff1189c2/ci-operator/config/openshift/bgp-cloud-connector/openshift-bgp-cloud-connector-main.yaml)).
+Do not let the test job mutate AWS or depend on a developer workstation.
+
+### What may block a pull request
+
+Let only checks that depend on the change and on pinned inputs block a merge. Results that move
+without a commit (vulnerability advisories, scanner databases, external-link liveness, latest
+versions) would fail unrelated pull requests or get waved through to unblock them. Run those on a
+schedule and at the release gate, and file a finding as an issue. The plan already does this for
+vulnerability acceptance, a separate gate ([agent
+guide](agent-guide.md#verified-facts-that-are-easy-to-get-wrong), Policy row), and for
+fresh-resolution compatibility, a scheduled check ([collection
+contract](#collection-and-ee-artifacts)). The checkers in this repository follow the split:
+`check-all.sh --offline` needs no network, while the online run fails on a URL that stays
+unreachable.
+
+### First Prow test
+
+No CI test exists yet. The onboarding skeleton
+([#86165](https://github.com/openshift/release/pull/86165) at `84e63776`) sets a build root,
+promotion and resources but no `tests`, so no presubmit runs and the public-safety scan, link
+checks and snippet tests depend on each author running them. Make the first test a container test
+that runs `plans/context/evpn-aws/tools/check-all.sh --offline --history
+"${PULL_BASE_SHA}..HEAD"`. It is hermetic (about a second on 2026-09-30) and it is the control
+that guards a public repository. Leave `optional` unset so tide requires it, and keep the online
+checks out of the merge path ([what may block](#what-may-block-a-pull-request)).
+
+- **Shape.** Follow BGP Cloud Connector's `lint` test: `commands` plus `container.from: src`
+  ([same configuration](https://github.com/openshift/release/blob/ff1189c2/ci-operator/config/openshift/bgp-cloud-connector/openshift-bgp-cloud-connector-main.yaml)).
+  Do not copy its `skip_if_only_changed`, whose `\.md$` alternative exempts every Markdown file;
+  here Markdown under `plans/` is what the job checks, so that filter would skip it.
+- **Tools.** The skeleton's build root is `rhel-9-release-golang-1.26-openshift-5.1`. Whether it
+  carries `jq` and `python3` is not checked here (BGP Cloud Connector installs `jq` into its own
+  runner image). Prove the tools with a roll-call test before relying on the job, or build a small
+  tool image as the SDN-migration collection does, and do not pass `--allow-skip`: a missing tool
+  must fail the job.
+- **Range.** Container tests receive `PULL_BASE_SHA`; more than a hundred in `openshift/release`
+  read it (checked 2026-09-30). The clone may lack that commit, though:
+  `openshift-online/ocm-common`'s `commit-validation` falls back to `HEAD~1` when it is absent
+  ([configuration](https://github.com/openshift/release/blob/988805e8e926/ci-operator/config/openshift-online/ocm-common/openshift-online-ocm-common-main.yaml)).
+  Do not copy the fallback, which quietly shrinks the scan to one commit. The scanner exits 2 on
+  a range it cannot resolve, so the job fails until the base commit is fetched. A periodic or
+  postsubmit job has no pull request; run it with `--no-history`.
 
 ## Test placement
 
@@ -59,6 +104,24 @@ normal PR and push CI path. Run Molecule in that path when its selected driver
 works unprivileged. Put only tests requiring Podman privileges, systemd, kernel
 networking, AWS credentials, physical trunks, Direct Connect, or an OCP EVPN
 topology in a dedicated ITS, Testing Farm, or delegated-lab pipeline.
+
+Give every Molecule scenario the same shape. Run the `idempotence` step for each role that
+changes a host: 7499 requires idempotent deploy and teardown, and the AWS role's 46 `aws` calls
+through `command` make its idempotency hand-built ([source
+audit](source-audit.md#aws-role-and-certified-content)). Where a driver cannot support the step,
+write the reason beside it and name the lane that covers the property. Keep every mocked
+dependency and container-only override in one included file, with a comment naming the lane that
+covers what the override hides (kernel VXLAN and bridge behavior, FIPS, SELinux, AWS APIs), so a
+green container scenario is not read as covering them. Give validation its own negative
+scenarios: an invalid VNI, ASN or transport input must fail before any host change, with the
+host left unchanged and the failure report asserted (7499, 7501, 7507).
+
+Define the single-appliance health check once, as check definitions with stable IDs and the list
+of checks a run must report, and reuse it for Molecule verification, the simulated topology, the
+candidate boot test ([BIB contract](bib-configuration-spec.md#disk-validation-and-aws-lifecycle))
+and the health-check and upgrade templates (7509, 7510). Apply the fail-closed rule of the
+`emit_test_output` helper below: a check missing from the output, or reported only as a warning,
+fails the gate. The three-node `health-check.yml` stays a topology test.
 
 CORENET-7508's simulated topology needs kernel networking but no credentials.
 Forge-hosted VM runners can run it on every PR: upstream OVN-K runs its `evpn`
@@ -236,6 +299,16 @@ it, which is why the same repository carries `refresh_ah_token.yaml`. Canary tha
 an unapproved tag, branch or fork cannot reach the environment and that a
 rejected candidate cannot publish.
 
+Workflows this repository owns, such as the wrapper around `release_ah.yaml` and any scheduled
+check, need a baseline before they hold a credential: least-privilege `permissions` at the top
+of the file, `persist-credentials: false` on checkout, every action pinned by commit SHA,
+`timeout-minutes` on each job, and values reaching a shell step through `env` instead of `${{ }}`
+expansion (the same rule as the Tekton substitution above). Never check out pull-request code in
+a `pull_request_target` job. Lint the workflow files in CI with `actionlint` and `zizmor`,
+installed from checksum-verified releases rather than a third-party action. See GitHub's
+[secure-use guide](https://docs.github.com/en/actions/reference/security/secure-use) and
+zizmor's [audits](https://docs.zizmor.sh/audits/).
+
 A Konflux tenant publisher (RHTAS carrier image plus the standard `ansible-galaxy`
 publisher) or AAP's Zuul job are alternatives. For a tenant publisher, declare the
 `release`, `releasePlan` and `snapshot` string inputs; the controller supplies
@@ -309,6 +382,15 @@ misses declared inputs such as build-argument files and prefetched modules, and 
 merged commit that matches no path produces no build for that revision, so a
 Snapshot can lack the newest commit's component.
 
+Apply the same test to every other change filter. Prow's `run_if_changed` and
+`skip_if_only_changed` match a regular expression against each changed path ([Prow
+jobs](https://docs.prow.k8s.io/docs/jobs/#triggering-jobs-based-on-changes)): the first runs a job
+if any path matches, the second skips it only if all paths match. Prefer a short
+`skip_if_only_changed` list of documentation-only paths, so a new top-level directory runs checks
+by default, over a `run_if_changed` list that must name every input. Back the choice with a check
+that fails when a tracked path is neither matched by some lane's trigger nor declared
+documentation-only.
+
 ### Tide and Konflux contexts
 
 In the `openshift` org, Prow's tide merges. Its per-repository context options in
@@ -322,7 +404,10 @@ contexts, so a late Konflux check does not hold a merge. On its PRs the Konflux
 GitHub App for the cluster reports builds as `Konflux kflux-prd-rh02 /
 <component>-on-pull-request` and ITSs as `Red Hat Konflux / <scenario> /
 <application>`, with optional ITSs `neutral`. List EVPN's blocking Konflux contexts
-in `required-contexts` when onboarding the repository. Verify the current SHA's
+in `required-contexts` when onboarding the repository. Keep that list in one reviewed file and
+compare it on a schedule with the ITS, Component and Prow job names the repositories can emit:
+tide does not merge while a listed context is missing (a renamed scenario), and a blocking
+context left off the list does not hold a merge while it is late. Verify the current SHA's
 expected build/ITS set, including the interval before Konflux checks appear, after
 a new commit and after a failed-then-successful retry.
 
@@ -375,6 +460,16 @@ role bound to a service account alone does not approve the Git revision. Use a
 separate runner/namespace or proven admission controls where that boundary is
 needed. [Kubernetes permission
 model](https://kubernetes.io/docs/concepts/security/rbac-good-practices/#workload-creation).
+
+OpenShift CI has a precedent for protecting the harness. `app-sre/infra`'s `validate` and
+`terraform-plan` tests mount credentials on pull-request runs. `validate` restores the Makefile
+and scripts from the trusted base (`git checkout "${PULL_BASE_SHA}" -- Makefile hack/`);
+`terraform-plan` runs its planner from `git show "${PULL_BASE_SHA}:…" | python3 -I -` (`-I` keeps
+a pull-request-added `json.py` from shadowing the standard library), and that planner refuses
+authors who are not organization members or collaborators
+([configuration](https://github.com/openshift/release/blob/988805e8e926/ci-operator/config/app-sre/infra/app-sre-infra-main.yaml)).
+That protects the tooling that drives privileged calls, not the code under test; code that must
+run with the credential still needs the approval above.
 
 ### Parallel release lines
 
@@ -451,7 +546,10 @@ Tekton scope is `.tekton/`; extend file patterns and add supported custom manage
 where needed. Its enabled `ansible-galaxy` and `github-actions` managers can also
 propose collection-dependency and SHA-pinned workflow updates, including
 `release_ah.yaml`. Show an update proposal and rebuild path for these inputs, or assign
-manual update ownership and cadence. RHAI's AIPCC-31900/30134 show how configured automation
+manual update ownership and cadence. Include generated locks: where CI installs from a lock
+compiled from a human-edited input (for example `pip-compile` output), show that the update
+proposal regenerates the lock, because a bot change to the input alone leaves CI on the old
+locked versions and the proposal inert. RHAI's AIPCC-31900/30134 show how configured automation
 can still miss references. [Manager scope](https://konflux-ci.dev/docs/mintmaker/default-config/),
 [supported references](https://docs.renovatebot.com/modules/manager/tekton/).
 Exercise two consecutive digest updates.

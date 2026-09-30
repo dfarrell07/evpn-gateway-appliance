@@ -127,7 +127,7 @@ starts with a valid Jira key and expect to need `/verified`. On this repository'
 request (2026-09-30) the Jira bot also warned that the referenced story had no target version
 for `main` (it expected 5.1.0); the label was still applied, and the story's owner sets the
 version. The onboarding pull request creates no test, so nothing in CI runs the checkers below
-yet; run them yourself.
+yet ([first Prow test](ci-bootstrap-spec.md#first-prow-test)); run them yourself.
 
 Five checkers live in `tools/`; run them before committing and again before pushing
 (`tools/check-all.sh`, or `tools/check-all.sh --offline`, runs them all). `--history RANGE`
