@@ -71,7 +71,7 @@ implements only the WireGuard transport ([source audit](source-audit.md)).
 # Verify auth
 acli jira auth status
 
-# List all direct children of the EVPN epic (26 as of 2026-09-29)
+# List all direct children of the EVPN epic (26 on 2026-09-29; 27 on 2026-09-30, see Stories)
 acli jira workitem search --jql 'parent = CORENET-7498' \
   --fields "key,summary,status,assignee" --paginate --csv
 
@@ -89,8 +89,10 @@ acli jira workitem view CORENET-7505
 
 ### Stories
 
-All 26 direct children of CORENET-7498 (7499–7524) were To Do and unassigned on
-2026-09-29. Release engineering's scope is [7505](https://redhat.atlassian.net/browse/CORENET-7505)
+All 26 requirement stories under CORENET-7498 (7499–7524) were To Do and unassigned on
+2026-09-29 and still were on 2026-09-30. The epic then had a 27th child,
+[CORENET-7615](https://redhat.atlassian.net/browse/CORENET-7615), the story to review and land
+these documents; it carries no acceptance criteria of its own. Release engineering's scope is [7505](https://redhat.atlassian.net/browse/CORENET-7505)
 (pin component images), [7506](https://redhat.atlassian.net/browse/CORENET-7506)
 (appliance image CI), [7507](https://redhat.atlassian.net/browse/CORENET-7507)
 (collection CI) and [7522](https://redhat.atlassian.net/browse/CORENET-7522)

@@ -14,7 +14,12 @@ The requirements baseline is [OCPSTRAT-3413](https://redhat.atlassian.net/browse
 read
 for those 29 records and the related work cited here. On September 29 every direct
 child was still To Do and unassigned, and every cited Jira status and GitHub PR
-state was rechecked. Related work was found through networking, Konflux, bootc,
+state was rechecked. On September 30, `tools/jira-status.py` returned all 243 issues then cited and
+the 26 requirement stories were unchanged; the epic's 27th child, CORENET-7615, is the review
+story for these documents. The onboarding pull request
+[openshift/release #86165](https://github.com/openshift/release/pull/86165) was also unchanged
+(open, labelled `approved`, head `84e63776`), and all 175 pinned links resolved.
+Related work was found through networking, Konflux, bootc,
 collection and release searches, so this is not an exhaustive account of either
 Jira or platform capabilities.
 
