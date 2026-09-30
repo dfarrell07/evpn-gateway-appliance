@@ -55,8 +55,8 @@ def commit(repo, message, write=None, remove=None):
     git(repo, "commit", "-q", "--allow-empty", "-m", message)
 
 
-def scan(repo, *args, script=SCANNER):
-    p = subprocess.run([sys.executable, str(script), *args], cwd=repo, env=ENV,
+def scan(repo, *args, script=SCANNER, env=None):
+    p = subprocess.run([sys.executable, str(script), *args], cwd=repo, env=env or ENV,
                        capture_output=True, text=True)
     return p.returncode, p.stdout + p.stderr
 
@@ -110,6 +110,8 @@ def main():
         git(repo, "add", "-A")
         rc, out = scan(repo, script=copy / SCANNER.name)
         expect("the default scan covers the whole repository", rc == 1 and "product.txt" in out, out)
+        rc, out = scan(repo, script=copy / SCANNER.name, env={**ENV, "PATH": os.devnull})
+        expect("the default scan does not depend on git", rc == 1 and "product.txt" in out, out)
     print(f"{len(FAILURES)} failed")
     return 1 if FAILURES else 0
 

@@ -81,10 +81,15 @@ def die(message):
 
 
 def repo_root():
-    """The repository that contains this script, or the plan directory outside a checkout."""
-    p = subprocess.run(["git", "-C", str(TOOLS), "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    return pathlib.Path(p.stdout.strip()) if p.returncode == 0 and p.stdout.strip() else TOOLS.parent
+    """The checkout that contains this script, or the plan directory outside one.
+
+    Found by walking up to `.git`, not by asking Git: Git refuses a checkout owned by another
+    user, as in a CI pod, and a silent fallback would narrow the scan.
+    """
+    for d in TOOLS.parents:
+        if (d / ".git").exists():
+            return d
+    return TOOLS.parent
 
 
 def files(paths):
