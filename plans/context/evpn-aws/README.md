@@ -123,28 +123,42 @@ Changes land through pull requests approved by an `OWNERS` entry. Until the Prow
 ([openshift/release #86165](https://github.com/openshift/release/pull/86165)) merges, no
 bot enforces anything here; once it does, its tide query for `main` requires the `approved`,
 `lgtm`, `jira/valid-reference` and `verified` labels, so give pull requests a title that
-starts with a valid Jira key and expect to need `/verified`.
+starts with a valid Jira key and expect to need `/verified`. On this repository's first pull
+request (2026-09-30) the Jira bot also warned that the referenced story had no target version
+for `main` (it expected 5.1.0); the label was still applied, and the story's owner sets the
+version. The onboarding pull request creates no test, so nothing in CI runs the checkers below
+yet; run them yourself.
 
-Four checkers live in `tools/`; run them before committing changes to this directory
-(`tools/check-all.sh`, or `tools/check-all.sh --offline`, runs them all):
+Five checkers live in `tools/`; run them before committing and again before pushing
+(`tools/check-all.sh`, or `tools/check-all.sh --offline`, runs them all). `--history RANGE`
+sets the commits the scanner reads (`origin/main..HEAD` by default), and `--allow-skip`
+turns a missing `jq` or history range into a warning; nothing else may skip:
 
 - `check-pins.py` confirms that every pinned GitHub link still resolves (all did on
   2026-09-29). It proves the path exists at that revision, not that the claim made
   about it holds.
 - `check-links.py` does the same for relative links, in-repo anchors and public
   external URLs, including their `#fragments`. It retries rate-limited or timed-out hosts and
-  reports a persistent failure as "unreachable" rather than broken.
+  reports a persistent failure as "unreachable" rather than broken, but the run still fails,
+  so rerun it before editing a link and keep `--offline` for automation.
 - `test-snippets.py` extracts the three shell snippets the plan tells agents to copy (the Snapshot
   completeness check, the fail-closed `TEST_OUTPUT` helper and the collection tarball assertion)
   and runs them on complete, incomplete and malformed synthetic inputs, so the published text is
-  the tested text.
+  the tested text. A missing `bash` or `jq` fails the run, because skipped cases must not look
+  like a pass.
 - `check-public-safe.py` fails on email addresses, non-documentation IPv4 addresses,
   AWS account IDs, cloud/API tokens, private and SSH keys, support-case numbers,
   secret assignments and links to internal chat, private documents or ServiceNow tickets.
-  It scans every text file, so it also vets a source snapshot before an import
-  (`--allow-private` skips RFC 1918 lab addresses). It cannot recognize customer, partner or account
-  names; keep
+  It scans every text file of the repository, so it also vets a source snapshot before an
+  import (`--allow-private` skips RFC 1918 lab addresses). With `--git RANGE` it instead reads
+  what pushing those commits would publish: each commit message (sign-off trailers excepted)
+  and every line added or removed, since a credential deleted in a later commit stays in the
+  history. It prints only the first characters of a credential, so a public job log does not
+  republish it. It cannot recognize customer, partner or account names; keep
   those in a private file outside the repository and pass it with `--terms FILE`.
+- `test-scanner.py` builds throwaway repositories to prove that the scanner finds a credential
+  added and removed inside a range, ignores sign-off trailers, honors the `public-safe: ok`
+  marker, redacts what it prints and treats a range it cannot resolve as an error.
 
 `tools/jira-status.py` is not part of `check-all.sh` because it needs an authenticated `acli`. Run
 it before a review or release decision to list the current status of every Jira issue the plan

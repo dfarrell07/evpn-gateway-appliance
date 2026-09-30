@@ -10,7 +10,8 @@ not product source; check the tree before assuming code exists.
   else in those documents is a proposal.
 - This repository is public. Commit no customer or support material, credentials, private
   lab inventories, raw Jira exports or internal chat. Run
-  `plans/context/evpn-aws/tools/check-all.sh` before committing (add `--offline` without
-  network access); it includes the public-safety scanner.
+  `plans/context/evpn-aws/tools/check-all.sh` before committing and again before pushing (add
+  `--offline` without network access); it runs the public-safety scanner over the tree and over
+  the commits you would publish.
 - Never push the internal prototype's git history here; import a reviewed snapshot
   (`plans/context/evpn-aws/source-audit.md#0-public-import`).

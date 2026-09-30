@@ -72,4 +72,5 @@ spec links to, not the files front to back.
 - This repository is public. Do not commit raw Jira exports, internal chat, customer or
   support material, credentials, private lab inventories or account IDs; cite internal
   sources by ticket key or link and summarize the finding. Run
-  `plans/context/evpn-aws/tools/check-all.sh` (which includes `check-public-safe.py`) before committing.
+  `plans/context/evpn-aws/tools/check-all.sh` (which includes `check-public-safe.py` over the
+  tree and over the commits you would push) before committing and again before pushing.

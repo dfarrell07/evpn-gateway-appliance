@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Run the shell snippets embedded in the plan against synthetic inputs.
 
-Usage: tools/test-snippets.py
+Usage: tools/test-snippets.py [--allow-skip]
 The plan tells agents to copy three snippets: the Snapshot completeness check
 (pipeline-spec.md), the fail-closed TEST_OUTPUT helper and the collection tarball
 assertion (ci-bootstrap-spec.md). This extracts each one from the Markdown, so the text
 that is tested is the text that is published, and runs it on complete, incomplete and
 malformed inputs. Needs bash, jq and Python's standard library. Exit status is 1 if any
-case fails; a missing tool skips its cases with a warning.
+case fails. A missing tool fails the run, because skipped cases must not look like a pass;
+--allow-skip downgrades that to a warning for a workstation that lacks jq.
 """
 import io
 import json
@@ -21,6 +22,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FAILURES = []
+ALLOW_SKIP = "--allow-skip" in sys.argv[1:]
 
 
 def block(doc, marker):
@@ -121,16 +123,22 @@ def test_tarball_assertion():
             expect(f"tarball assertion: {name}", ok, result.stdout + result.stderr)
 
 
+def missing(tool, untested):
+    print(f"{'SKIP' if ALLOW_SKIP else 'FAIL'} {tool} not found; {untested} not tested")
+    if not ALLOW_SKIP:
+        FAILURES.append(f"{tool} missing")
+
+
 def main():
     if not shutil.which("bash"):
-        print("SKIP: bash not found")
-        return 0
-    if shutil.which("jq"):
-        test_snapshot_check()
-        test_test_output()
+        missing("bash", "the snippets")
     else:
-        print("SKIP: jq not found; Snapshot check and TEST_OUTPUT helper not tested")
-    test_tarball_assertion()
+        if shutil.which("jq"):
+            test_snapshot_check()
+            test_test_output()
+        else:
+            missing("jq", "the Snapshot check and TEST_OUTPUT helper")
+        test_tarball_assertion()
     print(f"{len(FAILURES)} failed")
     return 1 if FAILURES else 0
 
