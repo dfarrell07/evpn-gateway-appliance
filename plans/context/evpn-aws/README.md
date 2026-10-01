@@ -8,7 +8,7 @@ published and supported. It is not the product design (the prototype's own `docs
 that) and it makes no support promise.
 
 **Status: proposed design for team review.** Sources and Jira were rechecked on
-2026-09-29 and spot-checked again on 2026-09-30 ([scope of the
+2026-09-29 and spot-checked again on 2026-09-30 and 2026-10-01 ([scope of the
 checks](source-evidence.md#scope-and-confidence)).
 These documents define implementation work and acceptance evidence; they do not establish
 product support, assigned ownership or a completed release.

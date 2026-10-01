@@ -14,11 +14,13 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 KEY = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d{1,6})\b")
 NOT_JIRA = {"SHA", "UTF", "RFC", "ISO", "TLS", "MD", "CVE", "RHBA", "RHSA", "RHEA", "OKEP", "EC", "L14"}
 CHUNK = 40
+RETRY_DELAYS = (0, 3, 10)  # acli's search failed once, then succeeded on the next call
 
 
 def cited():
@@ -34,9 +36,13 @@ def query(keys):
     jql = f"key in ({','.join(keys)})"
     cmd = ["acli", "jira", "workitem", "search", "--jql", jql, "--fields", "key,status,assignee,summary",
            "--paginate", "--csv"]
-    out = subprocess.run(cmd, capture_output=True, text=True)
-    if out.returncode != 0:
-        raise SystemExit(f"acli failed: {out.stderr.strip() or out.stdout.strip()}")
+    for delay in RETRY_DELAYS:
+        time.sleep(delay)
+        out = subprocess.run(cmd, capture_output=True, text=True)
+        if out.returncode == 0:
+            break
+    else:
+        raise SystemExit(f"acli failed {len(RETRY_DELAYS)} times: {out.stderr.strip() or out.stdout.strip()}")
     return list(csv.DictReader(io.StringIO(out.stdout)))
 
 

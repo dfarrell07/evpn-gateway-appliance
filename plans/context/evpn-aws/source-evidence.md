@@ -19,6 +19,17 @@ the 26 requirement stories were unchanged; the epic's 27th child, CORENET-7615, 
 story for these documents. The onboarding pull request
 [openshift/release #86165](https://github.com/openshift/release/pull/86165) was also unchanged
 (open, labelled `approved`, head `84e63776`), and all 175 pinned links resolved.
+
+On October 1 the same sweep returned all 244 issues (the 243 plus CORENET-7615) with no status
+change; RELENG-596 lost its assignee and stayed New. The release catalog's `development` head
+`6fc2a052` still passes no `--platform` to `oras pull` in `marketplacesvm-push-disk-images`,
+release-service-catalog #2453 is still open and `build-vm-image` is still 0.3.2. Since `155acaca`
+only a Conforma version bump, a utility-image digest update and the removal of a dead
+`verify_ec_task_git_revision` parameter touched the disk-push pipelines and tasks. Public Galaxy
+still lists no `redhat` collections, and neither `amazon.aws` nor `community.aws` has a TGW
+route-table or VPC Route Server module on `main`. None of the 23 GitHub pull requests and issues
+the plan links contradicts the state its surrounding text names, and openshift/release #86165 and
+this repository's pull request #2 had no new activity.
 Related work was found through networking, Konflux, bootc,
 collection and release searches, so this is not an exhaustive account of either
 Jira or platform capabilities.
