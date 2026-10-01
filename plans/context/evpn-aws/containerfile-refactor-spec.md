@@ -174,15 +174,16 @@ The base stream sets the update cadence and an end date. RHEL 9 offers
 `rhel-9.4-bootc` reached end of life on 2026-08-25. RHEL 10 has defined platform
 bases, including `rhel10/rhel-bootc-aws` and `rhel10/rhel-bootc-kvm`, though
 registry.redhat.io served neither on 2026-09-29. Deriving from those would replace EVPN-owned
-platform deltas, but would make the
-AWS and on-prem images separate bootc Components. If FRR comes from the RHEL
-package, RHEL 9 must be 9.8 or later (EUS: `rhel9-eus/rhel-9.8-bootc`) until 9.6
-delivery lands. Record the chosen stream, its end date and the planned minor-version
-move, and keep refreshes inside KONFLUX-15693's errata windows once that gate ships
-([base evidence](source-evidence.md#11-bootc-specific-build-behavior)).
+platform deltas, but would make the AWS and on-prem images separate bootc Components. Only
+if FRR came from the RHEL package (not pursued) would RHEL 9 have to be 9.8 or later (EUS:
+`rhel9-eus/rhel-9.8-bootc`) until 9.6 delivery lands. Record the chosen stream, its end date and
+the planned minor-version move, and keep refreshes inside KONFLUX-15693's errata windows once
+that gate ships ([base evidence](source-evidence.md#11-bootc-specific-build-behavior)).
 
-With the OCP-image option, run `frr-rhel9` by digest as the FRR container and
-use the `/frr-metrics` in that same image. With the package option, install
+With the OCP-image option, selected for FRR and `frr-metrics` on 2026-10-01 ([decision
+record](kickoff-decisions.md#already-settled)), run `frr-rhel9` by digest as the FRR container
+and use the `/frr-metrics` in that same image; the decision also requires changing it to need no
+cluster and to export EVPN metrics. With the package option, which is not pursued, install
 `frr10` (RHEL 9) or `frr` (RHEL 10) in the Containerfile, enable `frr.service`, and
 copy `/frr-metrics` with a digest-pinned `COPY --from` of `frr-rhel9` (OCP has no
 separate frr-k8s image), so that updaters and the SBOM track it. The package's

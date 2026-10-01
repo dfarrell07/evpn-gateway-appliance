@@ -119,6 +119,16 @@ text, and PM owns that update:
 | B. RHEL package | `frr10` (RHEL 9.8+) or `frr` (RHEL 10) installed in the bootc image as a systemd service | `COPY --from` the OCP image by digest (4.22 only, as above), or build from frr-k8s source with Red Hat Go FIPS settings | RHEL errata and support; hermetic build and bootc rollback cover FRR; removes the FRR container and its pull. Selects a RHEL 9.8+ or RHEL 10 base (9.7 lacks `frr10`; 9.6 EUS delivery is open); RHEL 9's `frr10` stream retires in November 2030 |
 | C. Community images | As in the source | `quay.io/metallb/frr-k8s` | Unsupportable without an exception |
 
+**Decision (2026-10-01).** The Networking maintainers' review of pull request #2 chose option A
+for FRR and `frr-metrics` and required `frr-metrics` to be fixed so that it needs no Kubernetes
+cluster and exports EVPN metrics ([decision record](kickoff-decisions.md#already-settled)). The
+review named no decision owner, PM and Product Security have not confirmed it, and 7505's
+"approved upstream" wording is still to be edited in Jira. Consequences: the 5.1 target needs
+`openshift5/frr-rhel9`, which Pyxis did not list on 2026-10-01 (`openshift4/frr-rhel9` is
+published); the standalone and EVPN changes are product requirements on the OCP build, which must
+stay FIPS-capable (below); and node-exporter's source, the RHEL base and package access are still
+open.
+
 A and B carry the same FRR 10.4.3 package today. OCP's `frr-metrics` shells out to
 `vtysh`, so it works beside either. ART builds it with Red Hat Go in strict FIPS
 mode (`CGO_ENABLED=1`, `strictfipsruntime`, dynamically linked against RHEL 9
@@ -155,16 +165,18 @@ authorizes every scrape through the Kubernetes API, and builds that handler with
 `rest.InClusterConfig()` only. Upstream v0.0.26 run without a cluster exits at start-up with
 `unable to load in-cluster configuration, KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT
 must be defined`. The 5.x builds, which are the 5.1 target, therefore cannot serve an
-appliance as they stand. Choose with the 7504 owner among the 4.22 binary, a build with
-authentication made optional (an upstream change or a maintained patch), and BGP/BFD series
-from the same textfile route as the VNI/MAC counts; pin explicit bind and TLS flags whichever
-build is used, because the defaults differ by release.
+appliance as they stand. The 2026-10-01 review decided that `frr-metrics` will be fixed to need
+no cluster. Whether that is an upstream change or a maintained patch of the OCP build is open;
+until it ships the choices are the 4.22 binary or BGP/BFD series from the same textfile route as
+the VNI/MAC counts. Pin explicit bind and TLS flags whichever build is used, because the defaults
+differ by release.
 
-The VNI/MAC gap is a coverage decision, not an impossibility: node-exporter's
-textfile collector can publish EVPN counts gathered by a timer from `vtysh ... json`
-and `bridge fdb`, adding no container, or frr-k8s can gain EVPN collectors upstream.
-Choose the source with the 7504 owner before building dashboards, and confirm the
-OpenShift build's collectors match upstream.
+The VNI/MAC gap is a coverage decision, not an impossibility. The 2026-10-01 review chose to
+add EVPN metrics to `frr-metrics`, so dashboards should target that source; which series it
+exports and who writes them is open. Until then node-exporter's textfile collector can publish
+EVPN counts gathered by a timer from `vtysh ... json` and `bridge fdb`, adding no container (the
+plan's interim suggestion, not a review decision). Confirm the OpenShift build's collectors
+match upstream.
 
 ### Disk formats and the collection
 
@@ -598,10 +610,10 @@ evidence](prior-art.md#ocp-upgrade-qualification).
 
 ### Support scope and scale
 
-Resolve two source-contract mismatches with Architecture before implementing their
-checks: 7501's "private VIF and TGW associations" (a TGW-associated DX gateway needs
-a transit VIF) and the per-transport inner MTU (full 1500-byte frames need jumbo DX;
-AWS VPN leaves at most 1396 bytes), as the
+7501's "private VIF and TGW associations" is settled as a transit VIF, which a TGW-associated DX
+gateway needs (2026-10-01). Resolve the other source-contract mismatch, the per-transport inner
+MTU (full 1500-byte frames need jumbo DX; AWS VPN leaves at most 1396 bytes), with Architecture
+before implementing its check, as the
 [networking handoff](networking-spec.md#required-handoff-to-ciqe) details.
 
 Obtain explicit AWS/OCP support authorization: CORENET-7094 is on-prem scope, and

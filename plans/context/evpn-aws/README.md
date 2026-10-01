@@ -7,8 +7,12 @@ appliance image, its disk images and AMI, and the Ansible collection are built, 
 published and supported. It is not the product design (the prototype's own `docs/` hold
 that) and it makes no support promise.
 
-**Status: proposed design for team review.** Sources and Jira were rechecked on
-2026-09-29 and spot-checked again on 2026-09-30 and 2026-10-01 ([scope of the
+**Status: proposed design, merged on 2026-10-01 after a first review.** The Networking
+maintainers gave the artifact graph a quick look and found it reasonable as far as their current
+knowledge goes. They took the FRR payload decision, settled 7501's wording, assigned decisions 7,
+8 and 13 to an action item and left the proposed responsibilities for a later look ([decision
+record](kickoff-decisions.md#already-settled)). Sources and Jira were rechecked on 2026-09-29 and
+spot-checked again on 2026-09-30 and 2026-10-01 ([scope of the
 checks](source-evidence.md#scope-and-confidence)).
 These documents define implementation work and acceptance evidence; they do not establish
 product support, assigned ownership or a completed release.
@@ -25,9 +29,9 @@ The proposal in brief:
   Actions lanes once Actions is enabled for the repository.
 - Build one RHEL bootc image in Konflux and derive the qcow2 and raw/AMI artifacts
   that CORENET-7506/7522 require from its digest. Replace the prototype's community
-  FRR and exporter images with Red Hat builds: OCP's `frr-rhel9` image or RHEL's
-  FRR package, a PM decision that also rewrites CORENET-7505's "approved upstream"
-  wording.
+  FRR and exporter images with Red Hat builds: FRR and `frr-metrics` come from OCP's
+  `frr-rhel9` image (decided 2026-10-01; the exporter's source is open), which also rewrites
+  CORENET-7505's "approved upstream" wording.
 - Publish the Ansible collection from a GitHub release to Automation Hub with the
   reusable workflow other Red Hat collections use, bound to the tested set by its
   `MANIFEST.json` digest.
@@ -46,7 +50,7 @@ requires the agreed support matrix and qualification evidence.
 | --- | --- |
 | [Delivery plan](delivery-plan.md) | CI/CD work breakdown and next mergeable changes |
 | [Pipeline plan](pipeline-spec.md) | Controlling artifact graph, gate sequence and release acceptance |
-| [Decisions](kickoff-decisions.md) | A one-table index of the 19 open decisions, then details organized by the first gate they block |
+| [Decisions](kickoff-decisions.md) | A one-table index of the 19 decisions and their status, then details organized by the first gate they block |
 | [Productization](productization.md) | Approvals, Engineering ID and ProdSec steps with measured lead times |
 | [Project context](context.md) | Scope, a map of the prototype, Jira requirements and repository map |
 | [Agent guide](agent-guide.md) | Rules, verified facts and a task-to-document reading map for coding agents |
@@ -56,12 +60,12 @@ Short on time: read this page, the [decision index](kickoff-decisions.md#decisio
 and the [delivery plan](delivery-plan.md), then open the rest by task through the
 [agent guide's reading map](agent-guide.md#which-part-to-read-for-which-task).
 
-For initial review, confirm the artifact graph, gate A/B inputs and proposed
-responsibilities: the product home (team tenant or ART) and the public Konflux
-cluster it implies, the FRR payload source, and the AMI channel (decisions 7, 8, 10
-and 13 in the [decision index](kickoff-decisions.md#decisions-at-a-glance)). Channel owners,
-Product and QE can resolve stage/production decisions in parallel. Record accepted
-decisions in the decision list.
+Still to confirm: the proposed responsibilities, the product home (team tenant or ART), the
+public Konflux cluster it implies and the AMI channel (decisions 7, 8 and 13, assigned as an
+action item on 2026-10-01; see the [decision
+index](kickoff-decisions.md#decisions-at-a-glance)). Decision 10 is settled for FRR and
+`frr-metrics` only. Channel owners, Product and QE can resolve stage/production decisions in
+parallel. Record accepted decisions in the decision list.
 
 ## Implementation contracts
 

@@ -30,10 +30,12 @@ spec links to, not the files front to back.
 
 ## Sources of truth
 
-- **Requirements** are the acceptance criteria of CORENET-7498's children. Three
-  of them conflict with product or AWS facts: 7505's "approved upstream" images,
-  7501's "private VIF and TGW associations" and 7504's VNI/MAC views. Do not
-  resolve these silently in code; the decision list records who must decide.
+- **Requirements** are the acceptance criteria of CORENET-7498's children. Three of them
+  conflicted with product or AWS facts: 7505's "approved upstream" images, 7501's "private VIF and
+  TGW associations" and 7504's VNI/MAC views. The 2026-10-01 review resolved them
+  ([record](kickoff-decisions.md#already-settled)): 7501 means a transit VIF, and 7505 and 7504
+  follow decision 10. The Jira text is not yet corrected, so follow the decision list, not the
+  Jira wording, and do not resolve any other conflict silently in code.
 - **Decisions** exist only when recorded in the decision list with owner and date.
   Everything else in these documents is a proposal.
 - **Implementation facts** carry a repository, revision and path. Recheck them
@@ -48,7 +50,7 @@ spec links to, not the files front to back.
 | Policy | Start an EVPN ECP as a copy of `registry-standard` (or `-stage`) with `konflux-release-data/derived-from`. The root already excludes `cve.cve_blockers`, so Conforma does not block on CVEs; vulnerability acceptance is a separate EVPN/ProdSec gate. KONFLUX-15693 (approved 2026-09-28, target end date estimate 2026-10-30) is meant to add release-time blocking on stale Critical/Important errata, but its refinement thread floated a warning-only first phase, so confirm when blocking is on | KONFLUX-7113, KONFLUX-15693; [example](examples/release/registry-standard-ecp.yaml) |
 | Bootc registry | Customers pull the bootc image from `registry.redhat.io` (authenticated) through `rh-advisories`; it is the appliance update source (7506, 7510). AppSRE's onboarding script and its public-image flags apply only to AppSRE's own tenant and do not apply here | [BGP CC stage RPA](examples/release/bgp-cc-stage-rpa.yaml) |
 | AMI | Konflux's only managed AMI publisher is `push-disk-images-to-marketplaces`, and every KRD RPA using it is a Marketplace listing. Its `oras pull` has no `--platform`, so a multi-architecture index can publish the wrong architecture silently. The channel is an open decision; RHEL accepted a CDN download alone for its AWS CVM Tech Preview | [AMI channel](bib-configuration-spec.md#ami-channel) |
-| FRR payload | OCP has no separate frr-k8s image: `openshift4/frr-rhel9` installs RHEL's `frr10` RPM and also contains a FIPS-capable `/frr-metrics` (CGO, `strictfipsruntime`). Upstream `/frr-metrics` in `quay.io/metallb/frr-k8s` is static and fails `check-payload`. Since March 2026 (OCP 4.23 and 5.x) it also exits at start-up outside Kubernetes, so a standalone appliance cannot use it as it stands. ART will deliver 5.x builds to `openshift5/frr-rhel9`, which registry.redhat.io did not yet serve on 2026-09-29 | [payload evidence](source-evidence.md#9-payload-platform-and-ocp-test-inputs) |
+| FRR payload | OCP has no separate frr-k8s image: `openshift4/frr-rhel9` installs RHEL's `frr10` RPM and also contains a FIPS-capable `/frr-metrics` (CGO, `strictfipsruntime`). Upstream `/frr-metrics` in `quay.io/metallb/frr-k8s` is static and fails `check-payload`. Since March 2026 (OCP 4.23 and 5.x) it also exits at start-up outside Kubernetes, so a standalone appliance cannot use it as it stands. ART will deliver 5.x builds to `openshift5/frr-rhel9`, which registry.redhat.io did not yet serve on 2026-09-29 (nor Pyxis on 2026-10-01). Decided 2026-10-01: use this image and fix `frr-metrics` to need no cluster and to export EVPN metrics ([record](kickoff-decisions.md#already-settled)) | [payload evidence](source-evidence.md#9-payload-platform-and-ocp-test-inputs) |
 | ITS resolvers | Bundle-resolver ITSs no longer need the `url` parameter workaround; the admission webhook was fixed (STONEINTG-1586, Closed). Pin release-gating test pipelines to an approved revision | [resolver checks](ci-bootstrap-spec.md#konflux-implementation-checks) |
 | PR trust | Pipelines-as-Code runs PR pipelines without approval for any `openshift` org member, collaborator, author with branch push access or `OWNERS` entry, and bot authors are never blocked, so PR-triggered pipelines and component-context ITSs must never mount AWS, lab or publishing credentials | [authorization rules](https://pipelinesascode.com/docs/guides/running-pipelines/) |
 | Test status | Konflux passes empty, `SKIPPED` and `WARNING` results, and optional ITSs never block. Release gates must check named suites and evidence | [pipeline plan](pipeline-spec.md#3-integration-gates-and-test-infrastructure) |

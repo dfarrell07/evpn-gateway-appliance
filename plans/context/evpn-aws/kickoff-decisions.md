@@ -3,33 +3,34 @@
 Use these inputs with [`pipeline-spec.md`](pipeline-spec.md). Jira acceptance
 criteria are requirements; an item below is a decision only once it records an
 owner, date and evidence. Everything else is a proposal for discussion, and role
-owners are proposed. Checked on 2026-09-29.
+owners are proposed. Checked on 2026-09-29; the status column records the maintainers' review of
+pull request #2 on 2026-10-01.
 
 ## Decisions at a glance
 
 Each row is detailed under the gate that first needs it; owners are proposed.
 
-| # | Decision | Owner | Needed for |
-| --- | --- | --- | --- |
-| 1 | Correct three Jira criteria: 7501's VIF wording, 7504's VNI/MAC views, 7505's "approved upstream" images | PM / Networking | [Start now](#start-now-without-waiting-for-engineering) |
-| 2 | Official product name, the long-lead approvals, and the supported architectures the Engineering ID request asks for | PM / Product Security / releng | [Start now](#start-now-without-waiting-for-engineering); Engineering ID |
-| 3 | What to import publicly, and owners for the source defects | Source owners / releng | [Gate A](#gate-a--source-ci) |
-| 4 | Source CI: Prow contexts, tide, GitHub Actions, Konflux GitHub App | Engineering / Networking | [Gate A](#gate-a--source-ci) |
-| 5 | Collection name, shape, content class, scope and layout | Architecture / AAP content | [Gate A](#gate-a--source-ci) |
-| 6 | Cluster-side design (native OCP EVPN vs OpenPERouter) and the unified cross-cloud question | Architecture / Networking / PM | [Gate A](#gate-a--source-ci) |
-| 7 | Product home: team tenant, existing offering or ART | PM / Engineering / ART | [Gate B](#gate-b--non-releasing-konflux-builds) |
-| 8 | Konflux cluster | Engineering / Konflux platform / releng | [Gate B](#gate-b--non-releasing-konflux-builds) |
-| 9 | Build canary inputs: tenant, Application, RBAC, quota, MPC capacity | Engineering / Konflux platform | [Gate B](#gate-b--non-releasing-konflux-builds) |
-| 10 | FRR and exporter payload, RHEL base, package access | Networking / PM / Product Security | [Gate B](#gate-b--non-releasing-konflux-builds) |
-| 11 | Test backend, AWS identity, funded accounts and labs | QE / AWS / releng / management | [Gate B](#gate-b--non-releasing-konflux-builds) |
-| 12 | Artifact set: qcow2, AMI, vmdk/ova, installers, FIPS variant | PM / Architecture | [Gate C-stage](#gate-c-stage--trial-publication) |
-| 13 | AMI channel and entitlement | PM / cloud publishing / releng | [Gate C-stage](#gate-c-stage--trial-publication) |
-| 14 | Stage publication objects and how the collection finds the released AMI | Releng / channel owners / Architecture | [Gate C-stage](#gate-c-stage--trial-publication) |
-| 15 | Collection publisher and destination | PM / AAP content / releng | [Gate C-stage](#gate-c-stage--trial-publication) |
-| 16 | Metric source for 7504's VNI/MAC views and the standalone `frr-metrics` question | Networking / 7504 owner | [Gate C-stage](#gate-c-stage--trial-publication) |
-| 17 | Product identity: Engineering ID, CPE, registry paths, ProdSec stream | PM / Product Security / releng | [Gate C-stage](#gate-c-stage--trial-publication) for the Engineering ID; [Gate C-prod](#gate-c-prod--supported-release) for the rest |
-| 18 | Support matrix, including the AWS/OCP support decision and ROSA | PM / Architecture / QE | [Gate C-prod](#gate-c-prod--supported-release) |
-| 19 | Qualification evidence and sign-offs | Networking / QE / Product Security / docs | [Gate C-prod](#gate-c-prod--supported-release) |
+| # | Decision | Owner | Needed for | Status |
+| --- | --- | --- | --- | --- |
+| 1 | Correct three Jira criteria: 7501's VIF wording, 7504's VNI/MAC views, 7505's "approved upstream" images | PM / Networking | [Start now](#start-now-without-waiting-for-engineering) | Settled 2026-10-01; Jira text not yet corrected |
+| 2 | Official product name, the long-lead approvals, and the supported architectures the Engineering ID request asks for | PM / Product Security / releng | [Start now](#start-now-without-waiting-for-engineering); Engineering ID | Open |
+| 3 | What to import publicly, and owners for the source defects | Source owners / releng | [Gate A](#gate-a--source-ci) | Open |
+| 4 | Source CI: Prow contexts, tide, GitHub Actions, Konflux GitHub App | Engineering / Networking | [Gate A](#gate-a--source-ci) | Open |
+| 5 | Collection name, shape, content class, scope and layout | Architecture / AAP content | [Gate A](#gate-a--source-ci) | Open |
+| 6 | Cluster-side design (native OCP EVPN vs OpenPERouter) and the unified cross-cloud question | Architecture / Networking / PM | [Gate A](#gate-a--source-ci) | Open |
+| 7 | Product home: team tenant, existing offering or ART | PM / Engineering / ART | [Gate B](#gate-b--non-releasing-konflux-builds) | Open; action item assigned 2026-10-01 |
+| 8 | Konflux cluster | Engineering / Konflux platform / releng | [Gate B](#gate-b--non-releasing-konflux-builds) | Open; action item assigned 2026-10-01 |
+| 9 | Build canary inputs: tenant, Application, RBAC, quota, MPC capacity | Engineering / Konflux platform | [Gate B](#gate-b--non-releasing-konflux-builds) | Open |
+| 10 | FRR and exporter payload, RHEL base, package access | Networking / PM / Product Security | [Gate B](#gate-b--non-releasing-konflux-builds) | Partly settled 2026-10-01 (FRR, `frr-metrics`); the rest is open |
+| 11 | Test backend, AWS identity, funded accounts and labs | QE / AWS / releng / management | [Gate B](#gate-b--non-releasing-konflux-builds) | Open |
+| 12 | Artifact set: qcow2, AMI, vmdk/ova, installers, FIPS variant | PM / Architecture | [Gate C-stage](#gate-c-stage--trial-publication) | Open |
+| 13 | AMI channel and entitlement | PM / cloud publishing / releng | [Gate C-stage](#gate-c-stage--trial-publication) | Open; action item assigned 2026-10-01 |
+| 14 | Stage publication objects and how the collection finds the released AMI | Releng / channel owners / Architecture | [Gate C-stage](#gate-c-stage--trial-publication) | Open |
+| 15 | Collection publisher and destination | PM / AAP content / releng | [Gate C-stage](#gate-c-stage--trial-publication) | Open |
+| 16 | Metric source for 7504's VNI/MAC views and the standalone `frr-metrics` question | Networking / 7504 owner | [Gate C-stage](#gate-c-stage--trial-publication) | Direction set 2026-10-01; work owner open |
+| 17 | Product identity: Engineering ID, CPE, registry paths, ProdSec stream | PM / Product Security / releng | [Gate C-stage](#gate-c-stage--trial-publication) for the Engineering ID; [Gate C-prod](#gate-c-prod--supported-release) for the rest | Open |
+| 18 | Support matrix, including the AWS/OCP support decision and ROSA | PM / Architecture / QE | [Gate C-prod](#gate-c-prod--supported-release) | Open |
+| 19 | Qualification evidence and sign-offs | Networking / QE / Product Security / docs | [Gate C-prod](#gate-c-prod--supported-release) | Open |
 
 ## Already settled
 
@@ -38,16 +39,26 @@ Each row is detailed under the gate that first needs it; owners are proposed.
 | Direct Connect and Site-to-Site VPN are the production transports; WireGuard is development/test only | CORENET-7498 acceptance criteria |
 | Canonical source is public `github.com/openshift/evpn-gateway-appliance`, Apache-2.0, owned by OpenShift Core Networking | DPP-22292 (approved and created 2026-09-28; license, `OWNERS` and these documents, no product source) |
 | Azure and GCP implementations are out of scope for this epic | CORENET-7498 scope |
+| FRR and `frr-metrics` come from the Red Hat–built `frr-rhel9` image ([option A](pipeline-spec.md#runtime-payload-corenet-7505); the review wrote "openshift/frr image", read here as the image built from `openshift/frr`), and `frr-metrics` must be changed to need no Kubernetes cluster and to export EVPN metrics (decision 10, in part) | Review of pull request #2 by the Networking maintainers, 2026-10-01 (comment by `jcaamano`) |
+| A Direct Connect gateway attached to a TGW uses a transit VIF, not a private VIF (7501's "private VIF" is read that way) | Same review |
+| 7504's VNI/MAC views and 7505's "approved upstream" images follow decision 10 | Same review |
+
+The review spoke for the Networking maintainers ("we") and named no decision owner. Decision 10's
+listed owners are Networking, PM and Product Security; PM and Product Security confirmation is not
+recorded. The review left the proposed responsibilities for a later look and assigned an action
+item for decisions 7, 8 and 13 to `@knobunc`.
 
 ## Open decisions, by the first gate they block
 
 ### Start now, without waiting for engineering
 
-- **Jira conflicts.** Three acceptance criteria need their owners to correct or decide them. 7501's
-  "private VIF and TGW associations" does not match how AWS attaches a Direct Connect gateway to a
-  TGW, which needs a transit VIF. 7505's "approved upstream" images cannot be supported content (see
-  payload row). 7504's VNI/MAC views have no source in 7499's `frr-metrics`, which has only BGP and
-  BFD collectors ([coverage](pipeline-spec.md#metrics-corenet-74997504)). *Owner: PM / Networking.*
+- **Jira conflicts (settled 2026-10-01; Jira text pending).** The review resolved the three
+  criteria. A Direct Connect gateway attached to a TGW needs a transit VIF, so 7501's "private VIF
+  and TGW associations" is read as a transit VIF. 7505's "approved upstream" images and 7504's
+  VNI/MAC views follow decision 10: the Red Hat–built `frr-rhel9` image and an `frr-metrics` that
+  gains EVPN metrics ([coverage](pipeline-spec.md#metrics-corenet-74997504)). The Jira criteria
+  still carry the old wording and have no comments (checked 2026-10-01), so correcting them
+  remains an action. *Owner: PM / Networking.*
 - **Product name.** "EVPN Gateway Appliance (EGA)" is a working name. The prototype's
   [L2-stretch plan](https://gitlab.cee.redhat.com/datucker/evpn-on-cloud/-/blob/1c8e88873af8/docs/evpn-l2-stretch-plan.md)
   weighed "Connectivity", "Gateway", "Bridge" and "Edge", noted that "Gateway" suggests L3 routing,
@@ -127,15 +138,17 @@ Each row is detailed under the gate that first needs it; owners are proposed.
   `privileged_nested_param` exception for the bootc build, which most bootc products in KRD carry
   ([precedents](containerfile-refactor-spec.md#required-outcomes)). `kflux-prd-rh02` defines dynamic
   rootful MPC hosts. *Owner: Engineering / Konflux platform.*
-- **Payload.** FRR source per the [payload options](pipeline-spec.md#runtime-payload-corenet-7505):
-  OCP's `frr-rhel9` image (contains FRR and `frr-metrics`), RHEL's `frr10`/`frr` package, or an
-  exception for the community images. OCP content used outside a cluster needs support terms. Then:
-  approved RHEL bootc base stream (9.8+ or 10 if using the package; latest minor or EUS; generic or
-  RHEL 10 platform base), BIB and payload inventory; package access in both build stages (activation
-  key for entitled RPMs) plus a tenant [`registry.redhat.io` pull
+- **Payload.** FRR and `frr-metrics` are settled as [option
+  A](pipeline-spec.md#runtime-payload-corenet-7505), the Red Hat–built `frr-rhel9` image
+  (2026-10-01; options B and C are not pursued). `openshift4/frr-rhel9` is published;
+  `openshift5/frr-rhel9`, which the 5.1 target needs, was not in Pyxis on 2026-10-01. Still open:
+  node-exporter's source; the approved RHEL bootc base stream (latest minor or EUS; generic or
+  RHEL 10 platform base), BIB and payload inventory; support terms for OCP content used outside a
+  cluster; package access in both build stages (activation key for entitled RPMs) plus a tenant
+  [`registry.redhat.io` pull
   secret](https://konflux-ci.dev/docs/building/secrets/creating-registry-pull-secrets/) for the
-  bootc base, BIB and any `COPY --from` OCP image; launch access and runtime registry-egress
-  contract. *Owner: Networking / PM / Product Security.*
+  bootc base, BIB and the OCP images; launch access and runtime registry-egress contract.
+  *Owner: Networking / PM / Product Security.*
 - **Tests.** Test backend, AWS identity at each execution site (an owned OpenShift CI cluster
   profile for AWS lanes; Konflux federation for ITSs), VM Import role/PassRole and bucket access,
   private candidate pulls, qcow2 capacity, resource ledger/reaper and evidence retention. A funded
@@ -182,11 +195,13 @@ Each row is detailed under the gate that first needs it; owners are proposed.
   `network.offline_migration_sdn_to_ovnk`. Default publisher: GitHub release → pinned
   `release_ah.yaml` with a Hub service account, as `hashicorp.vault` does. Prove the path with trial
   credentials on an isolated server first. *Owner: PM / AAP content / releng.*
-- **Observability.** Whether BGP/BFD series can come from `frr-metrics` at all, since OCP 4.23 and
-  5.x builds exit outside Kubernetes ([standalone
-  operation](pipeline-spec.md#metrics-corenet-74997504)); metric source for 7504's VNI/MAC views and
-  VTEP/DF alerts: node-exporter textfile collector fed from `vtysh`/`bridge`, new upstream frr-k8s
-  collectors, or a scope change; CloudWatch for DX/VPN panels. *Owner: Networking / 7504 owner.*
+- **Observability.** Direction set 2026-10-01: `frr-metrics` is to be fixed to run without a
+  Kubernetes cluster and to include EVPN metrics, so BGP/BFD series and the VNI/MAC views share one
+  source. Open: who makes the change and where it lands (upstream frr-k8s, `openshift/frr` or a
+  maintained patch of the OCP build), which EVPN series it adds (VNI and MAC learning, VTEP and DF
+  alerts), what the appliance runs until it ships, since OCP 4.23 and 5.x builds exit outside
+  Kubernetes ([standalone operation](pipeline-spec.md#metrics-corenet-74997504)), and CloudWatch
+  for DX/VPN panels. *Owner: Networking / 7504 owner.*
 
 ### Gate C-prod — supported release
 

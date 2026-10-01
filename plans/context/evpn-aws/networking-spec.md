@@ -74,8 +74,9 @@ actually handles each packet before asserting MTU or HA.
    100 Mbps. Aggregation across tunnels (ECMP) needs a transit-gateway VPN with
    dynamic routing. VXLAN adds a header to every frame, so record the packet-rate
    ceiling as well as bandwidth in CORENET-7523's per-transport limits.
-4. Correct CORENET-7501's "private VIF and TGW associations" criterion with its
-   owner before implementing it: a Direct Connect gateway associated with a TGW
+4. Correct CORENET-7501's "private VIF and TGW associations" criterion in Jira before
+   implementing it. The 2026-10-01 review settled it as a transit VIF, but the text is
+   unchanged: a Direct Connect gateway associated with a TGW
    needs a transit VIF, while private VIFs attach DX gateways to virtual private
    gateways. The prototype's lab Terraform repeats the private-VIF assumption
    ([source audit](source-audit.md#3-configuration--structure-mismatches)). Verify routes,
