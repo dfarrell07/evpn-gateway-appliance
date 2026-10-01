@@ -1,0 +1,48 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/tenants-config/cluster/stone-prod-p02/tenants/ansible-plugins-tenant/components/automation-portal-bootc-main.yaml
+# Copied on 2026-09-29 as a reference example; the SBOM webhook URL is replaced by a placeholder.
+# It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  namespace: ansible-plugins-tenant
+  name: automation-portal-bootc-main
+  annotations:
+    build.appstudio.openshift.io/build-nudge-simple-branch: "true"
+    build.appstudio.openshift.io/request: configure-pac
+    git-provider: github
+    git-provider-url: https://github.com/
+spec:
+  application: automation-portal-installer-main
+  build-nudges-ref:
+    - automation-portal-qcow2-disk-image-main
+    - automation-portal-vmdk-disk-image-main
+  componentName: automation-portal-bootc-main
+  source:
+    git:
+      context: bootc
+      revision: main
+      url: https://github.com/ansible-automation-platform/automation-portal-bootc-container
+      dockerfileUrl: Containerfile.portal-bootc-quadlet
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ImageRepository
+metadata:
+  annotations:
+    image-controller.appstudio.redhat.com/update-component-image: "true"
+  name: imagerepository-for-automation-portal-bootc-main
+  namespace: ansible-plugins-tenant
+  labels:
+    appstudio.redhat.com/application: automation-portal-installer-main
+    appstudio.redhat.com/component: automation-portal-bootc-main
+spec:
+  image:
+    name: ansible-plugins-tenant/portal-bootc/automation-portal
+    visibility: private
+  notifications:
+    - config:
+        url: <sbom-ingestion-webhook-url>
+      event: repo_push
+      method: webhook
+      title: SBOM-event-to-Bombino

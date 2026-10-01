@@ -1,0 +1,56 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/config/stone-prod-p02.hjvn.p1/product/EnterpriseContractPolicy/registry-ansible-plugins-disk-images-prod.yaml
+# Copied unmodified on 2026-09-29 as a reference example. It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: EnterpriseContractPolicy
+metadata:
+  name: registry-ansible-plugins-disk-images-prod
+  namespace: rhtap-releng-tenant
+  annotations:
+    konflux-release-data/derived-from: registry-standard
+spec:
+  description: 'Rules for shipping Ansible Automation Portal disk images (qcow2, vmdk) - built from bootc containers'
+  publicKey: 'k8s://openshift-pipelines/public-key'
+  sources:
+    - name: Release Policies
+      data:
+        - oci::quay.io/redhat-konflux/policy-data:latest
+        - oci::quay.io/konflux-ci/tekton-catalog/data-acceptable-bundles:latest
+        # Tasks from https://github.com/konflux-ci/tekton-tools/tree/main/tasks
+        - oci::quay.io/konflux-ci/konflux-vanguard/data-acceptable-bundles:latest
+        # Tasks from https://github.com/konflux-ci/integration-service-catalog/tree/main/task
+        - oci::quay.io/konflux-ci/integration-service-catalog/data-acceptable-bundles:latest
+      policy:
+        - oci::quay.io/conforma/release-policy:konflux
+      ruleData:
+        # By default, rootful hosts (contain `root` in its name) are not allowed, but this is
+        # required for disk-images. Remove that pattern from the disallowed list.
+        disallowed_platform_patterns: []
+      volatileConfig:
+        exclude: []
+      config:
+        include:
+          - '@redhat'
+        exclude:
+          - slsa_build_scripted_build.image_built_by_trusted_task
+          - trusted_task.trusted
+          - trusted_task.trusted:build-vm-image
+          - trusted_task.data_format
+          - trusted_task.trusted_parameters
+          - labels.required_labels
+          - cve.cve_results_found
+          - tasks.required_tasks_found:rpms-signature-scan
+          - tasks.required_tasks_found:clair-scan
+          - tasks.required_tasks_found:clamav-scan
+          - tasks.required_tasks_found:source-build-oci-ta
+          - tasks.required_tasks_found:deprecated-image-check
+          - tasks.required_tasks_found:buildah
+          - tasks.required_tasks_found:buildah-remote
+          - tasks.required_tasks_found:buildah-oci-ta
+          - tasks.required_tasks_found:buildah-remote-oci-ta
+          - base_image_registries.base_image_info_found
+          - source_image.exists
+          - sbom.found
+          - schedule.weekday_restriction
+          - schedule.date_restriction

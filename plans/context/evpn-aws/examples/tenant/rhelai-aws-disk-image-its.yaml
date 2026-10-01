@@ -1,0 +1,45 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/tenants-config/cluster/stone-prod-p02/tenants/rhel-ai-tenant/rhelai-bootc/main/integrationtests/rhelai-bootc-test-cuda-aws-disk-image-x86-64.yaml
+# Copied on 2026-09-29 as a reference example; the product's model name, version, pull-secret
+# name and test-repository path are replaced by placeholders. It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "true"
+  name: rhelai-bootc-test-cuda-aws-disk-image-x86-64
+spec:
+  application: rhelai-bootc
+  contexts:
+    - description: Component testing for bootc-cuda-aws-disk-image
+      name: component_bootc-cuda-aws-disk-image
+  params:
+    - name: architecture
+      value: "x86_64"
+    - name: model-name
+      value: "<model>"
+    - name: pull-secret-name
+      value: "<pull-secret>"
+    - name: rhel-ai-version
+      value: "<version>"
+  resolverRef:
+    params:
+      - name: org
+        value: <group>
+      - name: repo
+        value: <test-repository>
+      - name: scmType
+        value: gitlab
+      - name: serverURL
+        value: https://gitlab.com
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: pipelines/rhelai-disk-image-test.yaml
+      - name: token
+        value: pipelines-as-code-secret
+      - name: tokenKey
+        value: password
+    resolver: git
+    resourceKind: pipeline

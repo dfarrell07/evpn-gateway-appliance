@@ -1,0 +1,63 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/config/stone-prod-p02.hjvn.p1/product/ReleasePlanAdmission/ansible-plugins/rpa-automation-portal-disk-images-main-prod.yaml
+# Copied unmodified on 2026-09-29 as a reference example. It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  name: rpa-automation-portal-disk-images-main-prod
+  namespace: rhtap-releng-tenant
+  labels:
+    # set to true to DISABLE this RPA - https://bit.ly/4d6ILpt
+    release.appstudio.openshift.io/block-releases: "false"
+    pp.engineering.redhat.com/business-unit: ansible
+  annotations:
+    stream_name: ansible_portal-2.1
+    cpe_name: a:redhat:ansible_portal:2.1::el9
+spec:
+  applications:
+    - automation-portal-installer-main
+  origin: ansible-plugins-tenant
+  policy: registry-ansible-plugins-disk-images-prod
+  data:
+    singleComponentMode: true
+    cdn:
+      env: production
+    releaseNotes:
+      cpe_suffix: "::el9"
+      product_id: [480]
+      product_name: Red Hat Ansible Automation Platform
+      product_version: "2.1"
+    mapping:
+      components:
+        - name: automation-portal-qcow2-disk-image-main
+          staged:
+            destination: ansible-automation-platform-2-for-rhel-9-x86_64-files
+            version: "2.1"
+            files:
+              - filename: automation-portal-2.1-{{ release_timestamp }}-x86_64.qcow2
+                source: disk.qcow2
+        - name: automation-portal-vmdk-disk-image-main
+          staged:
+            destination: ansible-automation-platform-2-for-rhel-9-x86_64-files
+            version: "2.1"
+            files:
+              - filename: automation-portal-2.1-{{ release_timestamp }}-x86_64.vmdk
+                source: disk.vmdk
+      defaults:
+        pushSourceContainer: false
+    intention: production
+  pipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: "https://github.com/konflux-ci/release-service-catalog.git"
+        - name: revision
+          value: production
+        - name: pathInRepo
+          value: "pipelines/managed/push-disk-images-to-cdn/push-disk-images-to-cdn.yaml"
+    serviceAccountName: release-registry-prod
+    timeouts:
+      pipeline: "8h0m0s"
+      tasks: 8h0m0s

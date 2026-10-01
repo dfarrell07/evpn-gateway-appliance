@@ -1,0 +1,63 @@
+# Source: https://gitlab.cee.redhat.com/releng/konflux-release-data/-/blob/8c18efee29/config/kflux-prd-rh02.0fk9.p1/product/ReleasePlanAdmission/bgp-cloud-connector/bgp-cloud-connector-stage.yaml
+# Copied unmodified on 2026-09-29 as a reference example. It is not EVPN configuration;
+# see examples/README.md for what to reuse and what not to copy.
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  annotations:
+    rhel_target: el9
+  labels:
+    release.appstudio.openshift.io/block-releases: "false"
+    pp.engineering.redhat.com/business-unit: hybrid-platforms
+  name: bgp-cloud-connector-stage
+  namespace: rhtap-releng-tenant
+spec:
+  applications:
+    - bgp-cloud-connector
+  origin: bgp-cloud-connector-tenant
+  policy: registry-standard-stage
+  data:
+    mapping:
+      components:
+        - name: bgp-cloud-connector-operator
+          repositories:
+            - url: registry.stage.redhat.io/bgpcc/bgp-cloud-connector-rhel9-operator
+        - name: bgp-cloud-connector-bundle
+          repositories:
+            - url: registry.stage.redhat.io/bgpcc/bgp-cloud-connector-operator-bundle
+      defaults:
+        tags:
+          - "{{ git_sha }}"
+          - "{{ labels.version }}"
+          - "{{ labels.version }}-{{ timestamp }}"
+        pushSourceContainer: true
+    releaseNotes:
+      product_id: [1209]
+      product_name: BGP cloud connector
+      product_version: "1.0"
+      synopsis: "BGP cloud connector Release"
+      topic: |
+        The 1.0 release of BGP cloud connector.
+      description: |
+        Red Hat BGP cloud connector is used to deploy and manage BGP connectivity within kubernetes cluster.
+      references:
+        - https://github.com/openshift/bgp-cloud-connector/blob/main/README.md
+      solution: |
+        Container images provided by this update are used by BGP cloud connector.
+    intention: staging
+    enforceContainerFirstSecurityLabels: true
+  pipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: "https://github.com/konflux-ci/release-service-catalog.git"
+        - name: revision
+          value: production
+        - name: pathInRepo
+          value: "pipelines/managed/rh-advisories/rh-advisories.yaml"
+    serviceAccountName: "release-registry-staging"
+    timeouts:
+      pipeline: "2h00m0s"
+      tasks: 2h00m0s
