@@ -1,6 +1,9 @@
 ---
 - name: Generate/load WireGuard keys
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/../roles/evpn_cloud_infra/tasks/wireguard_keys.yml"
+  # include_role (not a playbook_dir-relative path) so this resolves correctly once installed from a collection (ci-bootstrap-spec.md, "Cross-role include").
+  ansible.builtin.include_role:
+    name: evpn_cloud_infra
+    tasks_from: wireguard_keys
   when: tunnel.type == 'wireguard'
 
 - name: Install packages (skipped on bootc images)
@@ -26,7 +29,7 @@
     src: wg-client.conf.j2
     dest: /etc/wireguard/wg0.conf
     mode: "0600"
-  notify: restart wireguard
+  notify: Restart WireGuard
   when: tunnel.type == 'wireguard'
 
 - name: Enable and start WireGuard
@@ -102,7 +105,9 @@
   changed_when: _vx_add.rc == 0
 
 - name: Assign IPs to bridge SVIs
-  ansible.builtin.command: ip addr add {{ item.onprem_gateway }}/24 dev br-vni{{ 10000 + item.vlan }}
+  ansible.builtin.command: >-
+    ip addr add {{ item.onprem_gateway }}/{{ item.subnet | ansible.utils.ipaddr('prefix') }}
+    dev br-vni{{ 10000 + item.vlan }}
   loop: "{{ stretches }}"
   loop_control:
     label: "{{ item.onprem_gateway }} on br-vni{{ 10000 + item.vlan }}"
@@ -142,7 +147,7 @@
       fabricd=no
       vrrpd=no
       pathd=no
-  notify: restart frr
+  notify: Restart FRR
 
 - name: Deploy FRR vtysh config
   ansible.builtin.copy:
@@ -155,7 +160,7 @@
     src: frr-onprem-appliance.conf.j2
     dest: /etc/frr/frr.conf
     mode: "0644"
-  notify: restart frr
+  notify: Restart FRR
 
 - name: Start FRR via systemd service (bootc image)
   ansible.builtin.systemd:

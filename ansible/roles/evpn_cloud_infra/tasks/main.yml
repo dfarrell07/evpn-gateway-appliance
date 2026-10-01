@@ -26,7 +26,7 @@
     src: wg-server.conf.j2
     dest: /etc/wireguard/wg0.conf
     mode: "0600"
-  notify: restart wireguard
+  notify: Restart WireGuard
   when: tunnel.type == 'wireguard'
 
 - name: Enable and start WireGuard
@@ -74,7 +74,7 @@
       fabricd=no
       vrrpd=no
       pathd=no
-  notify: restart frr
+  notify: Restart FRR
 
 - name: Deploy FRR vtysh config
   ansible.builtin.copy:
@@ -87,7 +87,7 @@
     src: frr-infra-relay.conf.j2
     dest: /etc/frr/frr.conf
     mode: "0644"
-  notify: restart frr
+  notify: Restart FRR
 
 - name: Start FRR via systemd service (bootc image)
   ansible.builtin.systemd:

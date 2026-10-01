@@ -1,10 +1,10 @@
 ---
-- name: restart wireguard
+- name: Restart WireGuard
   ansible.builtin.systemd:
     name: wg-quick@wg0
     state: restarted
 
-- name: restart frr
+- name: Restart FRR
   containers.podman.podman_container:
     name: frr
     state: started

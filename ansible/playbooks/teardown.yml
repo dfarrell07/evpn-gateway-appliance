@@ -33,6 +33,7 @@
 
     - name: Remove simulated VM namespaces
       ansible.builtin.command: ip netns del vm-{{ item.name }}
+      changed_when: false
       loop: "{{ stretches }}"
       loop_control:
         label: "vm-{{ item.name }}"

@@ -19,36 +19,32 @@
   when: _instances.instances | length > 0
 
 - name: Find TGW attachments
-  community.aws.ec2_transit_gateway_vpc_attachment_info:
+  amazon.aws.ec2_transit_gateway_vpc_attachment_info:
     region: "{{ aws_region }}"
     filters:
       "tag:Project": "{{ project_name }}"
   register: _tgw_attachments
 
 - name: Delete TGW attachments
-  community.aws.ec2_transit_gateway_vpc_attachment:
+  amazon.aws.ec2_transit_gateway_vpc_attachment:
     id: "{{ item.transit_gateway_attachment_id }}"
     state: absent
     region: "{{ aws_region }}"
+    wait: true
   loop: "{{ _tgw_attachments.attachments }}"
   loop_control:
     label: "{{ item.transit_gateway_attachment_id }}"
   when: _tgw_attachments.attachments | length > 0
 
-- name: Pause for TGW attachment cleanup
-  ansible.builtin.pause:
-    seconds: 30
-  when: _tgw_attachments.attachments | length > 0
-
 - name: Find Transit Gateways
-  community.aws.ec2_transit_gateway_info:
+  amazon.aws.ec2_transit_gateway_info:
     region: "{{ aws_region }}"
     filters:
       "tag:Project": "{{ project_name }}"
   register: _tgws
 
 - name: Delete Transit Gateways
-  community.aws.ec2_transit_gateway:
+  amazon.aws.ec2_transit_gateway:
     transit_gateway_id: "{{ item.transit_gateway_id }}"
     state: absent
     region: "{{ aws_region }}"
@@ -84,7 +80,8 @@
 
 - name: Delete Subnets
   amazon.aws.ec2_vpc_subnet:
-    vpc_subnet_id: "{{ item.id }}"
+    cidr: "{{ item.cidr_block }}"
+    vpc_id: "{{ item.vpc_id }}"
     state: absent
     region: "{{ aws_region }}"
   loop: "{{ _subnets.subnets }}"
