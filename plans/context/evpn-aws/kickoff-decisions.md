@@ -27,7 +27,7 @@ Each row is detailed under the gate that first needs it; owners are proposed.
 | 14 | Stage publication objects and how the collection finds the released AMI | Releng / channel owners / Architecture | [Gate C-stage](#gate-c-stage--trial-publication) |
 | 15 | Collection publisher and destination | PM / AAP content / releng | [Gate C-stage](#gate-c-stage--trial-publication) |
 | 16 | Metric source for 7504's VNI/MAC views and the standalone `frr-metrics` question | Networking / 7504 owner | [Gate C-stage](#gate-c-stage--trial-publication) |
-| 17 | Product identity: Engineering ID, CPE, registry paths, ProdSec stream | PM / Product Security / releng | [Gate C-prod](#gate-c-prod--supported-release) |
+| 17 | Product identity: Engineering ID, CPE, registry paths, ProdSec stream | PM / Product Security / releng | [Gate C-stage](#gate-c-stage--trial-publication) for the Engineering ID; [Gate C-prod](#gate-c-prod--supported-release) for the rest |
 | 18 | Support matrix, including the AWS/OCP support decision and ROSA | PM / Architecture / QE | [Gate C-prod](#gate-c-prod--supported-release) |
 | 19 | Qualification evidence and sign-offs | Networking / QE / Product Security / docs | [Gate C-prod](#gate-c-prod--supported-release) |
 
@@ -195,7 +195,11 @@ Each row is detailed under the gate that first needs it; owners are proposed.
   approved security update stream and demonstrated SBOM ingestion. Concretely: a ProdSec
   product-definitions entry, KRD's `prodsec/<tenant>.yaml` template
   ([example](examples/release/bgp-cc-prodsec-template.yaml)) and a Cicada repository definition in
-  pyxis-repo-configs. *Owner: PM / Product Security / releng.*
+  pyxis-repo-configs. The Engineering ID is the exception to this gate: stage `rh-advisories`
+  already needs it ([Publication](#gate-c-stage--trial-publication)), and BGP Cloud Connector's took
+  12 days from request to assignment ([measured
+  path](productization.md#measured-path-bgp-cloud-connector)). *Owner: PM / Product Security /
+  releng.*
 - **Support.** CORENET-7523 matrix: OCP versions (5.1 target with 4.22 backports per
   PERFSCALE-5814), AWS regions, FRR version, transports and their bandwidth limits, architecture,
   topology/HA and scale. Published 4.22 EVPN and BGP support is bare-metal only, so AWS needs an

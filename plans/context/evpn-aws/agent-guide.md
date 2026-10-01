@@ -3,7 +3,7 @@
 Read this before generating EVPN CI/CD configuration from these documents. Read
 [`context.md`](context.md) and [`kickoff-decisions.md`](kickoff-decisions.md) next,
 then use the table below to open only the parts your task needs. Use
-[`examples/`](examples/README.md) for real YAML. The whole directory is about 400 KB,
+[`examples/`](examples/README.md) for real YAML. The whole directory is about 450 KB,
 so do not load it whole; prefer the table.
 
 ## Which part to read for which task
