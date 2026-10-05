@@ -1,0 +1,3 @@
+ARG APPLIANCE_IMAGE=localhost/evpn-appliance-rhel10:ci
+FROM ${APPLIANCE_IMAGE}
+COPY storage.conf /etc/containers/storage.conf.d/99-evpn-vfs.conf
