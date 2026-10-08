@@ -1,0 +1,4 @@
+rules:
+  anchors: enable
+  key-duplicates:
+    forbid-duplicated-merge-keys: true

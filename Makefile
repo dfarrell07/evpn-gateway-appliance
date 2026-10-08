@@ -29,3 +29,12 @@ check:
 	#    out. --allow-private skips RFC1918 lab addrs; annotate known-public values with
 	#    an inline `public-safe: ok`.
 	git ls-files -z -c -o --exclude-standard | xargs -0 -r python3 $(TOOLS)/check-public-safe.py --allow-private $(if $(TERMS),--terms $(TERMS),)
+
+.PHONY: lint-yaml
+check: lint-yaml
+lint-yaml: SHELL := /bin/bash
+lint-yaml: .SHELLFLAGS := -o pipefail -c
+
+lint-yaml:
+	command -v yamllint >/dev/null
+	git ls-files -z -c -o --exclude-standard -- '*.yml' '*.yaml' '*.yamllint' | xargs -0 -r yamllint -c .yamllint --
