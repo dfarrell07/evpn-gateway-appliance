@@ -13,7 +13,7 @@ access implementation. The controlling release sequence is
 | Runtime payload | a single inventory of Red Hat–built inputs for the chosen [payload option](pipeline-spec.md#runtime-payload-corenet-7505); a digest-pinned `frr-metrics` binary; health checks in Ansible without an extra container (CORENET-7505) |
 | Configuration | no generated inventory, private keys, baked user SSH key, mutable image ref, or secret-bearing build output |
 | Networking | configuration survives reboot; supported transport/MTU selection validates before mutation; resources removed only by deployment ownership markers |
-| Access | an approved launch-time access path for each disk format, without a baked credential: EC2 metadata for the AMI, and a hypervisor mechanism for on-prem disks, such as the vSphere guestinfo/OVF properties Portal's vmdk reads at first boot, or a cloud-init seed for KVM; no shared default password |
+| Access | an approved launch-time access path for each disk format, without a baked credential: an approved AWS mechanism for the AMI (for example, EC2 metadata), and a hypervisor mechanism for on-prem disks, such as the vSphere guestinfo/OVF properties Portal's vmdk reads at first boot, or a cloud-init seed for KVM; no shared default password |
 | Operations | defined health endpoint/log path and observable failure behavior; the selected systemd/container-management implementation is tested on bootc |
 
 Run the selected bootc version's `container lint` after the final filesystem
@@ -48,6 +48,23 @@ Keep Ansible-owned configuration and image-owned defaults explicit; test migrati
 and rollback with retained state. [Filesystem contract](https://bootc.dev/bootc/bootc-filesystem.7.html),
 [build lint](https://developers.redhat.com/articles/2025/02/26/best-practices-building-bootable-containers).
 
+**PR #6 review, 2026-10-08:** its proposed
+[`d5fb9fda`, `image/rhel10/Containerfile`](https://github.com/openshift/evpn-gateway-appliance/blob/d5fb9fdad3d4bc486ba5f4c145806d64d09a39cb/image/rhel10/Containerfile)
+writes image-owned units/drop-ins under `/etc/systemd/system`. The
+[maintainer's placement question](https://github.com/openshift/evpn-gateway-appliance/pull/6#discussion_r4210638961)
+fits the proposed ownership split: put image-owned units in `/usr/lib/systemd/system` and
+local Ansible overrides in `/etc/systemd/system`. Upstream
+[`724d18a2`, `man/systemd.unit.xml`](https://github.com/systemd/systemd/blob/724d18a22ac466b058a104de69bf7226acec4729/man/systemd.unit.xml)
+defines their precedence. Confirm the chosen layout on the RHEL base and test image updates
+with a retained local override; this review is not boot or upgrade qualification.
+
+The [public CentOS mirror suggestion](https://github.com/openshift/evpn-gateway-appliance/pull/6#discussion_r4210828876)
+is a Prow test-base proposal. CI's [external-image policy](https://docs.ci.openshift.org/how-tos/external-images/#mirror-private-images)
+does not support central mirroring of external private images. Recheck authenticated RHEL
+registry/build access separately. Qualify any public mirror, replacement
+base and payload access before selecting that lane. A CentOS smoke does not qualify RHEL
+package contents, FIPS or support; retain an authenticated build on the chosen RHEL base.
+
 Define CORENET-7511's supported FIPS configuration for the selected RHEL version
 and architectures. Its image must set `fips=1` through `/usr/lib/bootc/kargs.d/`
 and enable the FIPS userspace crypto policy, following
@@ -65,11 +82,17 @@ belongs in the supported image. The same kernels disable their `md5` hash in FIP
 mode, and TCP-MD5 BGP signatures depend on it. FRR's only session authentication is
 that MD5 password (TCP-AO is an open feature request, FRRouting/frr#7240), and GTSM
 (`ttl-security`) limits reach without authenticating. CORENET-7511's BGP authentication
-therefore needs a FIPS-mode answer on both peers and its own test: sessions carried
-inside IPsec are the candidate on the VPN path, and the Direct Connect path needs an
-answer agreed with Product Security
+therefore needs a FIPS-mode answer for each actual session, agreed with Product Security
 ([crypto
 manager](https://gitlab.com/redhat/centos-stream/src/kernel/centos-stream-9/-/blob/a78a602ce2/crypto/testmgr.c)).
+Separate the EVPN overlay peers from AWS underlay routing peers. IPsec can protect
+the VPN path's sessions, but does not authenticate an unrelated DX VIF session.
+AWS [requires TCP-MD5 on Direct Connect VIFs](https://docs.aws.amazon.com/directconnect/latest/UserGuide/WorkingWithVirtualInterfaces.html);
+record whether the appliance or an external customer router terminates that session.
+DX also [provides no encryption by default](https://docs.aws.amazon.com/directconnect/latest/UserGuide/encryption-in-transit.html).
+Do not infer authentication or encryption from private connectivity. Qualify each
+chosen peer/protection path without silently disabling FIPS or adding an unapproved
+encrypted-DX variant with different MTU and performance limits.
 On that configuration's candidate qcow2/AMI, assert `/proc/sys/crypto/fips_enabled`
 is `1` and `update-crypto-policies --show` is `FIPS`; then exercise deployment, SSH/key rotation,
 supported BGP authentication, applicable VPN operations, reboot and upgrade in
@@ -174,15 +197,18 @@ The base stream sets the update cadence and an end date. RHEL 9 offers
 `rhel-9.4-bootc` reached end of life on 2026-08-25. RHEL 10 has defined platform
 bases, including `rhel10/rhel-bootc-aws` and `rhel10/rhel-bootc-kvm`, though
 registry.redhat.io served neither on 2026-09-29. Deriving from those would replace EVPN-owned
-platform deltas, but would make the
-AWS and on-prem images separate bootc Components. If FRR comes from the RHEL
-package, RHEL 9 must be 9.8 or later (EUS: `rhel9-eus/rhel-9.8-bootc`) until 9.6
-delivery lands. Record the chosen stream, its end date and the planned minor-version
-move, and keep refreshes inside KONFLUX-15693's errata windows once that gate ships
-([base evidence](source-evidence.md#11-bootc-specific-build-behavior)).
+platform deltas, but would make the AWS and on-prem images separate bootc Components. Only
+if FRR came from the RHEL package would RHEL 9 have to be 9.8 or later in the checked baseline (EUS:
+`rhel9-eus/rhel-9.8-bootc`) until 9.6 delivery lands. Record the chosen stream, its end date and
+the planned minor-version move, and keep refreshes inside KONFLUX-15693's errata windows once
+that gate ships ([base evidence](source-evidence.md#11-bootc-specific-build-behavior)).
 
-With the OCP-image option, run `frr-rhel9` by digest as the FRR container and
-use the `/frr-metrics` in that same image. With the package option, install
+Under the OCP-image direction from the 2026-10-01 review ([decision
+record](kickoff-decisions.md#already-settled)), run `frr-rhel9` by digest as the FRR container
+and use the `/frr-metrics` in that same image; the review also requires changing it to need no
+cluster and to export EVPN metrics. PR #6 proposes the package option for RHEL 10; that is a
+change to the recorded direction, requiring an owner/date decision before implementation is
+treated as approved. Under that option, install
 `frr10` (RHEL 9) or `frr` (RHEL 10) in the Containerfile, enable `frr.service`, and
 copy `/frr-metrics` with a digest-pinned `COPY --from` of `frr-rhel9` (OCP has no
 separate frr-k8s image), so that updaters and the SBOM track it. The package's
@@ -247,20 +273,26 @@ AMI test rather than treating a Containerfile build as proof.
 
 ## Source stop-ships
 
-Before the [public import](source-audit.md#0-public-import) (access and generated
-material) and any publishing build (the rest), remove or correct:
+Before the [public import](source-audit.md#0-public-import), remove private access
+and generated material. Correct the credential and exposure findings below before
+any publishing build; the remaining functional findings block a supported release:
 
 - personal/public fallback SSH access, tracked generated inventory, controller
   plaintext private keys, and `no_log` omissions around secret material;
 - global host-key bypasses, broad public SSH/BGP rules, and secret values in
   CI logs;
-- privileged or host-wide runtime containers, unauthenticated metrics listeners on every
+- unreviewed runtime privileges or host mounts, unauthenticated metrics listeners on every
   interface, and BGP peers with no inbound policy or limits ([source
   audit](source-audit.md#1-security--identity-findings));
 - selectable but unimplemented transports, unsafe default MTU/DF/MSS choices,
   ephemeral network state, and broad interface cleanup patterns; and
 - the legacy standalone cloud workload VTEP in the production path
   (CORENET-7515).
+
+A bounded non-releasing canary need not wait for transport/feature completeness,
+provided unsupported paths are disabled, its source and execution scope are reviewed,
+and the public-safety and credential/exposure gates above hold. Record that scope rather
+than presenting the build as product qualification.
 
 The source must make the production topology configurable from validated OCP
 frr-k8s peer data. A single hard-coded lab router or current three-node
@@ -270,8 +302,10 @@ health-check topology is not a product interface.
 
 1. Non-releasing Konflux bootc build produces an approved digest, SBOM, and
    Snapshot from the reviewed source.
-2. Collection/source CI checks image-reference consistency, schema, lint,
-   secret scanning, and collection build/install before the image is published.
+2. Native image-source lint, secret scanning and image-reference consistency pass
+   before publishing the candidate image. Collection lint/build/install and runtime
+   argument/preflight rejection qualify the collection paired with that candidate;
+   collection packaging is not a prerequisite for a non-releasing image build.
 3. The qcow2 derivative boots and recovers service/network configuration after
    reboot.
 4. The raw derivative imports as an AMI that boots in AWS and reports the

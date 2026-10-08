@@ -1,18 +1,18 @@
 # EVPN Gateway Appliance (EGA) — release engineering delivery plan
 
-Last reviewed: 2026-09-30. [`pipeline-spec.md`](pipeline-spec.md) is the canonical
+Requirements rechecked: 2026-10-08. [`pipeline-spec.md`](pipeline-spec.md) is the canonical
 plan; this is the proposed work breakdown. The epic CORENET-7498 is In Progress;
-all of its stories were To Do and unassigned on September 29. Ownership below is
+the 26 requirement stories remain To Do (assignment was checked on September 29). Ownership below is
 proposed.
 
 | Story | Next proof |
 | --- | --- |
-| [CORENET-7499](https://redhat.atlassian.net/browse/CORENET-7499) — collection MVP | Real-trunk and VMware port-security validation; idempotent teardown; transport gating; MTU modes, TCP MSS clamping and DF-bit enforcement; `frr-metrics` in place of `frr_exporter` (5.x builds need a [standalone decision](pipeline-spec.md#metrics-corenet-74997504)); collection packaging (`redhat.evpn_migration` in the Jira; confirm the name) and its interim internal Automation Hub publication |
-| [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500)–[7503](https://redhat.atlassian.net/browse/CORENET-7503) — transports and HA | Site-to-Site VPN transport (7500, no description yet; task breakdown §2.1 puts Libreswan on the appliance), transport preflight (7501, with its VIF criterion corrected), all-active multihoming (7502) and relay HA (7503) |
-| [CORENET-7504](https://redhat.atlassian.net/browse/CORENET-7504) — observability | Dashboards and alerts as versioned source. BGP/BFD series come from `frr-metrics`; VNI/MAC views and VTEP/DF alerts need an [agreed source](pipeline-spec.md#metrics-corenet-74997504); DX/VPN panels need CloudWatch |
-| [CORENET-7505](https://redhat.atlassian.net/browse/CORENET-7505) — component images | One digest-pinned payload inventory built from Red Hat content once PM chooses a [payload option](pipeline-spec.md#runtime-payload-corenet-7505) and updates the "approved upstream" wording; update ownership for bases, BIB, payloads and runtime pulls |
+| [CORENET-7499](https://redhat.atlassian.net/browse/CORENET-7499) — collection MVP | Real-trunk and VMware port-security validation; idempotent teardown; transport gating; MTU modes, TCP MSS clamping and DF-bit enforcement; `frr-metrics` in place of `frr_exporter` (review direction 2026-10-01: fix it to need no cluster and to [export EVPN metrics](pipeline-spec.md#metrics-corenet-74997504); the change has no owner yet); collection packaging (`network.evpn_gateway`, [review direction 2026-10-02](kickoff-decisions.md#already-settled); Jira still names `redhat.evpn_migration` and needs correction) and its interim internal Automation Hub publication |
+| [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500)–[7503](https://redhat.atlassian.net/browse/CORENET-7503) — transports and HA | Site-to-Site VPN transport (7500, no description yet; task breakdown §2.1 puts Libreswan on the appliance), transport preflight (7501, as a transit VIF per the 2026-10-01 review), all-active multihoming (7502) and relay HA (7503) |
+| [CORENET-7504](https://redhat.atlassian.net/browse/CORENET-7504) — observability | Dashboards and alerts as versioned source. BGP/BFD series come from `frr-metrics`; VNI/MAC views follow from the EVPN metrics to be added to `frr-metrics` (review direction 2026-10-01, owner/approval pending; which series, and the VTEP/DF alerts, are [open](pipeline-spec.md#metrics-corenet-74997504)); DX/VPN panels need CloudWatch |
+| [CORENET-7505](https://redhat.atlassian.net/browse/CORENET-7505) — component images | One digest-pinned payload inventory built from Red Hat content: the `frr-rhel9` image for FRR and `frr-metrics` ([option A](pipeline-spec.md#runtime-payload-corenet-7505), review direction 2026-10-01, owner/approval pending), with node-exporter, the RHEL base and package access still open and the Jira's "approved upstream" wording still to be updated; update ownership for bases, BIB, payloads and runtime pulls |
 | [CORENET-7506](https://redhat.atlassian.net/browse/CORENET-7506) — appliance CI | Non-releasing bootc canary; qcow2 and raw derivatives by digest nudge (plus vmdk/ova if vSphere is supported); substantive SBOM/provenance and platform metadata; the raw disk imported and booted as an AMI in AWS; CI → stage → production promotion gates |
-| [CORENET-7507](https://redhat.atlassian.net/browse/CORENET-7507) — collection CI | ansible-lint/yamllint; Molecule for every shipped role; VNI/ASN/transport schema validation; build and clean install of the tarball; tested `MANIFEST.json` digest carried to the approved Hub/Galaxy publication |
+| [CORENET-7507](https://redhat.atlassian.net/browse/CORENET-7507) — collection CI | ansible-lint/yamllint; Molecule for every shipped role; native argument/preflight validation of VNI/ASN/transport with runtime negative cases; build and clean install of the tarball; tested `MANIFEST.json` digest carried to the approved Hub/Galaxy publication |
 | [CORENET-7508](https://redhat.atlassian.net/browse/CORENET-7508) — integration CI | Simulated appliance + relay topology in CI: three-AS eBGP, Type-2/3 exchange, bidirectional L2 and VNI isolation, internet-mode MTU and MSS; failures and skips visible as failures |
 | [CORENET-7509](https://redhat.atlassian.net/browse/CORENET-7509) — AAP templates | Deploy, add-stretch, health-check and upgrade templates; validated surveys; webhook GitOps; RBAC; production approval; applied as code to a disposable AAP |
 | [CORENET-7510](https://redhat.atlassian.net/browse/CORENET-7510) — upgrade/rollback | Pre/post health checks, serial HA peer upgrades, automatic rollback after failed validation, BGP recovery after reboot, prior image restored |
@@ -31,15 +31,22 @@ production qualification proceeds alongside the CI/CD implementation.
 
 Numbers in "Needs decisions" refer to the [decision index](kickoff-decisions.md#decisions-at-a-glance);
 "Gate" and "Done when" follow the [pipeline plan's sequence](pipeline-spec.md#sequence-only-block-work-on-inputs-it-needs).
+Stable row IDs are retained; source checks on merged inputs can land before product import.
 
 | # | Change and where | Done when | Needs decisions | Gate |
 | --- | --- | --- | --- | --- |
-| 1 | **Public import.** Import a reviewed snapshot of the prototype into `openshift/evpn-gateway-appliance` ([import blockers](source-audit.md#0-public-import)); close the remaining unsafe-input and packaging defects with their source owners; decide whether the collection gets its own repository | `tools/check-public-safe.py --allow-private` reports nothing on the snapshot except annotated false positives; the source commit is recorded; each defect has a fixer or a tracked exception | 3, 5 | A |
-| 2 | **Source CI.** Finish Prow onboarding (`openshift/release` [#86165](https://github.com/openshift/release/pull/86165) is open and has no images or tests yet); request GitHub Actions if hosted lanes or `release_ah.yaml` are wanted; add pinned secret, image-inventory, syntax, lint, schema and collection build/install checks; add the simulated topology where the runners allow it | The built tarball installs; lint, schema and secret checks pass; temporary lint debt (baseline: 113 production-profile findings, 73% one mechanical rename; see [CI bootstrap](ci-bootstrap-spec.md#required-source-checks)) has an owner and expiry | 4, 5 | A |
-| 3 | **Tenant and bootc canary.** Settle the product home and payload option; obtain the tenant on the public cluster, the Konflux GitHub App (DPP ticket), package access and MPC capacity; onboard one non-releasing bootc Component | A bootc build with provenance and an SBOM from the reviewed source | 7, 8, 9, 10 | B |
-| 4 | **Disk Components.** Add the qcow2 and raw Components after the source digest and BIB files exist | Index and SBOM wiring proven, a digest nudge cycle completed, each disk boots and meets the target policy | 9, 10, 12 | B |
+| 2 | **Source CI.** Make repair/YAML (#9/#10) merged; next Markdown tool pin, then lint consumer. Helper cleanup/native replacement qualification and ready product checks proceed independently. [Source CI](ci-source.md#priority-after-the-first-batch) owns order and proof | Current-SHA clean/failing Prow evidence; once-only verify execution; remaining useful coverage preserved | 4; 5 for product scope | A |
+| 1 | **Public import.** Import a reviewed snapshot of the prototype into `openshift/evpn-gateway-appliance` ([import blockers](source-audit.md#0-public-import)); close the remaining unsafe-input and packaging defects with their source owners; decide whether the collection gets its own repository | The [current import scan](source-audit.md#0-public-import) and manual review pass, including RFC 1918 lab-address review; do not wait for the proposed gitleaks replacement; the source commit is recorded; each defect has a fixer or a tracked exception | 3, 5 | A |
+| 3 | **Tenant and bootc canary.** Settle the product home and payload (FRR/`frr-metrics` have a review direction pending owner/approval; node-exporter, base and package access remain open); obtain the tenant on the public cluster, the Konflux GitHub App (DPP ticket), package access and MPC capacity; onboard one non-releasing bootc Component | A bootc build with provenance and an SBOM from the reviewed source | 7, 8, 9, 10 | B |
+| 4 | **Disk Components.** Add the qcow2 and raw Components after the source digest and BIB files exist | Index and SBOM wiring proven, a digest nudge cycle completed, each disk boots and meets the target policy | 9, 10 (12 for formats beyond qcow2 and raw) | B |
 | 5 | **Candidate tests.** Add required candidate-consistency and boot/lifecycle tests, including the raw-to-AMI boot, in `push`-context ITSs with owned AWS identity (Konflux OIDC federation; an owned OpenShift CI cluster profile for Prow lanes); adapt the chosen backend to complete push and manual Snapshots | Tests block on the complete candidate; cleanup and retained test evidence proven | 11 | B, then C-stage |
 | 6 | **Productization, in parallel from the start.** Product-name approval, the Engineering ID, ProdSec registration and export compliance ([productization path](productization.md)); settle the AMI channel; obtain stage channel data, including disk-CDN repository requests, and create the matching stage release objects | Ordered stage publication, customer consumption and retry recovery proven | 2, 13, 14, 17 | C-stage |
+
+Native dependency-update extraction (L2) starts independently before product-specific suites;
+bot activation remains owner-authorized work. Role validation/behavior (L5) and native
+image-build proof (L6) come before destination certification and scheduled link work ([later priorities](ci-bootstrap-spec.md#later-sequence)).
+They need reviewed source, approved inputs and qualified runners. A local build can precede
+the tenant work in row 3; it does not replace that row's Konflux provenance/SBOM canary.
 
 ## Deliverables
 
@@ -64,7 +71,8 @@ Use [`kickoff-decisions.md`](kickoff-decisions.md) for missing inputs,
 for real YAML. Never copy another product's IDs, secret paths, task digests or
 policy exclusions as EVPN defaults.
 
-Completion is defined by the [pipeline plan's acceptance criteria](pipeline-spec.md#completion).
+The [pipeline completion checklist](pipeline-spec.md#completion) proposes evidence for the Jira
+acceptance criteria; it does not add requirements or settle open decisions.
 
 ## KRD mechanics
 

@@ -1,6 +1,7 @@
 # EVPN Gateway Appliance (EGA) — productization critical path
 
-Checked 2026-09-29 from Jira (CORENET-7400 and its children, PLMPGM-6293, RELENG-503/589/596).
+Baseline checked 2026-09-29 from Jira (CORENET-7400 and its children, PLMPGM-6293, RELENG-503/589/596);
+RELENG-596's status rechecked 2026-10-08.
 These are the steps that take calendar time from other teams and do not depend on
 engineering progress, so they should start first. Dates are the tickets' own; the
 plan's owners are proposals. [Decisions](kickoff-decisions.md) lists the inputs to settle,
@@ -12,7 +13,7 @@ repository-side precedents (KRD `prodsec` test, product-definitions, advisories)
 BGP Cloud Connector followed PLMPGM-6293, "Productization - Konflux (EPIC) Template": twelve
 numbered tasks for an OLM operator, cloned with the Jira UI Clone dialog (not the API, which
 loses the child tasks) and dated to GA at about start + 60 days. CORENET-7400 is that clone.
-No EVPN productization epic exists yet (none found under CORENET-7498 or by search).
+The September 29 survey found no EVPN productization epic; confirm current onboarding with PM.
 
 | Template task | Applies to EGA? |
 | --- | --- |
@@ -48,7 +49,9 @@ EARF document; ask the export team which section covers a bootc appliance and co
 Reading the timeline:
 
 - **Konflux work overlapped the approvals.** Stage releases ran from Aug 17 while the
-  export form, SKU mapping and SDL were open. Only production waited on them.
+  export form, SKU mapping and SDL were open. This timeline does not prove each
+  approval blocked production: SKU mapping trailed GA and export clearance was
+  unconfirmed. Obtain EGA's explicit release requirements from the responsible owners.
 - **The Operations Readiness task closed after the Eng ID existed** (Sep 28 against Aug 11),
   and RELENG-503 records no name approvals: its marketing, branding/legal and program-manager
   boxes are unchecked, with marketing marked "Not needed for operators". RELENG-589, a
@@ -60,8 +63,9 @@ Reading the timeline:
   asked whether its proposed short name, already approved by the brand team, collided with an
   existing certification name. Check the proposed short name for collisions before filing.
 - **A product without its own SKU still needs an Eng ID** to publish through Pyxis
-  (RELENG-596, a bootc product, reopened Sep 28 and still New). If EGA rides an existing offering, decide
-  that in the [product-home row](kickoff-decisions.md) first; it selects whose ID, CPE and stream apply.
+  (RELENG-596, a bootc product, reopened Sep 28 and Closed as of Oct 8). If EGA rides an
+  existing offering, decide that in the [product-home row](kickoff-decisions.md) first;
+  it selects whose ID, CPE and stream apply.
 - **Late-arriving records are non-blocking only if PM says so.** SKU mapping and lifecycle
   enablement trailed GA for BGP Cloud Connector; record the same call for EGA explicitly.
 
@@ -90,7 +94,10 @@ EGA's supported architectures before filing.
 2. **Product Security, now:** an assigned engineer, the RH-SDL tracker, the CPE request and a
    product-definitions entry. The KRD `prodsec/<tenant>.yaml` template and every production
    RPA depend on them.
-3. **Releng, when a tenant exists:** the Eng ID request with a draft RPA; delivery repositories
-   in Cicada; stage ReleasePlans and RPAs. Disk downloads also need the content set, Pulp and
-   Content Gateway requests from [source evidence](source-evidence.md#10-production-identity-precedents).
+3. **Releng, as the request inputs are ready:** request the Eng ID after name approval,
+   PM acknowledgment and architecture/environment choices; tenant creation is not a
+   prerequisite in the checked SOP. A draft RPA may accompany the request. Start delivery
+   repository/channel requests in parallel; stage ReleasePlans and RPAs need their tenant
+   and channel inputs. Disk downloads also need the content set, Pulp and Content Gateway
+   requests from [source evidence](source-evidence.md#10-production-identity-precedents).
 4. **PM, in parallel:** Eng ID → SKU mapping, lifecycle page, support tier, bug and RFE routing.

@@ -1,7 +1,7 @@
 # EVPN CI/CD — source evidence
 
-Audit refreshed **2026-09-24** and rechecked **2026-09-29**; inspected revisions
-are recorded below. This document explains the consequential choices in the
+Baseline refreshed **2026-09-24** and rechecked **2026-09-29**, with scoped follow-ups
+through **2026-10-08** below. This document explains the consequential choices in the
 [pipeline plan](pipeline-spec.md). [Prior art](prior-art.md) identifies reusable
 files; the focused specs define implementation acceptance.
 
@@ -14,9 +14,34 @@ The requirements baseline is [OCPSTRAT-3413](https://redhat.atlassian.net/browse
 read
 for those 29 records and the related work cited here. On September 29 every direct
 child was still To Do and unassigned, and every cited Jira status and GitHub PR
-state was rechecked. Related work was found through networking, Konflux, bootc,
-collection and release searches, so this is not an exhaustive account of either
-Jira or platform capabilities.
+state was rechecked. Those dated observations are baselines, not today's remote state.
+Related work came from networking, Konflux, bootc, collection and release searches; this is
+not an exhaustive inventory of Jira or platform capability.
+
+**Requirements refresh, 2026-10-08:** authenticated read-only `acli` reads covered CORENET-7498,
+all 26 requirement stories, CORENET-7615 and CORENET-7622. The 26 remain To Do; CORENET-7500
+still has no description. Their criteria match the delivery/gate summaries. CORENET-7615 now
+explicitly requires plan review, owner/date decision records and resolution of the three Jira
+conflicts; it is not a criterion-free tracking story. CORENET-7622 remains In Progress.
+Raw records stay outside this public repository.
+
+**Repository refresh, 2026-10-08:** Make repair/YAML and the repository runner definition merged;
+main is `8e8bf7d4`. Collection #3/#7 remain open at `f7797863`/`55d471e0`; image #6 was rewritten
+to `d5fb9fda`. Release#86670 remains open at `6975c370`, so active verify still selects the old
+root. [Source CI](ci-source.md#current-import-readiness) owns scoped Prow/import evidence and
+[checker qualification](ci-source.md#step-14--deferred-image-validation): four baseline failures
+and five reproduced false passes. An earlier green #6 verify does not qualify its rewritten
+head or an image build.
+
+Local native controls found the collection checksum-chain gap and qualified offline
+verification on synthetic core 2.21.4 artifacts ([integrity](ci-bootstrap-spec.md#collection-content-integrity)).
+They also tightened the [Snapshot illustration](pipeline-spec.md#candidate-snapshot) against
+newline digest suffixes/multiple JSON documents and reproduced the
+[native result formatter's limits](ci-bootstrap-spec.md#test-placement).
+AWS/OCP documentation was rechecked for transport MTU/authentication and the bare-metal EVPN
+support boundary. Upstream PR status/source follow-ups below distinguish merged fixes from
+deployed capability. These are source, host and documentation findings; no product build,
+FIPS topology, cloud import or release was qualified.
 
 Evidence is deliberately distinguished:
 
@@ -196,10 +221,14 @@ before proceeding.
 ITS runs with different Snapshot/forge references. The crash-recovery fix in
 [STONEINTG-1732](https://redhat.atlassian.net/browse/STONEINTG-1732) is present in
 `snapshot_adapter.go` at `11cc455b`, but [STONEINTG-1825](https://redhat.atlassian.net/browse/STONEINTG-1825)
-reports another duplicate path; its [PR #1713](https://github.com/konflux-ci/integration-service/pull/1713)
-remains open. The checked status controller still requests reruns for absent
-status entries. Isolate resources by run UID and bind qualification to the
-accepted attempt; neither Jira closure nor one green forge check proves that binding.
+reports another duplicate path. Its [PR #1713](https://github.com/konflux-ci/integration-service/pull/1713)
+merged on 2026-10-05 at `2508848c`. Source review on October 8 confirms the
+[status adapter](https://github.com/konflux-ci/integration-service/blob/2508848c0ee92ee1896de755ea38b586070348de/internal/controller/statusreport/statusreport_adapter.go)
+removed that missing-status rerun-label path; the
+[Snapshot adapter](https://github.com/konflux-ci/integration-service/blob/2508848c0ee92ee1896de755ea38b586070348de/internal/controller/snapshot/snapshot_adapter.go)
+now propagates scenario-list errors instead of continuing with an empty list. Deployment is
+unchecked. Isolate resources by run UID and bind qualification to the accepted attempt;
+merged code alone does not prove the deployed recovery behavior.
 
 Conforma has real test-attestation support, but its checked
 [required-task rules](https://github.com/conforma/policy/blob/ac72407d/policy/release/tasks/tasks.rego)
@@ -775,7 +804,7 @@ private-VIF wording. MTU depends on the actual path: AWS
 supports at most a 1446-byte tunnel MTU (1406–1446 by algorithm, per the
 [customer gateway best-practices
 table](https://docs.aws.amazon.com/vpn/latest/s2svpn/cgw-best-practice.html)), no jumbo frames
-and no PMTUD, so full 1500-byte inner frames over IPv4 VXLAN need DX.
+and no PMTUD, so a 1500-byte workload IP MTU over IPv4 VXLAN needs jumbo DX.
 [Published OCP 4.22 EVPN
 support](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/advanced_networking/bgp-evpn-for-user-defined-networks)
 is bare-metal only. AWS interoperability tests cannot authorize product support.
@@ -802,8 +831,7 @@ Red Hat already builds equivalents of the appliance's runtime payloads. ART's 4.
 delivers `openshift4/frr-rhel9` from the OpenShift FRR repository, whose
 [Containerfile](https://github.com/openshift/frr/blob/1277b238/Dockerfile.openshift)
 installs `frr10` and copies `/frr-metrics` and `/frr-status` into the image. The
-same file has shipped `frr-metrics` since at least `release-4.20`. [PR
-#130](https://github.com/openshift/frr/pull/130)
+same file has shipped `frr-metrics` since at least `release-4.20`. [PR #130](https://github.com/openshift/frr/pull/130)
 moved 4.22 to FRR 10.4.3 for EVPN; the source pulls upstream 10.5.3.
 [`golang-github-prometheus-node_exporter.yml`](https://github.com/openshift-eng/ocp-build-data/blob/175405a9/images/golang-github-prometheus-node_exporter.yml)
 delivers `openshift4/ose-prometheus-node-exporter-rhel9`. `frr-metrics` runs

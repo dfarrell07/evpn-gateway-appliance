@@ -8,15 +8,23 @@ Owners below are proposed responsibilities, pending team agreement. Baseline:
 internal [`evpn-on-cloud` at
 `1c8e88873af8`](https://gitlab.cee.redhat.com/datucker/evpn-on-cloud/-/tree/1c8e88873af8)
 (2026-09-08, 18 commits), rechecked from a local clone on 2026-09-29.
+The [current import qualification](ci-source.md#current-import-readiness) separately records
+public PR #7 `55d471e0` and rewritten image PR #6 `d5fb9fda` (2026-10-08). Findings below belong to
+the prototype or explicitly dated earlier snapshots; recheck each on the imported revision
+before treating it as a current defect. Local qualification is not merged or deployed code.
 
 ## 0. Public import
 
 The canonical repository is now public
 [`openshift/evpn-gateway-appliance`](https://github.com/openshift/evpn-gateway-appliance)
-(DPP-22292, created 2026-09-28; it holds a license, an `OWNERS` file and these documents, and no
-product source). Anything pushed there is
-published permanently, so import a reviewed snapshot rather than the internal
-history:
+(DPP-22292, created 2026-09-28). It now holds these documents, a `Makefile` and a CI build image,
+and the import is arriving in reviewed pieces, not as one snapshot. The dated
+[dated import qualification](ci-source.md#current-import-readiness) covers collection
+[#7](https://github.com/openshift/evpn-gateway-appliance/pull/7) and image
+[#6](https://github.com/openshift/evpn-gateway-appliance/pull/6); earlier findings cite
+collection [#3](https://github.com/openshift/evpn-gateway-appliance/pull/3). Anything
+pushed there is published permanently, so import a reviewed snapshot rather than the internal
+history, and vet each piece the same way:
 
 - The history contains a personal SSH public key, still baked in at
   `image/Containerfile:169`. Commit `1b56ba6` removed vendor and competitor names
@@ -31,13 +39,26 @@ history:
   over the imported tree, and record the source commit the snapshot came from.
   A scanner alone is not enough: `detect-secrets` reports nothing on this tree, so
   also assert that no `authorized_keys` line, tracked inventory or public IP remains.
-- Vet the snapshot with this directory's `tools/check-public-safe.py --allow-private
-  <snapshot>`, which scans every text file, Containerfiles and Terraform included. On
-  `1c8e88873af8` it reports exactly: two public addresses in `ansible/inventory/hosts.yml`;
+- Vet the snapshot with `python3 plans/context/evpn-aws/tools/check-public-safe.py <snapshot>`
+  (without `--allow-private`, so RFC 1918 lab addresses are reported and must be reviewed), which
+  scans ordinary text regardless of extension, including Containerfiles and Terraform.
+  Review its [input limits](ci-source.md#where-things-stand): oversized/binary/missing inputs
+  can pass without examination, so a clean scan alone does not prove complete import review.
+  After [step 1 of the source CI
+  plan](ci-source.md#step-1--scan-tracked-files-with-gitleaks), run `gitleaks dir <snapshot>` twice,
+  with `--config .gitleaks.toml` and then `--config .gitleaks-public.toml`, both using
+  `--redact --ignore-gitleaks-allow --gitleaks-ignore-path /dev/null`,
+  with no source-root `.gitleaksignore` ([exception controls](ci-source.md#scanner-exception-proof)).
+  The public profile's source rules allow private ranges, so grep
+  for them separately. A `gitleaks` run on `1c8e88873af8` on 2026-10-01 reported exactly: two public addresses in `ansible/inventory/hosts.yml`;
   the baked key at `image/Containerfile:169`, whose comment also names an internal lab
   host; and two AWS account IDs that are the public Red Hat and CentOS AMI owners
   (`hack/terraform/main.tf`, `evpn_aws_infra/tasks/main.yml`), which are false positives.
-  Vendor and DX-partner names cannot be found by pattern, so pass a `--terms` list for them.
+  Vendor and DX-partner names cannot be found by pattern: keep a private term list outside the
+  repository. Match it locally over the snapshot with output suppressed; fail on matches or read
+  errors and report only a generic finding in public output ([TERMS handling](ci-source.md#step-1--scan-tracked-files-with-gitleaks)).
+  The current Python import scanner can print matched material: keep its detailed output restricted
+  and publish only a reviewed summary, not raw findings.
 
 ## 1. Security & Identity Findings
 
@@ -93,10 +114,10 @@ selection, not a digest.
 | --- | --- | --- | --- |
 | [ ] | **FRR Version Mismatch** | Releng / Networking | Templates declare `10.3.1`, but image pulls `10.5.3`. Align both with the selected payload; RHEL 9's `frr10` is 10.4.3, below the version the lab validated. |
 | [ ] | **Cross-role include** | Releng | `evpn_onprem_appliance/tasks/main.yml:3` uses `playbook_dir`-relative includes which assumes the old playbook layout; replace or prove it from a clean installed collection. |
-| [ ] | **Missing Collection Files** | Releng | `galaxy.yml` (7499 names `redhat.evpn_migration`; the name is an [open decision](kickoff-decisions.md)), `meta/runtime.yml`, `.ansible-lint`, `.yamllint`, Makefile/CI entry point are completely missing. The importer also hard-fails without `repository` in `galaxy.yml`, `requires_ansible` in `meta/runtime.yml` and a README in every role ([measured](ci-bootstrap-spec.md#measured-collection-build-and-import-behavior)). |
-| [ ] | **Missing `argument_specs`** | Releng | No role contains a `meta/argument_specs.yml` to define its inputs. |
+| [ ] | **Missing Collection Files** | Releng | `galaxy.yml` (7499 names `redhat.evpn_migration`; the name was [directed in review](kickoff-decisions.md#already-settled) as `network.evpn_gateway` on 2026-10-02), `meta/runtime.yml`, `.ansible-lint`, `.yamllint`, Makefile/CI entry point are completely missing from the prototype. The earlier #3 `f7797863` snapshot adds them but failed its own checks ([dated proof](ci-source.md#steps-9-to-12--the-collection)); #7's later lint/build qualification is recorded separately in [current import readiness](ci-source.md#current-import-readiness). The importer also hard-fails without `repository` in `galaxy.yml`, `requires_ansible` in `meta/runtime.yml` and a README in every role ([measured](ci-bootstrap-spec.md#measured-collection-build-and-import-behavior)). |
+| [ ] | **Input validation coverage** | Releng / Source Owner | The prototype lacks `meta/argument_specs.yml`. The earlier [#3 at `f7797863`](https://github.com/openshift/evpn-gateway-appliance/tree/f7797863f1ed802437e19da3e86d6a564a8933c5/ansible/roles) adds it for all six roles; the dated native yamllint proof found [syntax errors in the on-prem and health-check files](ci-source.md#steps-9-to-12--the-collection). #7 passes native basic lint with the qualified Galaxy CI pins, but reuse the specs and the roles' preflight rules and prove invalid inputs fail before change; metadata presence or a syntax pass alone does not provide [runtime evidence](ci-bootstrap-spec.md#test-placement). |
 | [ ] | **AWS role depends on the CLI and a community collection** | Source Owner / AAP content | 46 `aws` CLI calls through `command` in `evpn_aws_infra/tasks/main.yml`; `tasks/teardown.yml` uses `community.aws` ([details below](#aws-role-and-certified-content)) |
-| [ ] | **Lab DX uses a private VIF with a TGW-associated DX gateway** | Networking / Source Owner | `hack/terraform/vpn.tf:2,32` plans a partner-hosted *private* VIF on the DX gateway it associates with the TGW; that association needs a transit VIF. The lab has no Site-to-Site VPN resources. |
+| [ ] | **Lab DX uses a private VIF with a TGW-associated DX gateway** | Networking / Source Owner | `hack/terraform/vpn.tf:2,32` plans a partner-hosted *private* VIF on the DX gateway it associates with the TGW; that association needs a transit VIF, which the 2026-10-01 review adopted for 7501. The lab has no Site-to-Site VPN resources. |
 | [ ] | **Missing Disk Configs** | Releng | `image/bib-<format>.yaml` (for the target on-prem formats), `image/bib-raw.yaml` (for the AMI), and `image/config.toml` are missing for the build-vm-image task. |
 | [ ] | **Unproven final image labels** | Releng / Source Owner | `image/Containerfile:164–165` sets description/version only. Add approved product identity, inspect build-task-injected metadata and validate the full effective EC label policy on the final image. `enforceContainerFirstSecurityLabels` is not a first-layer rule. |
 

@@ -2,7 +2,7 @@
 
 EVPN Gateway Appliance (EGA) enables the use of EVPN with OpenShift in public clouds.
 
-Requirements and status checked on 2026-09-29. This is planning context for the
+Requirements and status rechecked on 2026-10-08. This is planning context for the
 proposed delivery design, not a support statement or an ownership assignment.
 
 ## Scope
@@ -32,12 +32,16 @@ The intended product consists of:
 The prototype lives in an internal GitLab repository. Its public home,
 [`openshift/evpn-gateway-appliance`](https://github.com/openshift/evpn-gateway-appliance),
 was created on 2026-09-28 (DPP-22292). It holds a license, an `OWNERS` file naming four approvers
-and reviewers
-(added 2026-09-29) and these planning documents; no product source has been imported.
+and reviewers (added 2026-09-29), these planning documents, a `Makefile` and CI image definitions.
+Product source remains in open pull requests (#3, #7, #6), rechecked 2026-10-08;
+[current import readiness](ci-source.md#current-import-readiness) records #7's Makefile conflict
+and failed check, and the limits of #6's earlier green result. Repository #8 merged `Dockerfile.ci`; the release-side
+[runner switch](ci-source.md#pending-test-image-migration) remains open, so the merged verify
+configuration still uses `Dockerfile.root`.
 
 ## The prototype at a glance
 
-The only implementation today is the internal prototype
+The source baseline summarized here is the internal prototype
 [`evpn-on-cloud` at `1c8e88873af8`](https://gitlab.cee.redhat.com/datucker/evpn-on-cloud/-/tree/1c8e88873af8)
 (2026-09-08). Its `docs/evpn-task-breakdown.md` is where every CORENET-7499–7524 story
 comes from, and the source audit and networking handoff cite its files and lines.
@@ -71,7 +75,7 @@ implements only the WireGuard transport ([source audit](source-audit.md)).
 # Verify auth
 acli jira auth status
 
-# List all direct children of the EVPN epic (26 as of 2026-09-29)
+# List all direct children of the EVPN epic (26 on 2026-09-29; 27 on 2026-09-30, see Stories)
 acli jira workitem search --jql 'parent = CORENET-7498' \
   --fields "key,summary,status,assignee" --paginate --csv
 
@@ -82,15 +86,20 @@ acli jira workitem view CORENET-7505
 ### Parent feature and epic
 
 | Ticket | Summary | Status |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | [OCPSTRAT-3413](https://redhat.atlassian.net/browse/OCPSTRAT-3413) | EVPN Integration Design and AWS support (Feature) | In Progress |
 | [HPSTRAT-714](https://redhat.atlassian.net/browse/HPSTRAT-714) | EVPN Support on Public Cloud Platforms (Outcome, parent) | In Progress |
 | [CORENET-7498](https://redhat.atlassian.net/browse/CORENET-7498) | Enable EVPN integration on AWS (Epic) | In Progress |
 
 ### Stories
 
-All 26 direct children of CORENET-7498 (7499–7524) were To Do and unassigned on
-2026-09-29. Release engineering's scope is [7505](https://redhat.atlassian.net/browse/CORENET-7505)
+All 26 requirement stories under CORENET-7498 (7499–7524) were To Do and unassigned on
+2026-09-29 and still were on 2026-09-30. The epic then had a 27th child,
+[CORENET-7615](https://redhat.atlassian.net/browse/CORENET-7615), the story to review and land
+these documents. Its criteria require review of the artifact graph, gates and proposed
+responsibilities, owner/date records for decisions, and resolution of the three cited Jira
+conflicts. The 2026-10-08 read-only refresh confirms the 26 requirement stories remain To Do
+and CORENET-7500 still has no description. Release engineering's scope is [7505](https://redhat.atlassian.net/browse/CORENET-7505)
 (pin component images), [7506](https://redhat.atlassian.net/browse/CORENET-7506)
 (appliance image CI), [7507](https://redhat.atlassian.net/browse/CORENET-7507)
 (collection CI) and [7522](https://redhat.atlassian.net/browse/CORENET-7522)
@@ -101,7 +110,7 @@ release gates consume ([pipeline plan](pipeline-spec.md#required-gates)). The
 ### Documentation and prior-art tickets
 
 | Ticket | Summary | Status |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | [OSDOCS-20531](https://redhat.atlassian.net/browse/OSDOCS-20531) | Docs for OCPSTRAT-3413 | New |
 | [CORENET-7400](https://redhat.atlassian.net/browse/CORENET-7400) | BGP Cloud Connector productization template (prior art) | Closed |
 | [CORENET-7409](https://redhat.atlassian.net/browse/CORENET-7409) | BGP Cloud Connector Konflux onboarding (prior art) | Closed |
@@ -147,7 +156,7 @@ Use [`prior-art.md`](prior-art.md) for exact files and the
 
 | Repository | Use |
 | --- | --- |
-| [openshift/evpn-gateway-appliance](https://github.com/openshift/evpn-gateway-appliance) | Canonical public repository (license, `OWNERS` and these documents until the reviewed import); the inspected prototype is internal [`evpn-on-cloud`](https://gitlab.cee.redhat.com/datucker/evpn-on-cloud) |
+| [openshift/evpn-gateway-appliance](https://github.com/openshift/evpn-gateway-appliance) | Canonical public repository (license, `OWNERS`, these documents, the `Makefile` and the CI build image, with product source arriving in reviewed pieces); the inspected prototype is internal [`evpn-on-cloud`](https://gitlab.cee.redhat.com/datucker/evpn-on-cloud) |
 | [openshift/release](https://github.com/openshift/release) | Prow and OpenShift CI configuration for the repository |
 | [konflux-release-data](https://gitlab.cee.redhat.com/releng/konflux-release-data) | Tenant source definitions and separate managed stage/prod publication objects |
 | [build-definitions](https://github.com/konflux-ci/build-definitions), [container-build-catalog](https://github.com/konflux-ci/container-build-catalog) | BIB, index, source and standard build-task contracts |

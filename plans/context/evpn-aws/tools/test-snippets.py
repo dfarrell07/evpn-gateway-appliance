@@ -2,9 +2,8 @@
 """Run the shell snippets embedded in the plan against synthetic inputs.
 
 Usage: tools/test-snippets.py
-The plan tells agents to copy three snippets: the Snapshot completeness check
-(pipeline-spec.md), the fail-closed TEST_OUTPUT helper and the collection tarball
-assertion (ci-bootstrap-spec.md). This extracts each one from the Markdown, so the text
+The plan retains two illustrations: Snapshot completeness (pipeline-spec.md) and the
+collection tarball assertion (ci-bootstrap-spec.md). This extracts each from Markdown, so the text
 that is tested is the text that is published, and runs it on complete, incomplete and
 malformed inputs. Needs bash, jq and Python's standard library. Exit status is 1 if any
 case fails; a missing tool skips its cases with a warning.
@@ -69,26 +68,6 @@ def test_snapshot_check():
             expect(f"snapshot check: {name}", result.returncode == want_rc, result.stderr.strip())
 
 
-def test_test_output():
-    snippet = block("ci-bootstrap-spec.md", "emit_test_output()")
-    cases = [
-        ("all expected cases pass", "5 0 0 5", "SUCCESS"),
-        ("fewer cases than expected fails", "4 0 0 5", "FAILURE"),
-        ("any failure fails", "5 1 0 5", "FAILURE"),
-        ("nothing ran fails", "0 0 0 5", "FAILURE"),
-    ]
-    for name, args, want in cases:
-        result = bash(f"{snippet}\nemit_test_output {args}")
-        try:
-            out = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            expect(f"TEST_OUTPUT: {name}", False, result.stdout + result.stderr)
-            continue
-        valid = (out.get("result") == want and re.fullmatch(r"\d{10}", out.get("timestamp", ""))
-                 and all(isinstance(out.get(k), int) and out[k] >= 0 for k in ("successes", "failures", "warnings")))
-        expect(f"TEST_OUTPUT: {name}", bool(valid), result.stdout)
-
-
 def make_tarball(path, names):
     with tarfile.open(path, "w:gz") as tar:
         for name in names:
@@ -127,9 +106,8 @@ def main():
         return 0
     if shutil.which("jq"):
         test_snapshot_check()
-        test_test_output()
     else:
-        print("SKIP: jq not found; Snapshot check and TEST_OUTPUT helper not tested")
+        print("SKIP: jq not found; Snapshot check not tested")
     test_tarball_assertion()
     print(f"{len(FAILURES)} failed")
     return 1 if FAILURES else 0

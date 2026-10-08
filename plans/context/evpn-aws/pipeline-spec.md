@@ -1,15 +1,16 @@
 # EVPN Gateway Appliance (EGA) — CI/CD implementation and release plan
 
-Last reviewed: 2026-09-30. Proposed design; this is the controlling plan for this
-document set. Its linked implementation contracts are part of the acceptance
-criteria; [source evidence](source-evidence.md) records sources, revisions, Jira
-findings and verification limits.
+Last reviewed for source-CI boundaries and Jira coverage: 2026-10-08. Proposed implementation and release design
+for this document set. Jira acceptance criteria define requirements; linked contracts propose
+how to implement and demonstrate them, and decisions require an owner/date in
+[`kickoff-decisions.md`](kickoff-decisions.md). [Source evidence](source-evidence.md) records
+sources, revisions, Jira findings and verification limits.
 
 ## Outcome and ownership
 
 Deliver a traceable release set: the bootc appliance image (the registry update
 source), on-prem disk images (qcow2 per 7506/7522, plus vmdk/ova if vSphere is
-supported), an AMI, and the Ansible collection (`redhat.evpn_migration` in 7499),
+supported), an AMI, and the Ansible collection (`redhat.evpn_migration` in 7499, `network.evpn_gateway` since 2026-10-02),
 with versioned dashboards, alerts, deployment/lifecycle documentation and support
 boundaries.
 
@@ -43,13 +44,15 @@ scope decision before including or deferring the parent's L3 requirement.
 
 | Gate | Inputs needed | Exit evidence |
 | --- | --- | --- |
-| A — source CI | reviewed public import, Prow onboarding, collection location/FQCN/API, tool versions, owners for existing defects | build/install tarball, lint/schema/secret checks; temporary lint debt has owner/expiry |
+| A — source CI | Existing Prow verify and tools; reviewed product import for product checks | Make-status repair and YAML merged. Next proposed check: Markdown lint; helper cleanup and ready product checks proceed independently. Full migrations remain deferred. [Detailed sequence](ci-source.md#the-sequence) |
 | B — non-releasing Konflux builds | source access, tenant/cluster/RBAC, approved image/package inputs; MPC capacity for privileged-nested bootc builds and rootful disk builds | bootc build + provenance, then on-prem disk canaries, digest nudge, disk boot and target-policy results |
 | C-stage — trial publication | channel-specific stage destination, credentials, product metadata including the Engineering ID, applicable ECP/RP/RPA | stage container/download/AMI/collection install and launch evidence |
 | C-prod — supported release | approved configuration matrix and AWS/OCP support decision, qualified candidate, production destinations/listings, security/QE/PM sign-off | same candidate published, customer paths verified, rollback and operational handoff recorded |
 
-Before A's public import, remove baked access, tracked private/generated material
-and unsafe build inputs ([public import](source-audit.md#0-public-import)).
+The first source-CI batch runs on the planning tree now ([bounded sequence](ci-source.md#the-sequence));
+it needs no product import, Konflux tenant, cloud credentials or publication channel.
+Before importing product source for A's collection/image checks, remove baked access, tracked
+private/generated material and unsafe build inputs ([public import](source-audit.md#0-public-import)).
 Feature completeness, HA qualification, final Marketplace IDs, and all parent
 deployment-matrix decisions are production requirements; they are not
 prerequisites for a non-releasing build canary. Source is public; choose build
@@ -90,7 +93,8 @@ reviewed source ──► bootc digest ──► digest-update commit ──► 
 Start with one bootc Component and add disk derivatives (qcow2, raw for the AMI,
 then any approved vSphere format) as their packaging canaries pass.
 The collection need not be a Konflux Component: bind it to the set by its
-`MANIFEST.json` digest (see [section 1](#1-source-and-collection-ci)).
+`MANIFEST.json` digest with its verified content chain
+(see [collection integrity](ci-bootstrap-spec.md#collection-content-integrity)).
 Do not create eight Components, overlay images, an exporter image, or an EE by
 default. FRR, node-exporter and the frr-k8s metrics binary are payload
 dependencies, not automatically EVPN-owned builds (CORENET-7505).
@@ -119,7 +123,17 @@ text, and PM owns that update:
 | B. RHEL package | `frr10` (RHEL 9.8+) or `frr` (RHEL 10) installed in the bootc image as a systemd service | `COPY --from` the OCP image by digest (4.22 only, as above), or build from frr-k8s source with Red Hat Go FIPS settings | RHEL errata and support; hermetic build and bootc rollback cover FRR; removes the FRR container and its pull. Selects a RHEL 9.8+ or RHEL 10 base (9.7 lacks `frr10`; 9.6 EUS delivery is open); RHEL 9's `frr10` stream retires in November 2030 |
 | C. Community images | As in the source | `quay.io/metallb/frr-k8s` | Unsupportable without an exception |
 
-A and B carry the same FRR 10.4.3 package today. OCP's `frr-metrics` shells out to
+**Review direction (2026-10-01; decision owner pending).** The Networking maintainers' review of pull request #2 chose option A
+for FRR and `frr-metrics` and required `frr-metrics` to be fixed so that it needs no Kubernetes
+cluster and exports EVPN metrics ([decision record](kickoff-decisions.md#already-settled)). The
+review named no decision owner, PM and Product Security have not confirmed it, and 7505's
+"approved upstream" wording is still to be edited in Jira. Consequences: the 5.1 target needs
+`openshift5/frr-rhel9`, which Pyxis did not list on 2026-10-01 (`openshift4/frr-rhel9` is
+published); the standalone and EVPN changes are product requirements on the OCP build, which must
+stay FIPS-capable (below); and node-exporter's source, the RHEL base and package access are still
+open.
+
+A and B carried the same FRR 10.4.3 package in the checked baseline. OCP's `frr-metrics` shells out to
 `vtysh`, so it works beside either. ART builds it with Red Hat Go in strict FIPS
 mode (`CGO_ENABLED=1`, `strictfipsruntime`, dynamically linked against RHEL 9
 glibc) even though the Containerfile asks for `CGO_ENABLED=0`. The upstream binary,
@@ -138,8 +152,8 @@ split as follows:
 
 | 7504 criterion | Source | Coverage |
 | --- | --- | --- |
-| Appliance, VLAN and tunnel status views | node-exporter (v1.12.1): default `netclass` (`node_network_up`, carrier and carrier-change counters for every device, so VLAN, bridge, VXLAN and WireGuard interfaces) and `netdev` counters; `systemd`, off by default, for service state | Covered for interface and service state. IPsec has no per-tunnel series on the appliance: `xfrm`, also off by default, gives aggregate error counters only, so use CloudWatch `TunnelState` or a textfile from `ipsec status` |
-| BGP sessions, route churn | `frr-metrics`: per-peer, per-VRF session state and message counters (updates, keepalives, notifications) | Covered, with update counts standing in for churn |
+| Appliance, VLAN and tunnel status views | node-exporter (v1.12.1): default `netclass` (`node_network_up`, carrier and carrier-change counters for every device, so VLAN, bridge, VXLAN and WireGuard interfaces) and `netdev` counters; `systemd`, off by default, for service state | Covered for interface and service state. IPsec has no per-tunnel series on the appliance: `xfrm`, also off by default, gives aggregate error counters only; use CloudWatch `TunnelState` for AWS VPN tunnels; appliance-side per-tunnel views need a qualified metric source |
+| BGP sessions, route churn | `frr-metrics`: per-peer, per-VRF session state and message counters (updates, keepalives, notifications) | Sessions covered; update-message counts are a churn proxy, not counts of individual route additions/withdrawals. Qualify the dashboard's stated meaning |
 | Prefix counts | `frr-metrics`: sent and accepted counters **summed across every address family** of a neighbor ([`parse.go`](https://github.com/metallb/frr-k8s/blob/20c36775/internal/frr/parse.go)) | Partial: EVPN routes cannot be separated from IPv4/IPv6 on a session that carries both; OpenShift's `release-4.22` and `release-5.1` builds parse it the same way and label series only by peer and VRF |
 | BFD | `frr-metrics` BFD collector: control/echo packets, session up/down events | Covered |
 | VNI and MAC learning, VTEP and DF alerts | None | Gap. The legacy exporter's L2VPN collector provided them |
@@ -155,16 +169,28 @@ authorizes every scrape through the Kubernetes API, and builds that handler with
 `rest.InClusterConfig()` only. Upstream v0.0.26 run without a cluster exits at start-up with
 `unable to load in-cluster configuration, KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT
 must be defined`. The 5.x builds, which are the 5.1 target, therefore cannot serve an
-appliance as they stand. Choose with the 7504 owner among the 4.22 binary, a build with
-authentication made optional (an upstream change or a maintained patch), and BGP/BFD series
-from the same textfile route as the VNI/MAC counts; pin explicit bind and TLS flags whichever
-build is used, because the defaults differ by release.
+appliance as they stand. The 2026-10-01 review directs `frr-metrics` to be fixed to need
+no cluster; its decision owner and approvals remain pending. Whether that is an upstream
+change or a maintained patch of the OCP build is open.
+Any interim exporter needs owner approval and standalone qualification. Pin explicit bind and
+TLS flags whichever build is used, because the defaults differ by release.
 
-The VNI/MAC gap is a coverage decision, not an impossibility: node-exporter's
-textfile collector can publish EVPN counts gathered by a timer from `vtysh ... json`
-and `bridge fdb`, adding no container, or frr-k8s can gain EVPN collectors upstream.
-Choose the source with the 7504 owner before building dashboards, and confirm the
-OpenShift build's collectors match upstream.
+The 2026-10-01 review chose to add EVPN metrics to `frr-metrics`, so dashboards should target
+that source; series and implementation ownership remain open. Do not prescribe a timer and
+custom textfile producer just because node-exporter can expose its output. Use existing FRR
+and bridge diagnostics during early role/build work. If an interim producer is selected,
+record its owner, metric contract and maintenance cost before implementation; it is not a
+prerequisite for unrelated source CI. Confirm the OpenShift build's collectors match upstream.
+
+When the rules arrive, use pinned `promtool check rules --lint-fatal` and
+[`promtool test rules`](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/)
+for syntax and declared healthy, firing, recovery and missing-series cases. Native fixtures
+support empty expected alerts; a healthy filter returning no series is not automatically a
+failure. On the candidate, verify the required source series/labels for enabled features and
+expected dashboard results under controlled states. This checks the real metric contract;
+static rule tests alone do not prove live scraping or notification delivery.
+No custom PromQL parser or dashboard framework is needed. Tool/runtime and consumer proof
+belong to the rule check's later PRs, not the first source-CI batch.
 
 ### Disk formats and the collection
 
@@ -226,8 +252,9 @@ source-image and derivative evidence.
   integration-service nudging uses `NudgeConfig` with `immediate` edges. Start with
   build-service: integration-service nudging is still onboarding early adopters
   (STONEINTG-1744), and its GitHub App credential support, which a GitHub-hosted EVPN
-  needs, was fixed on September 8 but was still Release Pending on September 29
-  (STONEINTG-1764). This controller migration is separate from ComponentGroup adoption.
+  needs, was fixed on September 8 and STONEINTG-1764 is Closed as of October 8;
+  that status does not qualify the deployed controller. This controller migration is separate
+  from ComponentGroup adoption.
   On September 25 `NudgeConfig` also gained status types for batches that accumulate
   several builds before firing one nudge (KFLUXSE-479; no batching field in the spec yet),
   so re-read the nudge model before relying on one nudge per build. Verify ownership
@@ -277,26 +304,37 @@ updated derivative ([Snapshot behavior](https://konflux-ci.dev/docs/testing/inte
   while the collection shares the image repository; a separate collection repository
   needs that input or an RHTAS-style carrier Component.
 
-A minimal check for the component-set part of "Reject inconsistent sets", tested on synthetic
-Snapshots (complete,
-missing, extra and tag-pinned components, and a recorded omission); it does not bind a disk's
-input digest to the bootc image, which the disk-input checks above still require:
+A minimal illustration for the component-set part of "Reject inconsistent sets". The
+repository's `tools/test-snippets.py` exercises this exact block with six synthetic cases:
+complete, missing, extra, tag-pinned, recorded omission and empty components. Those tests
+pass locally (2026-10-07); deployed gate proof remains open. This block does not bind a
+disk's input digest to the bootc image, which the disk-input checks above still require:
 
 ```bash
 # want="bootc,qcow2,raw"  (the Component names the candidate must hold)
-jq -e --arg want "$want" '
-  ($want | split(",") | sort) as $w
-  | ([.spec.components[].name] | sort) == $w
-  and all(.spec.components[]; .containerImage | test("@sha256:[0-9a-f]{64}$"))
-  and ((.metadata.annotations["test.appstudio.openshift.io/create-snapshot-status"] // "") == "")
+jq -e --slurp --arg want "$want" '
+  length == 1 and (.[0] |
+    ($want | split(",") | sort) as $w
+    | ([.spec.components[].name] | sort) == $w
+    and all(.spec.components[]; .containerImage | test("@sha256:[0-9a-f]{64}\\z"))
+    and ((.metadata.annotations["test.appstudio.openshift.io/create-snapshot-status"] // "") == "")
+  )
 ' snapshot.json
 ```
+
+The single-document guard and absolute regex end are deliberate: host jq 1.8.1
+controls on 2026-10-07 showed the earlier streaming check passed a trailing-newline
+digest and an invalid Snapshot followed by a valid one. The revised block rejects
+those, empty input, duplicates and malformed JSON; the six existing cases still pass.
+Use native jq ([stream/exit semantics](https://jqlang.org/manual/#invoking-jq)), not
+a new Snapshot parser or schema service. This checks the set/digest suffix only;
+actual registry-reference parsing, trusted evidence and disk-input binding remain required.
 
 ### Evidence and retention
 
 - **Bill of materials.** Retain source and nudge commits, bootc/disk index and child
-  digests, companion source-container digest, collection version and `MANIFEST.json`
-  digest, payload inventory, BIB/config hashes, task bundles, resolved policy/data
+  digests, companion source-container digest, collection version, tarball checksum and
+  verified `MANIFEST.json` digest, payload inventory, BIB/config hashes, task bundles, resolved policy/data
   identities, Snapshot namespace/name/UID, test revisions/results, publication records,
   and AMI IDs per account/region with backing disk checksum. Preserve artifacts and
   evidence beyond PR registry expiry and cluster garbage collection.
@@ -306,7 +344,7 @@ jq -e --arg want "$want" '
   ownership. Snapshot garbage collection counts rather than ages: about 640 push and 70
   pull-request Snapshots per tenant namespace (quota 1024), plus the latest five
   unreleased push Snapshots per Component, so a busy nudge loop can delete an unprotected
-  candidate within a day or two. An unparseable duration leaves the Snapshot unprotected,
+  candidate within a day or two. A duration that cannot be parsed leaves the Snapshot unprotected,
   and protected Snapshots still count toward the limits. This protects the CR, not image
   blobs, signatures or run evidence.
 - **After release.** The Release protects its Snapshot only until KubeArchive deletes the
@@ -335,10 +373,15 @@ jq -e --arg want "$want" '
 
 ## 1. Source and collection CI
 
-Implement the [CI bootstrap contract](ci-bootstrap-spec.md): one pinned entry point
-for secret/lint/schema/preflight checks, collection build and clean installation of
-the **built tarball**, destination-appropriate import/sanity checks, and supported
-Ansible/AAP execution. Provide Molecule scenarios for every shipped role (7507).
+Follow the [source-CI priority](ci-source.md#priority-after-the-first-batch) for small,
+independent Make targets and the [CI bootstrap sequence](ci-bootstrap-spec.md#later-sequence)
+for role tests, native builds and dependency updates. Those contracts own tool selection,
+pin/consumer proof and the pending runner migration; keep existing coverage until parity
+is proven. Role tests need their own reviewed inputs/runner, not destination approval;
+local builds need no tenant. The Konflux extension still meets Gate B's provenance/SBOM
+requirements, and publication retains the destination's supported Ansible/AAP checks.
+Provide Molecule scenarios for every shipped role (7507), starting with one real scenario
+and extending coverage, reusing native role validation and product preflight assertions.
 Keep ordinary checks unprivileged; use dedicated capacity for systemd, kernel,
 VM/cloud and physical-topology behavior. Fix the [source findings](source-audit.md)
 at their stated gates; reject invalid network/transport inputs before host mutation.
@@ -347,26 +390,21 @@ Prove the current PR commit's expected source/build/test checks block merge,
 including bot changes, delayed/missing triggers, retries and replacement commits.
 Exercise path filters against all declared inputs before enabling auto-merge.
 
-Deliver the collection outside Konflux, as the networking org's
+Keep collection CI independent of image orchestration, as the networking org's
 `network.offline_migration_sdn_to_ovnk` does: lint, sanity and import scripts plus
-migration/rollback integration on AWS clusters, all in OpenShift CI. Publish from a
-GitHub release through ansible-content-actions' `release_ah.yaml`, the path
-`hashicorp.vault` and the validated `redhat-cop/network.*` collections use
-([examples](prior-art.md#collection-and-lifecycle-references)). That needs GitHub
-Actions on the repository, which the `openshift` org enables at the owner's request
-(PCO-1330); the SDN-migration collection never ran its configured workflows and
-reached Automation Hub another way (DPP-17276). The workflow rebuilds from the tag.
-That is acceptable because rebuilding one commit changes tarball bytes but not
-`MANIFEST.json`/`FILES.json`, which collection signatures and `ansible-galaxy
-collection verify` check: compare the rebuilt manifest digest with the tested one
-before publishing, pin the workflow by SHA and restrict its credential environment
-to approved release tags. CORENET-7499's interim "internal publishing workflow" is
-task breakdown §1.5.16's "internal Automation Hub": the private Automation Hub in
-the disposable AAP that 7509 needs can serve it and doubles as the isolated trial
-destination. Label its contents unsupported. Use RHTAS's Konflux carrier only if
-the collection must travel in the Snapshot. The [collection
-contract](ci-bootstrap-spec.md#collection-and-ee-artifacts)
-holds the packaging, dependency, retry and signature checks; shipping an EVPN EE
+migration/rollback integration on AWS clusters, all in OpenShift CI. Destination and
+publisher remain [decision 15](kickoff-decisions.md) inputs. For hosted Hub, a GitHub release
+through SHA-pinned ansible-content-actions' `release_ah.yaml` is an option when the owner
+enables Actions (PCO-1330), as `hashicorp.vault` and validated `redhat-cop/network.*`
+collections do ([examples](prior-art.md#collection-and-lifecycle-references)). AAP's Zuul
+or another approved trusted native publisher can satisfy the same [publication
+contract](ci-bootstrap-spec.md#collection-and-ee-artifacts): tested manifest identity,
+restricted credentials and candidate approval. Publication itself does not require Actions;
+the SDN-migration collection never ran its configured workflows (no workflow runs,
+checked 2026-10-01) and reached Automation Hub another way (DPP-17276). CORENET-7499's interim "internal publishing workflow" is task breakdown
+§1.5.16's "internal Automation Hub": the private Automation Hub in the disposable AAP that 7509
+needs can serve it and doubles as the isolated trial destination. Label its contents unsupported.
+Use RHTAS's Konflux carrier only if the collection must travel in the Snapshot; shipping an EVPN EE
 remains optional.
 
 CORENET-7507 requires an approved Hub or Galaxy destination. Agree the content
@@ -374,16 +412,15 @@ class, support contract, namespace and importer/signing/approval with AAP early.
 Role-only content is directed toward validated content, which carries no support
 requirements, and certified collections cannot depend on community collections
 ([content guidance](https://access.redhat.com/articles/4916901)). The EVPN
-collection is role-only and uses `community.aws`. `redhat.rhel_system_roles`
+prototype is role-only and uses `community.aws`; the reviewed import's declared and
+actual dependencies must determine its content class. `redhat.rhel_system_roles`
 is a role-only Red Hat collection supported both from Automation Hub and as an
 RPM ([delivery](https://access.redhat.com/articles/3050101)); agree which model
 applies before choosing the publisher.
 CDN/RPM delivery would require a separate scope decision.
-AAP's Zuul publisher and a Konflux tenant publisher are alternatives; the latter
-must meet the credential boundary in the contract. Prove any path at an isolated
-trial destination first: Hub's staging approval queue is not that isolation.
-Require successful import/approval, a customer-visible matching manifest and signed
-installation. Native Konflux collection publishing remains unfinished (KONFLUX-5470).
+AAP's Zuul publisher and a Konflux tenant publisher are alternatives; the contract holds the
+trial-destination, approval and signature checks. Native Konflux collection publishing remains
+unfinished (KONFLUX-5470).
 
 ## 2. Bootc and disk builds
 
@@ -423,7 +460,7 @@ imported AMI, because that is the artifact customers receive.
 
 ### Required tests and contexts
 
-**Result integrity**
+#### Result integrity
 
 - Required ITSs must match the candidate's context. The Snapshot's
   `AppStudioTestSucceeded` verdict counts only required (non-optional, context-matching)
@@ -492,11 +529,11 @@ and leases by PipelineRun UID; retries
 must be idempotent and concurrent attempts isolated. Exclusively lease shared labs.
 Reconcile the accepted attempt with the Snapshot's scenario reference. Canary
 duplicates, cancellation and deterministic subnet allocation (CORENET-7120).
-Use a durable resource ledger, normal cleanup and an independently scheduled,
-ownership-scoped orphan reaper that protects active runs and retained releases.
-Monitor reaper execution and remaining owned resources.
-The [AWS lifecycle contract](bib-configuration-spec.md#disk-validation-and-aws-lifecycle)
-defines inventory, expiry, failure/cancellation, evidence and deletion checks.
+Reuse the selected backend's durable resource records and cleanup, plus an owned
+scheduled reaper that protects active runs and retained releases. A retained run artifact
+can be the ledger; this does not require a new database, service or account-wide cleanup
+tool. The [AWS lifecycle contract](bib-configuration-spec.md#disk-validation-and-aws-lifecycle)
+defines retention, inventory, expiry and deletion proof; monitor remaining owned resources.
 
 ### Required gates
 
@@ -509,11 +546,11 @@ defines inventory, expiry, failure/cancellation, evidence and deletion checks.
 | HA and lifecycle | 7502, 7503, 7510: on-prem LACP/shared ES, dual-appliance inventory, Type-1/4 and DF/BFD behavior, no duplicate BUM, MAC re-advertisement, FRR-crash, power-loss and cable-pull recovery, relay ECMP, tunnel survival and BGP recovery when a relay returns; pre/post checks, serial peer upgrades, automatic rollback on failed validation, configuration compatibility |
 | OCP interoperability | 7512, 7513, 7515: pinned OCP release, native primary-CUDN/VTEP/FRRConfiguration/RouteAdvertisements APIs, correct prerequisites and peer advertisements, multiple VNIs/RTs and day-2 addition of a new EVPN CUDN; supported policies/services and ARP suppression per the [networking handoff](networking-spec.md#required-handoff-to-ciqe); OCP updates with the fabric connected; no production standalone VTEP |
 | End-to-end qualification | 7516–7519: ARP/BUM/TCP/UDP, isolation, forward and reverse propagation across every ASN, second OCP cluster/distinct ASN, BGP flap and reconvergence on every hop, MAC mobility/GARP/withdrawal, rapid moves and duplicate detection, cutover/rollback under traffic, appliance/relay/node/DX/VPN failures, storm containment, convergence at 100/500/1000 MACs and latency/throughput during reconvergence |
-| AAP and publication | 7504, 7509, 7521–7524, OSDOCS-20531: deploy/add-stretch/health/upgrade templates, validated surveys, webhook GitOps, RBAC and production approval, applied as code to a disposable AAP; versioned dashboards/alerts/docs with rule syntax/unit tests and every queried series observed on a running candidate, including 7504's VNI/MAC views from the [agreed metric source](#metrics-corenet-74997504), a support matrix that names OCP, AWS region, FRR, transport, on-prem environment and per-transport bandwidth limits, release notes with support boundaries, and security/performance sign-off |
+| AAP and publication | 7504, 7509, 7521–7524, OSDOCS-20531: deploy/add-stretch/health/upgrade templates, validated surveys, webhook GitOps, RBAC and production approval, applied as code to a disposable AAP; versioned dashboards/alerts/docs with native rule syntax/unit tests and expected series/labels/query states on a running candidate, including 7504's VNI/MAC views from the [agreed metric source](#metrics-corenet-74997504), a support matrix that names OCP, AWS region, FRR, transport, on-prem environment and per-transport bandwidth limits, release notes with support boundaries, and security/performance sign-off |
 
 ### OCP qualification lanes
 
-**Cases and evidence**
+#### Cases and evidence
 
 - Coordinate with CORENET-7075/7564's BGP/EVPN OTE lane, and verify the expected EVPN
   cases actually execute. The OTE suite silently drops its EVPN specs unless the cluster
@@ -533,8 +570,10 @@ defines inventory, expiry, failure/cancellation, evidence and deletion checks.
   runs them only after someone comments `/test <name>`, and Tide blocks on them only once
   they have run (OpenShift's Prow config does not set `require_manually_triggered_jobs`).
   Those lanes gate OVN-K changes, not EVPN candidates: for qualification, invoke the lane or an EVPN-specific
-  one against the selected OCP payload and collect its result explicitly. CORENET-7564's
-  CNO lanes (openshift/release #85612) are still open.
+  one against the selected OCP payload and collect its result explicitly. CORENET-7564's CNO lanes merged on 2026-10-06
+  ([`release` `83e107c9`, CNO config](https://github.com/openshift/release/blob/83e107c90ccaf987752096257c7489e4bc022a22/ci-operator/config/openshift/cluster-network-operator/openshift-cluster-network-operator-main.yaml));
+  the added OTE jobs also use `always_run: false`. This is merged configuration, not an
+  EVPN candidate run or proof the expected cases executed.
 - Run the interoperability suite against each new y-stream's nightly/EC payloads before
   extending the support matrix; OpenShift CI's periodic layered-product `lp-interop`
   jobs are an existing mechanism.
@@ -542,7 +581,7 @@ defines inventory, expiry, failure/cancellation, evidence and deletion checks.
   qualification of the supported payload must reject undeclared image overrides or
   disabled reconciliation ([conditional FRR override example](prior-art.md#preserving-the-test-subject)).
 
-**Clusters and accounts**
+#### Clusters and accounts
 
 - Choose a provisioner/profile or owned lab with the required external-router topology;
   a stock cloud/HyperShift cluster does not establish that capability.
@@ -563,7 +602,7 @@ defines inventory, expiry, failure/cancellation, evidence and deletion checks.
   ([how-to](https://docs.ci.openshift.org/how-tos/adding-a-cluster-profile/)). See the
   [OpenShift CI adapter contracts](prior-art.md#openshift-ci-adapters).
 
-**Transports and labs**
+#### Transports and labs
 
 - Site-to-Site VPN can be exercised wholly in AWS with a simulated on-prem gateway (for
   example, Libreswan on an instance with a public address).
@@ -598,10 +637,10 @@ evidence](prior-art.md#ocp-upgrade-qualification).
 
 ### Support scope and scale
 
-Resolve two source-contract mismatches with Architecture before implementing their
-checks: 7501's "private VIF and TGW associations" (a TGW-associated DX gateway needs
-a transit VIF) and the per-transport inner MTU (full 1500-byte frames need jumbo DX;
-AWS VPN leaves at most 1396 bytes), as the
+A TGW-associated Direct Connect gateway requires a transit VIF. The 2026-10-01 review
+interprets 7501's "private VIF and TGW associations" that way; Jira correction remains pending. Resolve the other source-contract mismatch, the per-transport inner
+MTU (1500-byte workload IP packets need jumbo DX; AWS VPN leaves at most 1396 bytes), with Architecture
+before implementing its check, as the
 [networking handoff](networking-spec.md#required-handoff-to-ciqe) details.
 
 Obtain explicit AWS/OCP support authorization: CORENET-7094 is on-prem scope, and
@@ -708,8 +747,9 @@ the approved AMI channel; Hub / Galaxy collection. Ship dashboards and alert rul
 inside the collection, for example as monitoring-role files, so CORENET-7522's dashboard
 publication needs no separate channel.
 
-- **Ledger.** Publications are not atomic, so keep a ledger of channel completion and
-  retries: Release and managed/internal run identities and published outputs. Reconcile
+- **Ledger.** Reuse retained Release status, managed/internal run results and published
+  identities for channel completion and retries; add only missing readback evidence to the
+  selected evidence store, not another publication service/database. Reconcile
   unfinished work and completed side effects with the release owner before creating a
   replacement Release. For Marketplace, require AMI vetting evidence and reconcile
   existing versions by artifact identity; approve publisher retirement settings against

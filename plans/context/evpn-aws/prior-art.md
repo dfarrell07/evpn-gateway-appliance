@@ -141,8 +141,7 @@ uses `taskRunSpecs` to assign the release-creation task its own service account.
 KRD's `crt-redhat-acm-tenant/hypershift-operator/nightly-promotion/` has the actual
 CronJob, ITS, RBAC and `auto-release: "false"` ReleasePlan. Do not copy its
 latest-single-component selection or floating test-code refs.
-[CNTRLPLANE-3434](https://redhat.atlassian.net/browse/CNTRLPLANE-3434) and [release PR
-#81877](https://github.com/openshift/release/pull/81877)
+[CNTRLPLANE-3434](https://redhat.atlassian.net/browse/CNTRLPLANE-3434) and [release PR #81877](https://github.com/openshift/release/pull/81877)
 show why requested image overrides need runtime verification: the original
 override was overwritten before deployment.
 
@@ -201,8 +200,7 @@ CLI](https://gitlab.cee.redhat.com/releng/advisories/-/blob/ffa7ed0939/data/advi
 has eight archive rows without SBOM URLs;
 [Hummingbird](https://gitlab.cee.redhat.com/releng/advisories/-/blob/ffa7ed0939/data/advisories/hummingbird-tenant/2026/49787/advisory.yaml)
 links its source-RPM SBOM and attestation, and that SBOM downloads successfully.
-The new [generic-archive example, PR
-#102](https://github.com/RedHatProductSecurity/security-data-guidelines/pull/102)
+The new [generic-archive example, PR #102](https://github.com/RedHatProductSecurity/security-data-guidelines/pull/102)
 is still unmerged: its README explicitly describes partial dependencies and
 placeholder source provenance, not Konflux-generated production output. Use it
 to agree the EVPN contract with Security, not as a ready-made disk/collection publisher.
@@ -384,12 +382,13 @@ is New and points to a separate internal `rhel-image-tests` migration; its
 implementation was unavailable for this audit.
 
 [`osbuild/cloud-cleaner` at `135b45d`](https://github.com/osbuild/cloud-cleaner/blob/135b45d/aws.py)
-is a starting point for EC2 instances, self-owned AMIs and EBS snapshots.
+is a historical cleanup example for EC2 instances, self-owned AMIs and EBS snapshots.
 Its default six-hour age rule permits deletion of untagged resources unless
 protected by `persist=true`; it neither checks run liveness nor follows inventory
-pagination, and catches deletion errors without failing the process. Add explicit
-ownership/lease checks, complete inventory, failure monitoring and the remaining
-EVPN resource types before reuse.
+pagination, and catches deletion errors without failing the process. It does not qualify an
+EVPN reaper. Prefer the selected backend or an owned cleanup service; prove ownership/leases,
+complete inventory, failed deletions and resource coverage before adding residual glue
+([lifecycle contract](bib-configuration-spec.md#disk-validation-and-aws-lifecycle)).
 
 ## OpenShift CI adapters
 
