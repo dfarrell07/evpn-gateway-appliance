@@ -16,6 +16,9 @@ verify: check
 TOOLS := plans/context/evpn-aws/tools
 TERMS ?=
 
+check: private SHELL := /bin/bash
+check: private .SHELLFLAGS := -o pipefail -c
+
 check:
 	# 1. Corpus checkers over the planning docs: link + anchor + pin resolution,
 	#    embedded-snippet tests, and public-safe (check-all.sh bundles them).
