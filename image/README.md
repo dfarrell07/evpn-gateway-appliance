@@ -2,8 +2,7 @@
 
 Part of [openshift/evpn-gateway-appliance](https://github.com/openshift/evpn-gateway-appliance).
 
-RHEL 10 FRR is the host `frr` package (`frr.service`). It is not a container. node-exporter is the remaining payload image. The FRR version is the Konflux `rpms.lock.yaml` entry, which is not in this tree yet.
-
+RHEL 10 runs FRR and node-exporter as logically bound container images. Quadlet units in `rhel10/*.container` pin digest pullspecs. bootc pulls them into `/usr/lib/bootc/storage` on install and upgrade.
 
 ## Inventory checks
 
@@ -34,4 +33,4 @@ podman build \
   -f Containerfile .
 ```
 
-The release build needs pull access to `registry.redhat.io` for the bootc base and for payload digests in `payload-images.env`. The CI build does not, for the base.
+The release build needs pull access to `registry.redhat.io` for the bootc base. Bound workload images are pulled at `bootc install` or upgrade, not during `podman build`. The CI build does not need registry access for the base.

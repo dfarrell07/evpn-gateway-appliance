@@ -9,7 +9,6 @@ streams:
     bootcImage: registry.redhat.io/rhel10/rhel-bootc
     # CI build-arg. Same Containerfile: --build-arg BOOTC_BASE=<bootcImageCi>
     bootcImageCi: quay.io/centos-bootc/centos-bootc:stream10
-    frrRpmWhenPackaged: frr
     notes: >-
       Platform bases (rhel-bootc-aws, rhel-bootc-kvm) may become separate
       bootc Components for AWS vs on-prem; start from generic rhel-bootc.
