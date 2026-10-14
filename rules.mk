@@ -8,7 +8,7 @@ SHELL := /bin/bash
 verify: check
 
 # Static source checks aggregating the planning-docs corpus integrity, the
-# public-safety scan, the repo-wide yaml lint, and the Ansible collection checks.
+# public-safety scan, repo-wide YAML/Python/shell lint and Ansible collection checks.
 .PHONY: check
 check: check-corpus check-public check-yaml check-ansible
 
@@ -112,3 +112,21 @@ check-ansible-install: check-ansible-build
 	expected=$$(ls -d $(ANSIBLE)/roles/*/ | wc -l); \
 	found=$$(ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_SMOKE_DIR) ansible-doc -t role -l 2>/dev/null | grep -cE '^network\.evpn_gateway\.[a-z_]+:$$'); \
 	test "$$found" = "$$expected" || { echo "ERROR: expected $$expected collection roles discoverable from the clean install, found $$found" >&2; exit 1; }
+
+.PHONY: lint-python lint-shell
+check: lint-python lint-shell
+
+lint-python:
+	command -v ruff >/dev/null
+	# Ruff accepts directories and expands missing @paths as response files.
+	git ls-files -z -c -o --exclude-standard -- '*.py' | xargs -0 -r bash -c ' \
+	    for file do \
+	        test -f "$$file" || { printf "not a file: %s\n" "$$file" >&2; exit 1; }; \
+	    done; \
+	    exec env -u RUFF_OUTPUT_FILE ruff check --isolated \
+	        --select E4,E7,E9,F --target-version py312 --no-cache -- "$$@"' bash
+
+lint-shell:
+	command -v shellcheck >/dev/null
+	# --norc alone still honors SHELLCHECK_OPTS.
+	git ls-files -z -c -o --exclude-standard -- '*.sh' | xargs -0 -r env -u SHELLCHECK_OPTS shellcheck --norc --
