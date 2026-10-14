@@ -1,5 +1,5 @@
 [Container]
-Image=registry.redhat.io/openshift4/ose-prometheus-node-exporter-rhel9@sha256:7d2884dc16f902e31b897d475d3e0dc09bc735df16b22544d0fefc4396a0ca48
+Image=@PAYLOAD_IMAGE@
 Network=host
 Volume=/proc:/host/proc:ro
 Volume=/sys:/host/sys:ro

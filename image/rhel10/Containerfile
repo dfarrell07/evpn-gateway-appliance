@@ -1,6 +1,20 @@
 # Stream rhel10. FRR and node-exporter are logically bound container images.
 # CI passes --build-arg BOOTC_BASE to the public CentOS Stream bootc image.
 ARG BOOTC_BASE=registry.redhat.io/rhel10/rhel-bootc
+
+FROM ${BOOTC_BASE} AS payload-render
+
+RUN dnf install -y python3 python3-pyyaml && dnf clean all
+COPY payload-images.yaml /src/payload-images.yaml
+COPY tools/payload.py /src/tools/payload.py
+COPY rhel10/frr.container.in rhel10/node-exporter.container.in /src/templates/
+RUN mkdir -p /generated \
+    && python3 /src/tools/payload.py render \
+        --inventory /src/payload-images.yaml \
+        --stream rhel10 \
+        --templates /src/templates \
+        --output /generated
+
 FROM ${BOOTC_BASE}
 
 RUN dnf install -y \
@@ -25,7 +39,7 @@ EOF
 
 RUN mkdir -p /etc/wireguard && chmod 700 /etc/wireguard
 
-COPY frr.container node-exporter.container /usr/share/containers/systemd/
+COPY --from=payload-render /generated/frr.container /generated/node-exporter.container /usr/share/containers/systemd/
 RUN mkdir -p /usr/lib/bootc/bound-images.d \
     && ln -sf /usr/share/containers/systemd/frr.container /usr/lib/bootc/bound-images.d/frr.container \
     && ln -sf /usr/share/containers/systemd/node-exporter.container /usr/lib/bootc/bound-images.d/node-exporter.container

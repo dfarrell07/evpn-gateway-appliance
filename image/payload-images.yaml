@@ -1,5 +1,4 @@
 # Runtime container pullspecs for the bootc image (source-audit §2, pipeline-spec payload).
-# CI must fail if digest is missing or does not match tag (see hack/resolve-payload-digests.go).
 #
 # frr is the bound FRR container (Quadlet frr.container). Stay on this 4.22
 # assembly. The metrics binary in 4.23 and 5.x exits outside Kubernetes

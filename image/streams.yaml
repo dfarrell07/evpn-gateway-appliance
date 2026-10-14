@@ -5,7 +5,7 @@
 streams:
   rhel10:
     containerfile: image/rhel10/Containerfile
-    gitContext: image/rhel10
+    gitContext: image
     bootcImage: registry.redhat.io/rhel10/rhel-bootc
     # CI build-arg. Same Containerfile: --build-arg BOOTC_BASE=<bootcImageCi>
     bootcImageCi: quay.io/centos-bootc/centos-bootc:stream10

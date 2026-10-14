@@ -2,7 +2,7 @@
 ConditionPathExists=/etc/frr/frr.conf
 
 [Container]
-Image=registry.redhat.io/openshift4/frr-rhel9@sha256:82fd7cc0123f6286bad46231a9939799ae79c30b9369047d2ffd109dacefa76e
+Image=@PAYLOAD_IMAGE@
 Network=host
 Volume=/etc/frr:/etc/frr:Z
 Volume=/var/run/frr:/var/run/frr:Z
