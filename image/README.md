@@ -32,6 +32,22 @@ runtime dependency. Resolve a tag in an authenticated registry session before
 updating its digest in `payload-images.yaml`. These source checks do not contact
 the registry or verify that a tag still matches its recorded digest.
 
+CI controls a build's pin with environment variables. A set variable replaces
+the matching field in `payload-images.yaml` for that build. An empty or unset
+variable leaves the committed value. For one service, set all three variables
+or none of them.
+
+- `EGA_PAYLOAD_RHEL10_FRR_REPOSITORY`
+- `EGA_PAYLOAD_RHEL10_FRR_TAG`
+- `EGA_PAYLOAD_RHEL10_FRR_DIGEST`
+- `EGA_PAYLOAD_RHEL10_NODE_EXPORTER_REPOSITORY`
+- `EGA_PAYLOAD_RHEL10_NODE_EXPORTER_TAG`
+- `EGA_PAYLOAD_RHEL10_NODE_EXPORTER_DIGEST`
+
+Pass the same names as `--build-arg` to `podman build`. The rendering stage
+exports them into the renderer. The committed file remains the default for a
+build that sets none of them.
+
 ## Build the product image
 
 The build context is `image/`, because rendering reads the inventory and the

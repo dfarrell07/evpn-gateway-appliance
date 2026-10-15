@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import re
 import shutil
@@ -48,6 +49,23 @@ def _mapping(value: Any, where: str) -> Mapping[str, Any]:
     return value
 
 
+def _payload_env(stream: str, service: str, field: str) -> str:
+    return f"EGA_PAYLOAD_{stream.upper()}_{service.upper()}_{field.upper()}"
+
+
+def _from_ci_env(stream: str, service: str, repository: str, tag: str, digest: str) -> tuple[str, str, str]:
+    fields = ("repository", "tag", "digest")
+    supplied = {field: os.environ.get(_payload_env(stream, service, field), "").strip() for field in fields}
+    present = {field: value for field, value in supplied.items() if value}
+    if not present:
+        return repository, tag, digest
+    missing = [field for field in fields if field not in present]
+    if missing:
+        names = ", ".join(_payload_env(stream, service, field) for field in missing)
+        raise ValueError(f"CI payload env for {stream}.{service} is incomplete, missing {names}")
+    return present["repository"], present["tag"], present["digest"]
+
+
 def load_inventory(path: Path, stream: str) -> dict[str, Payload]:
     try:
         import yaml
@@ -82,6 +100,7 @@ def load_inventory(path: Path, stream: str) -> dict[str, Payload]:
         repository, tag, digest = (fields[key] for key in ("repository", "tag", "digest"))
         if not all(isinstance(item, str) and item for item in (repository, tag, digest)):
             raise ValueError(f"inventory.{stream}.{name} fields must be non-empty strings")
+        repository, tag, digest = _from_ci_env(stream, name, repository, tag, digest)
         if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*(?::[0-9]+)?/[a-z0-9]+(?:[._/-][a-z0-9]+)*", repository):
             raise ValueError(f"inventory.{stream}.{name}.repository must be an untagged registry path")
         if not re.fullmatch(r"[\w][\w.-]{0,127}", tag, re.ASCII):

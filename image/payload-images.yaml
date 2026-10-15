@@ -1,4 +1,5 @@
-# Runtime container pullspecs for the bootc image (source-audit §2, pipeline-spec payload).
+# Default pullspecs for a build that sets no EGA_PAYLOAD_RHEL10_* variables.
+# CI replaces repository, tag, and digest per service when those variables are set.
 #
 # frr is the bound FRR container (Quadlet frr.container). Stay on this 4.22
 # assembly. The metrics binary in 4.23 and 5.x exits outside Kubernetes
