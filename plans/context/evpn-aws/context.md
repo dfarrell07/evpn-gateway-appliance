@@ -82,7 +82,7 @@ acli jira workitem view CORENET-7505
 ### Parent feature and epic
 
 | Ticket | Summary | Status |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | [OCPSTRAT-3413](https://redhat.atlassian.net/browse/OCPSTRAT-3413) | EVPN Integration Design and AWS support (Feature) | In Progress |
 | [HPSTRAT-714](https://redhat.atlassian.net/browse/HPSTRAT-714) | EVPN Support on Public Cloud Platforms (Outcome, parent) | In Progress |
 | [CORENET-7498](https://redhat.atlassian.net/browse/CORENET-7498) | Enable EVPN integration on AWS (Epic) | In Progress |
@@ -101,7 +101,7 @@ release gates consume ([pipeline plan](pipeline-spec.md#required-gates)). The
 ### Documentation and prior-art tickets
 
 | Ticket | Summary | Status |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | [OSDOCS-20531](https://redhat.atlassian.net/browse/OSDOCS-20531) | Docs for OCPSTRAT-3413 | New |
 | [CORENET-7400](https://redhat.atlassian.net/browse/CORENET-7400) | BGP Cloud Connector productization template (prior art) | Closed |
 | [CORENET-7409](https://redhat.atlassian.net/browse/CORENET-7409) | BGP Cloud Connector Konflux onboarding (prior art) | Closed |

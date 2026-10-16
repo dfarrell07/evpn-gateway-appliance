@@ -133,6 +133,7 @@ emit_test_output() {  # successes failures warnings expected_cases
     '{result:$r,timestamp:$ts,successes:$s,failures:$f,warnings:$w}'
 }
 ```
+
 [Controller contract](https://github.com/konflux-ci/integration-service/blob/11cc455b/helpers/integration.go).
 For external test backends, verify the actual deployed image/digest and installed
 collection from runtime evidence. An override parameter or echoed install command

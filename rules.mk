@@ -8,9 +8,9 @@ SHELL := /bin/bash
 verify: check
 
 # Static source checks aggregating the planning-docs corpus integrity, the
-# public-safety scan, the repo-wide yaml lint, and the Ansible collection checks.
+# public-safety scan, the repo-wide yaml and Markdown lint, and the Ansible collection checks.
 .PHONY: check
-check: check-corpus check-public check-yaml check-ansible
+check: check-corpus check-public check-yaml check-markdown check-ansible
 
 # Planning-docs corpus integrity: link + anchor + pin resolution, embedded-snippet
 # tests, and public-safe over the plans/ docs (check-all.sh bundles them).
@@ -47,6 +47,14 @@ check-yaml:
 	# Exclude ansible/: the collection has its own strict yaml lint (ansible/.yamllint)
 	# in the check-ansible-lint target, so linting it here too would be redundant.
 	git ls-files -z -c -o --exclude-standard -- '*.yml' '*.yaml' '*.yamllint' ':(exclude)ansible/' | xargs -0 -r yamllint -c .yamllint --
+
+# Repo-wide Markdown lint with the root .markdownlint-cli2.jsonc (tool and host setup:
+# ci/markdownlint/README.md). markdownlint-cli2 reads arguments as globs; a leading ':'
+# makes each Git-selected path literal. Require the root config instead of falling back
+# to native defaults when it is missing.
+.PHONY: check-markdown
+check-markdown:
+	git ls-files -z -c -o --exclude-standard -- '*.md' | sed -z 's/^/:/' | xargs -0 -r markdownlint-cli2 --config .markdownlint-cli2.jsonc --
 
 # ── Ansible collection source checks ─────────────────────────────────────────
 # Lint, playbook syntax, collection build + tarball allowlist, and a clean-env

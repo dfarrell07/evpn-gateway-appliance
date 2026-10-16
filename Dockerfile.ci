@@ -41,6 +41,17 @@ RUN export ANSIBLE_HOME="$(mktemp -d)" && \
         containers.podman:1.21.1 && \
     rm -rf "$ANSIBLE_HOME"
 
+# markdownlint-cli2 from the ci/markdownlint lockfile (see its README). Node and npm
+# come from the base image; --engine-strict fails the build if that Node is too old.
+# npm's cache and logs and Node's compile cache go to a throwaway directory, so this
+# root step leaves no root-owned ~/.npm or /tmp/node-compile-cache, like ANSIBLE_HOME.
+COPY ci/markdownlint/package.json ci/markdownlint/package-lock.json /opt/markdownlint/
+RUN tmp="$(mktemp -d)" && \
+    npm_config_cache="$tmp" NODE_COMPILE_CACHE="$tmp" \
+        npm ci --prefix /opt/markdownlint --ignore-scripts --engine-strict --no-audit --no-fund && \
+    rm -rf "$tmp" && \
+    ln -s /opt/markdownlint/node_modules/.bin/markdownlint-cli2 /usr/local/bin/markdownlint-cli2
+
 # Copy the source code into the container
 COPY . /src
 

@@ -802,8 +802,7 @@ Red Hat already builds equivalents of the appliance's runtime payloads. ART's 4.
 delivers `openshift4/frr-rhel9` from the OpenShift FRR repository, whose
 [Containerfile](https://github.com/openshift/frr/blob/1277b238/Dockerfile.openshift)
 installs `frr10` and copies `/frr-metrics` and `/frr-status` into the image. The
-same file has shipped `frr-metrics` since at least `release-4.20`. [PR
-#130](https://github.com/openshift/frr/pull/130)
+same file has shipped `frr-metrics` since at least `release-4.20`. [PR #130](https://github.com/openshift/frr/pull/130)
 moved 4.22 to FRR 10.4.3 for EVPN; the source pulls upstream 10.5.3.
 [`golang-github-prometheus-node_exporter.yml`](https://github.com/openshift-eng/ocp-build-data/blob/175405a9/images/golang-github-prometheus-node_exporter.yml)
 delivers `openshift4/ose-prometheus-node-exporter-rhel9`. `frr-metrics` runs

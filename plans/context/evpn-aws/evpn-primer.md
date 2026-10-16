@@ -11,7 +11,7 @@ exists and must be tested. The data plane here is VXLAN (24-bit VNI).
 ## Key Terms
 
 | Term | Plain English |
-|------|---------------|
+| ------ | --------------- |
 | VTEP | Node interface that wraps/unwraps VXLAN packets |
 | VNI | VXLAN tenant ID (like a VLAN ID but 24-bit) |
 | FRR / frr-k8s | FRRouting BGP daemon; frr-k8s is its K8s DaemonSet wrapper |
