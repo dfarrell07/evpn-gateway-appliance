@@ -1,0 +1,14 @@
+{
+  "config": {
+    // MD013 (line length) off: prose has no fixed wrap width and table rows can't wrap.
+    "MD013": false
+  },
+  // CLAUDE.md starts with an @AGENTS.md import, not the heading MD041 expects.
+  "overrides": [
+    { "filter": ["CLAUDE.md"], "config": { "MD041": false }, "combine": "merge" }
+  ],
+  // Ignore inline <!-- markdownlint-... --> comments; put exceptions in this file.
+  "noInlineConfig": true,
+  // Hide the progress lines, which list every path; findings still print.
+  "noProgress": true
+}

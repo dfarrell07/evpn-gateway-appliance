@@ -423,7 +423,7 @@ imported AMI, because that is the artifact customers receive.
 
 ### Required tests and contexts
 
-**Result integrity**
+#### Result integrity
 
 - Required ITSs must match the candidate's context. The Snapshot's
   `AppStudioTestSucceeded` verdict counts only required (non-optional, context-matching)
@@ -438,7 +438,7 @@ imported AMI, because that is the artifact customers receive.
   completion waiter is insufficient
   ([checked helper behavior](source-evidence.md#2-green-status-is-not-complete-release-evidence)).
 
-**Context matching** ([semantics](https://konflux-ci.dev/docs/testing/integration/choosing-contexts/))
+#### Context matching ([semantics](https://konflux-ci.dev/docs/testing/integration/choosing-contexts/))
 
 - `component_<name>` matches that component's PR and push builds; multiple contexts are
   **OR**, not AND. It does not cover arbitrary manually assembled Snapshots.
@@ -449,8 +449,7 @@ imported AMI, because that is the artifact customers receive.
   with old disks, preventing the merge that produces the downstream nudge.
 - There is no built-in “staging” ITS context.
 
-**The candidate sequence** ([controller
-order](source-evidence.md#1-candidate-construction-and-qualification-are-separate))
+#### The candidate sequence ([controller order](source-evidence.md#1-candidate-construction-and-qualification-are-separate))
 
 1. A bootc PR's group Snapshot has no derivatives. A nudge PR that rebuilds both disks
    does produce a complete group Snapshot for pre-merge checks.
@@ -513,7 +512,7 @@ defines inventory, expiry, failure/cancellation, evidence and deletion checks.
 
 ### OCP qualification lanes
 
-**Cases and evidence**
+#### Cases and evidence
 
 - Coordinate with CORENET-7075/7564's BGP/EVPN OTE lane, and verify the expected EVPN
   cases actually execute. The OTE suite silently drops its EVPN specs unless the cluster
@@ -542,7 +541,7 @@ defines inventory, expiry, failure/cancellation, evidence and deletion checks.
   qualification of the supported payload must reject undeclared image overrides or
   disabled reconciliation ([conditional FRR override example](prior-art.md#preserving-the-test-subject)).
 
-**Clusters and accounts**
+#### Clusters and accounts
 
 - Choose a provisioner/profile or owned lab with the required external-router topology;
   a stock cloud/HyperShift cluster does not establish that capability.
@@ -563,7 +562,7 @@ defines inventory, expiry, failure/cancellation, evidence and deletion checks.
   ([how-to](https://docs.ci.openshift.org/how-tos/adding-a-cluster-profile/)). See the
   [OpenShift CI adapter contracts](prior-art.md#openshift-ci-adapters).
 
-**Transports and labs**
+#### Transports and labs
 
 - Site-to-Site VPN can be exercised wholly in AWS with a simulated on-prem gateway (for
   example, Libreswan on an instance with a public address).
