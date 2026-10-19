@@ -5,10 +5,14 @@ SHELL := /bin/bash
 
 # The single entry point CI runs (`make verify OFFLINE=1`).
 .PHONY: verify payload-test
-verify: check payload-test
+verify: check payload-test runtime-test
 
 payload-test:
 	python3 image/tools/test_payload.py
+
+.PHONY: runtime-test
+runtime-test:
+	python3 image/tools/test_runtime.py
 
 # Static source checks aggregating the planning-docs corpus integrity, the
 # public-safety scan, the repo-wide yaml and Markdown lint, and the Ansible collection checks.

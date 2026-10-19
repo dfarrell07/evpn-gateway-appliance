@@ -96,3 +96,29 @@ as unavailable. This is an offline nested-container check and does not qualify
 bootc installation, upgrade, rollback, or a virtual machine boot.
 Docker and kind runners need their own privileged systemd and cgroup setup.
 The supplied smoke runner uses Podman.
+
+## Run the build and runtime check
+
+`image/tools/test-runtime.sh` builds both existing Containerfiles and runs the
+offline service/restart smoke. Run it from a clean checkout on a disposable
+rootful Podman host with cgroup v2 and enough disk space for the base and payloads:
+
+```bash
+sudo env SOURCE_REVISION="$(git rev-parse HEAD)" \
+  REGISTRY_AUTH_FILE=/path/outside/repository/auth.json \
+  ARTIFACT_DIR=/var/tmp/ega-runtime-artifacts \
+  timeout --kill-after=1m 45m bash image/tools/test-runtime.sh
+```
+
+The registry auth file must stay outside `image/`. `BOOTC_BASE` and the six
+payload variables above are optional build overrides. The caller supplies one
+deadline for the complete run so cancellation reaches the builds and smoke
+together. The check removes its own test images, preserving the original
+failure if cleanup also fails.
+
+Artifacts retain the source revision, built image IDs, build logs and smoke
+diagnostics. They contain no registry auth file. Prow's on-demand
+`aws-vm-rhel10` job transfers a Git archive of its tested commit to the existing
+RHEL VM and supplies these inputs; the companion configuration lives in
+`openshift/release`. Its CentOS Stream 10 CI base is an explicit test substitute.
+This check does not qualify a RHEL appliance disk or network e2e topology.
