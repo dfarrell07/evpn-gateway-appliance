@@ -90,7 +90,7 @@ class PayloadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary_path = Path(temporary)
             inventory = temporary_path / "payload.yaml"
-            shutil.copy(ROOT / "payload-images.yaml", inventory)
+            inventory.write_bytes((ROOT / "payload-images.yaml").read_bytes())
             first = temporary_path / "first"
             payload.render_units(inventory, "rhel10", ROOT / "rhel10", first)
             original = (first / "frr.container").read_text()
