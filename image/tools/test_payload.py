@@ -290,41 +290,78 @@ class PayloadTests(unittest.TestCase):
             self.assertEqual(result.stdout.count("Requires=ega-payload-load.service"), 2)
             self.assertEqual(result.stdout.count("After=ega-payload-load.service"), 2)
 
-    def test_smoke_checks_both_workloads_inside_their_containers(self) -> None:
+    def test_smoke_lifecycle_and_failure_reporting(self) -> None:
         fake_podman = '''#!/usr/bin/env python3
-import os, sys
+import json, os, signal, sys
+from pathlib import Path
 args = sys.argv[1:]
+mode = os.environ["TEST_SMOKE_MODE"]
+with open(os.environ["TEST_SMOKE_LOG"], "a") as log:
+    log.write(json.dumps(args) + "\\n")
+state = Path(os.environ["TEST_SMOKE_STATE"])
 if args[0] == "info":
-    print("v2 false")
+    print("v1 false" if mode == "old-cgroups" else "v2 true" if mode == "rootless" else "v2 false")
 elif args[0] == "run":
     assert "--pull=never" in args and args[args.index("--network") + 1] == "none"
-    print("test-container")
+    state.write_text(args[args.index("--name") + 1])
+    if mode in ("signal", "interrupt"):
+        os.kill(os.getppid(), signal.SIGTERM if mode == "signal" else signal.SIGINT)
+    sys.exit(17 if mode in ("failed-run", "failed-run-and-cleanup") else 0)
+elif args[0] == "rm":
+    assert args[-1] == state.read_text()
+    if mode in ("failed-cleanup", "failed-run-and-cleanup"):
+        sys.exit(19)
+    state.unlink()
 elif args[0] == "exec":
     cmd = args[2:]
     if cmd[:2] == ["systemctl", "is-active"]:
         assert len(cmd) == 4, "must check one service at a time"
-        sys.exit(1 if os.environ["TEST_SMOKE_MODE"] == "failed-service" and cmd[-1] == "frr.service" else 0)
+        sys.exit(1 if mode == "failed-service" and cmd[-1] == "frr.service" else 0)
     elif cmd[:4] == ["podman", "exec", "frr", "vtysh"]:
-        sys.exit(1 if os.environ["TEST_SMOKE_MODE"] == "failed-frr" else 0)
+        sys.exit(1 if mode == "failed-frr" else 0)
+    elif cmd[:2] == ["podman", "info"]:
+        print("overlay" if mode == "wrong-driver" else "vfs")
     elif cmd[0] == "curl":
         print('node_exporter_build_info{version="fixture"} 1')
     elif cmd[0] not in ("journalctl", "systemctl"):
         sys.exit(3)
 '''
-        with tempfile.TemporaryDirectory() as temporary:
+        expected = {
+            "success": 0, "failed-service": 1, "failed-frr": 1,
+            "failed-run": 17, "failed-cleanup": 1, "failed-run-and-cleanup": 17,
+            "rootless": 2, "old-cgroups": 2, "wrong-driver": 1, "signal": 143, "interrupt": 130,
+        }
+        with tempfile.TemporaryDirectory(prefix="ega smoke ") as temporary:
             directory = Path(temporary)
             (directory / "podman").write_text(fake_podman)
             (directory / "podman").chmod(0o755)
             (directory / "sleep").write_text("#!/bin/sh\nexit 0\n")
             (directory / "sleep").chmod(0o755)
-            for mode in ("success", "failed-service", "failed-frr"):
+            for mode, status in expected.items():
                 with self.subTest(mode=mode):
+                    log, state = directory / f"{mode}.jsonl", directory / f"{mode}.state"
+                    artifacts = directory / f"{mode} artifacts"
                     result = subprocess.run(
                         ["bash", str(ROOT / "tools/smoke-nested.sh"), "localhost/fixture"],
-                        env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}", "TEST_SMOKE_MODE": mode},
-                        text=True, capture_output=True, check=False,
+                        env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
+                             "TEST_SMOKE_MODE": mode, "TEST_SMOKE_LOG": str(log),
+                             "TEST_SMOKE_STATE": str(state), "ARTIFACT_DIR": str(artifacts)},
+                        text=True, capture_output=True, check=False, timeout=30,
                     )
-                    self.assertEqual(result.returncode == 0, mode == "success", result.stderr)
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    calls = [json.loads(line) for line in log.read_text().splitlines()]
+                    if mode in ("rootless", "old-cgroups"):
+                        self.assertEqual([call[0] for call in calls], ["info"])
+                        continue
+                    self.assertEqual(calls[-1][0], "rm")
+                    self.assertTrue(any(call[0] == "inspect" for call in calls[:-1]))
+                    self.assertTrue((artifacts / "runtime.txt").is_file())
+                    self.assertEqual(state.exists(), "cleanup" in mode)
+                    if mode == "success":
+                        restarts = [call for call in calls if call[0] == "exec"
+                                    and call[2:4] == ["systemctl", "restart"]]
+                        self.assertEqual(len(restarts), 1)
+                        self.assertEqual(restarts[0][-2:], ["frr.service", "node-exporter.service"])
 
 
 if __name__ == "__main__":

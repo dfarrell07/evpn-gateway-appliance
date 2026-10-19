@@ -27,20 +27,48 @@ if [[ $rootless != false ]]; then
   exit 2
 fi
 
+if [[ -n ${ARTIFACT_DIR:-} ]]; then
+  mkdir -p -- "$ARTIFACT_DIR"
+fi
 config=$(mktemp -d)
-container_id=""
+container_name="ega-smoke-${config##*/}"
+container_name=${container_name,,}
+started=false
+
+diagnostics() {
+  # Select fields explicitly: full container inspection can contain credentials.
+  timeout --kill-after=1s 4s podman inspect --format \
+    '{{.Id}} {{.State.Status}} {{.State.ExitCode}}' "$container_name" || true
+  timeout --kill-after=1s 4s podman exec "$container_name" systemctl --no-pager status \
+    ega-payload-load.service frr.service node-exporter.service || true
+  timeout --kill-after=1s 4s podman exec "$container_name" journalctl --no-pager -n 80 \
+    -u ega-payload-load.service -u frr.service -u node-exporter.service || true
+  timeout --kill-after=1s 4s podman exec "$container_name" podman info \
+    --format '{{.Store.GraphDriverName}}' || true
+}
+
 cleanup() {
-  status=$?
-  if [[ -n $container_id ]]; then
-    if [[ $status -ne 0 ]]; then
-      podman exec "$container_id" journalctl --no-pager -n 80 \
-        -u ega-payload-load.service -u frr.service -u node-exporter.service >&2 || true
+  local status=$?
+  trap - EXIT
+  if [[ $started == true ]]; then
+    if [[ -n ${ARTIFACT_DIR:-} ]]; then
+      diagnostics >"$ARTIFACT_DIR/runtime.txt" 2>&1 || true
+    else
+      diagnostics >&2
     fi
-    podman rm -f "$container_id" >/dev/null 2>&1 || true
+    if ! timeout --kill-after=1s 5s podman rm -f --ignore "$container_name"; then
+      echo "failed to remove smoke container $container_name" >&2
+      if [[ $status == 0 ]]; then status=1; fi
+    fi
   fi
-  rm -rf "$config"
+  if ! rm -rf -- "$config"; then
+    if [[ $status == 0 ]]; then status=1; fi
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 printf '%s\n' 'bgpd=yes' 'bfdd=yes' >"$config/daemons"
 cat >"$config/frr.conf" <<'EOF'
@@ -52,16 +80,17 @@ router bgp 65000
  bgp router-id 192.0.2.1
 EOF
 
-container_id=$(podman run -d --pull=never --privileged --network none --cgroupns=host --systemd=always \
-  -v "$config:/etc/frr:Z" "$image")
+started=true
+podman run -d --name "$container_name" --pull=never --privileged --network none --cgroupns=host --systemd=always \
+  -v "$config:/etc/frr:Z" "$image"
 
 ready() {
   local unit
   for unit in ega-payload-load.service frr.service node-exporter.service; do
-    podman exec "$container_id" systemctl is-active --quiet "$unit" || return 1
+    podman exec "$container_name" systemctl is-active --quiet "$unit" || return 1
   done
-  podman exec "$container_id" podman exec frr vtysh -c 'show bgp summary' >/dev/null || return 1
-  podman exec "$container_id" curl --max-time 5 --fail --silent http://127.0.0.1:9100/metrics \
+  podman exec "$container_name" podman exec frr vtysh -c 'show bgp summary' >/dev/null || return 1
+  podman exec "$container_name" curl --max-time 5 --fail --silent http://127.0.0.1:9100/metrics \
     | grep '^node_exporter_build_info{' >/dev/null
 }
 
@@ -78,7 +107,13 @@ wait_ready() {
 
 wait_ready
 
-podman exec "$container_id" systemctl restart frr.service node-exporter.service
+driver=$(podman exec "$container_name" podman info --format '{{.Store.GraphDriverName}}')
+if [[ $driver != vfs ]]; then
+  echo "nested smoke requires VFS storage (got $driver)" >&2
+  exit 1
+fi
+
+podman exec "$container_name" systemctl restart frr.service node-exporter.service
 wait_ready
 
 echo "nested offline smoke passed for $image (this does not qualify bootc install, upgrade, rollback, or VM boot)"
