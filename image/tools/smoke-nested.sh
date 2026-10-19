@@ -10,7 +10,7 @@ image=$1
 command -v podman >/dev/null || { echo "prerequisite unavailable: podman" >&2; exit 2; }
 podman_info=$(mktemp)
 podman_error=$(mktemp)
-if ! podman info --format '{{.Host.CgroupVersion}} {{.Host.Security.Rootless}}' >"$podman_info" 2>"$podman_error"; then
+if ! podman info --format '{{.Host.CgroupsVersion}} {{.Host.Security.Rootless}}' >"$podman_info" 2>"$podman_error"; then
   echo "prerequisite unavailable: podman cannot inspect the runtime" >&2
   sed -n '1,12p' "$podman_error" >&2
   rm -f "$podman_info" "$podman_error"
