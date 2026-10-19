@@ -8,3 +8,4 @@ ansible/*.tar.gz
 ansible/**/*.retry
 ansible/.wg-keys/
 ansible/inventory/hosts.yml
+ci/markdownlint/node_modules/
