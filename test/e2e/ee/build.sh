@@ -5,21 +5,20 @@
 # this maps to a pre-step that builds the generated Containerfile like any other image
 # (ci-operator), so there's no ansible-builder-drives-podman there.
 #
-#   EGA_EE_IMAGE   EE tag             [default: evpn-gateway-appliance-ee:local]
-#   EGA_E2E_IMAGE  CI image (has ansible-core + ansible-builder)  [default: evpn-gateway-appliance-ci:local]
+#   EGA_EE_IMAGE   EE tag             [default: localhost/evpn-gateway-appliance-ee:local]
+#   EGA_E2E_IMAGE  CI image (has ansible-core + ansible-builder)  [default: localhost/evpn-gateway-appliance-ci:local]
 #   EGA_EE_BASE    override EE base   [default: the definition's; CI sets a mirrored ref]
-#   EGA_EE_BUILDDIR scratch build dir [default: /tmp/ega-ee-build]
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/../../.." && pwd)"
-tag="${EGA_EE_IMAGE:-evpn-gateway-appliance-ee:local}"
-ci_image="${EGA_E2E_IMAGE:-evpn-gateway-appliance-ci:local}"
-build_dir="${EGA_EE_BUILDDIR:-/tmp/ega-ee-build}"
+tag="${EGA_EE_IMAGE:-localhost/evpn-gateway-appliance-ee:local}"
+ci_image="${EGA_E2E_IMAGE:-localhost/evpn-gateway-appliance-ci:local}"
 
-# Stage the inputs outside the repo so nothing is written into (or SELinux-relabeled in) the checkout.
-rm -rf "$build_dir"
-mkdir -p "$build_dir"
+# Stage the inputs in a scratch dir outside the repo (nothing gets written into, or
+# SELinux-relabeled in, the checkout); remove it on exit.
+build_dir="$(mktemp -d)"
+trap 'rm -rf "$build_dir"' EXIT
 cp "$here/execution-environment.yml" "$build_dir/"
 cp -r "$repo_root/ansible" "$build_dir/collection-src"
 

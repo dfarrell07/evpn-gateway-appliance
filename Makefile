@@ -11,14 +11,15 @@
 # bind-mounted read-only and its in-container path passed through.
 
 USE_IMAGE ?= 1
-IMAGE ?= evpn-gateway-appliance-ci:local
+CI_IMAGE ?= localhost/evpn-gateway-appliance-ci:local
+EE_IMAGE ?= localhost/evpn-gateway-appliance-ee:local
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 comma := ,
 
 # One container run. $(1) = goals to run inside (empty -> the image's default goal).
 CONTAINER_RUN = $(CONTAINER_ENGINE) run --rm \
 	$(if $(TERMS),-v $(abspath $(TERMS)):/terms:ro$(comma)Z,) \
-	$(IMAGE) make $(1) OFFLINE=$(OFFLINE) $(if $(TERMS),TERMS=/terms,)
+	$(CI_IMAGE) make $(1) OFFLINE=$(OFFLINE) $(if $(TERMS),TERMS=/terms,)
 
 # Delegate to the image unless we are already inside it (EGA_IN_CI_IMAGE is set in
 # Dockerfile.ci) or the user opted out with USE_IMAGE=0.
@@ -81,10 +82,16 @@ CONTAINER_AUTH_FILE ?= $(HOME)/.docker/config.json
 BOOTC_BASE ?=
 FRR_IMAGE ?=
 NODE_EXPORTER_IMAGE ?=
+# Extra `podman build` flags honored ONLY by ci-appliance-image (the CI parent build), not by
+# the release appliance-image. Empty normally; the e2e lane sets --network=host plus an insecure-
+# registry drop-in so the Containerfile's build-time skopeo can pull FRR/node-exporter from an
+# on-VM local registry (see test/e2e/run_remote.sh).
+APPLIANCE_CI_BUILD_ARGS ?=
 
 .PHONY: appliance-image ci-appliance-image
 ci-appliance-image: APPLIANCE_TAG = $(APPLIANCE_IMAGE)
 ci-appliance-image: BOOTC_BASE = $(BOOTC_BASE_CI)
+ci-appliance-image: _ci_build_args = $(APPLIANCE_CI_BUILD_ARGS)
 
 appliance-image ci-appliance-image:
 	@test -n "$(CONTAINER_ENGINE)" || { echo "no podman/docker found" >&2; exit 1; }
@@ -96,6 +103,7 @@ appliance-image ci-appliance-image:
 		$(if $(FRR_IMAGE),--build-arg FRR_IMAGE=$(FRR_IMAGE)) \
 		$(if $(NODE_EXPORTER_IMAGE),--build-arg NODE_EXPORTER_IMAGE=$(NODE_EXPORTER_IMAGE)) \
 		--secret id=dockerconfig,src="$(CONTAINER_AUTH_FILE)" \
+		$(_ci_build_args) \
 		image/rhel10
 
 # Nested CI child. Host-side. No registry auth. Layers storage.conf onto :ci.
