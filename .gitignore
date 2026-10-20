@@ -15,3 +15,6 @@ ansible/.ansible/
 
 # OS
 .DS_Store
+
+# Host install of markdownlint-cli2 (ci/markdownlint/README.md)
+ci/markdownlint/node_modules/

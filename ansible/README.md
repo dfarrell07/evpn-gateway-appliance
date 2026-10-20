@@ -15,7 +15,7 @@ lab/dev/test environment.
 
 ## Layout
 
-```
+```text
 galaxy.yml, meta/runtime.yml        Collection identity and metadata
 requirements.txt, bindep.txt        Control-node Python / system dependencies
 meta/execution-environment.yml      Execution-environment dependency pointers
