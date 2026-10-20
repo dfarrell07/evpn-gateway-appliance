@@ -43,6 +43,8 @@ RUN dnf install -y \
     podman \
     && dnf clean all
 
+RUN systemctl enable sshd.service
+
 # Host /etc/frr is mounted over the image config, so ship daemons on the host.
 RUN mkdir -p /etc/frr && printf '%s\n' 'bgpd=yes' 'bfdd=yes' > /etc/frr/daemons
 
