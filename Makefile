@@ -3,7 +3,7 @@
 #
 #   make <target>              run <target> inside the CI image (built first)
 #   make <target> USE_IMAGE=0  run on the host with local tools instead
-#   make image                 just build the CI image
+#   make ci-image              just build the CI image
 #   make appliance-image       build image/rhel10 on the host
 #   make nested-ci-appliance-image       build the :ci appliance, then the nested child, on the host
 #
@@ -33,15 +33,15 @@ ifeq ($(MAKECMDGOALS),)
 # Bare `make`: delegate with no goal so the container uses rules.mk's own default goal.
 .DEFAULT_GOAL := container-default
 .PHONY: container-default
-container-default: image
+container-default: ci-image
 	$(call CONTAINER_RUN,)
 else
 # Forward the named goals into a single container run: the first builds the image and
 # runs them, the rest are no-ops. The appliance targets build on the host.
-FWD := $(filter-out image appliance-image ci-appliance-image nested-ci-appliance-image,$(MAKECMDGOALS))
+FWD := $(filter-out ci-image ee-image appliance-image ci-appliance-image nested-ci-appliance-image,$(MAKECMDGOALS))
 ifneq ($(FWD),)
 .PHONY: $(FWD)
-$(firstword $(FWD)): image
+$(firstword $(FWD)): ci-image
 	$(call CONTAINER_RUN,$(FWD))
 $(filter-out $(firstword $(FWD)),$(FWD)):
 	@:
@@ -53,10 +53,20 @@ endif
 
 # Build the pinned CI image (host-side; needs podman/docker). Defined last so that on the
 # non-delegate path rules.mk's first target stays the natural default goal.
-.PHONY: image
-image:
+.PHONY: ci-image
+ci-image:
 	@test -n "$(CONTAINER_ENGINE)" || { echo "no podman/docker found; use USE_IMAGE=0 to run on the host" >&2; exit 1; }
-	$(CONTAINER_ENGINE) build -f Dockerfile.ci -t $(IMAGE) .
+	$(CONTAINER_ENGINE) build -f Dockerfile.ci -t $(CI_IMAGE) .
+
+# Build the e2e execution environment ($(EE_IMAGE)) from the collection's EE metadata. Uses
+# the CI image (for ansible-builder); builds the EE into whichever store this runs against,
+# so for the e2e lane (rootful siblings) run it the same way as `ci-image`: `sudo make ee-image`.
+# No `ci-image` prerequisite on purpose: the CI image ($(CI_IMAGE)) must already exist (locally
+# run `make ci-image` first, as the README shows; the CI VM lane loads it from a passed-in image),
+# so this never forces a CI-image rebuild.
+.PHONY: ee-image
+ee-image:
+	EGA_E2E_IMAGE=$(CI_IMAGE) EGA_EE_IMAGE=$(EE_IMAGE) test/e2e/ee/build.sh
 
 # Appliance bootc image (image/rhel10/Containerfile). Host-side: the build needs the
 # host engine and a registry auth file that must stay outside the build context.
