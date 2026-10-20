@@ -4,10 +4,13 @@ FROM ${APPLIANCE_IMAGE}
 USER 0
 RUN dnf install -y skopeo curl && dnf clean all
 RUN mkdir -p /usr/libexec/ega /etc/containers/systemd/frr.container.d \
-    /etc/containers/systemd/node-exporter.container.d \
-    /etc/containers/storage.conf.d
+    /etc/containers/systemd/node-exporter.container.d
 
-COPY ci/storage.conf /etc/containers/storage.conf.d/99-ega-vfs.conf
+COPY ci/storage.conf /etc/containers/storage.conf
+# Newer container tools merge drop-ins; mask the bootc vendor storage settings,
+# including the rootful additional image store and overlay mount options.
+COPY ci/storage.conf /etc/containers/storage.conf.d/00-vendor.conf
+COPY ci/storage.conf /etc/containers/storage.rootful.conf.d/00-vendor-rootful.conf
 COPY tools/payload.py /usr/libexec/ega/payload.py
 COPY ci/ega-payload-load.service /usr/lib/systemd/system/ega-payload-load.service
 COPY ci/ega-payload-dropin.conf /etc/containers/systemd/frr.container.d/ega-payload.conf

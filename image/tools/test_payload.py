@@ -6,10 +6,12 @@ import io
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -86,11 +88,16 @@ def make_dir_fixture(directory: Path, architectures=("amd64", "arm64")) -> str:
 
 
 class PayloadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.enterContext(mock.patch.dict(os.environ, {
+            key: value for key, value in os.environ.items() if not key.startswith("EGA_PAYLOAD_")
+        }, clear=True))
+
     def test_renderer_is_the_single_digest_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             temporary_path = Path(temporary)
             inventory = temporary_path / "payload.yaml"
-            shutil.copy(ROOT / "payload-images.yaml", inventory)
+            inventory.write_bytes((ROOT / "payload-images.yaml").read_bytes())
             first = temporary_path / "first"
             payload.render_units(inventory, "rhel10", ROOT / "rhel10", first)
             original = (first / "frr.container").read_text()
@@ -105,6 +112,21 @@ class PayloadTests(unittest.TestCase):
             self.assertNotEqual(original, (second / "frr.container").read_text())
             self.assertIn("sha256:" + "b" * 64, (second / "node-exporter.container").read_text())
             self.assertIn("GlobalArgs=--storage-opt=additionalimagestore=/usr/lib/bootc/storage", original)
+
+    def test_renderer_uses_complete_ci_overrides(self) -> None:
+        overrides = {
+            "EGA_PAYLOAD_RHEL10_FRR_REPOSITORY": "registry.example.com/frr",
+            "EGA_PAYLOAD_RHEL10_FRR_TAG": "fixture",
+            "EGA_PAYLOAD_RHEL10_FRR_DIGEST": "sha256:" + "c" * 64,
+        }
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.dict(os.environ, overrides):
+            destination = Path(temporary)
+            payload.render_units(ROOT / "payload-images.yaml", "rhel10", ROOT / "rhel10", destination)
+            self.assertIn("Image=registry.example.com/frr@sha256:" + "c" * 64,
+                          (destination / "frr.container").read_text())
+            with mock.patch.dict(os.environ, {"EGA_PAYLOAD_RHEL10_FRR_TAG": ""}):
+                with self.assertRaisesRegex(ValueError, "incomplete"):
+                    payload.render_units(ROOT / "payload-images.yaml", "rhel10", ROOT / "rhel10", destination)
 
     def test_renderer_rejects_missing_service_and_unresolved_token(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -153,25 +175,19 @@ class PayloadTests(unittest.TestCase):
             temporary_path = Path(temporary)
             units = temporary_path / "units"
             units.mkdir()
-            reference = "example/frr@sha256:" + "a" * 64
-            (units / "frr.container").write_text(f"Image={reference}\n")
             cache = temporary_path / "cache"
-            cache.mkdir()
-            (cache / "index.json").write_text(
-                json.dumps(
-                    {
-                        "version": 1,
-                        "images": [
-                            {
-                                "unit": "frr.container",
-                                "reference": reference,
-                                "cache_path": "frr",
-                                "digest": "sha256:" + "a" * 64,
-                            }
-                        ],
-                    }
-                )
-            )
+            root_digest = make_dir_fixture(cache / "frr")
+            # A valid first payload must not load before the missing second cache is rejected.
+            images = []
+            for name, value in (("frr", root_digest), ("node-exporter", "sha256:" + "a" * 64)):
+                reference = f"registry.example.com/{name}@{value}"
+                (units / f"{name}.container").write_text(f"Image={reference}\n")
+                images.append({
+                    "unit": f"{name}.container", "reference": reference,
+                    "cache_path": name, "digest": value,
+                    "native_architecture": "amd64", "os": "linux",
+                })
+            (cache / "index.json").write_text(json.dumps({"version": 1, "images": images}))
             runner = mock.Mock(side_effect=AssertionError("loader ran before validation"))
             with self.assertRaisesRegex(ValueError, "missing .*manifest"):
                 payload.load_images(cache, units, runner=runner)
@@ -290,41 +306,186 @@ class PayloadTests(unittest.TestCase):
             self.assertEqual(result.stdout.count("Requires=ega-payload-load.service"), 2)
             self.assertEqual(result.stdout.count("After=ega-payload-load.service"), 2)
 
-    def test_smoke_checks_both_workloads_inside_their_containers(self) -> None:
+    def test_smoke_lifecycle_and_failure_reporting(self) -> None:
         fake_podman = '''#!/usr/bin/env python3
-import os, sys
+import json, os, signal, sys, time
+from pathlib import Path
 args = sys.argv[1:]
+mode = os.environ["TEST_SMOKE_MODE"]
+with open(os.environ["TEST_SMOKE_LOG"], "a") as log:
+    log.write(json.dumps(args) + "\\n")
+state = Path(os.environ["TEST_SMOKE_STATE"])
+restarted = state.with_suffix(".restarted")
 if args[0] == "info":
-    print("v2 false")
+    print("v1 false" if mode == "old-cgroups" else "v2 true" if mode == "rootless" else "v2 false")
 elif args[0] == "run":
     assert "--pull=never" in args and args[args.index("--network") + 1] == "none"
-    print("test-container")
+    state.write_text(args[args.index("--name") + 1])
+    if mode in ("signal", "interrupt"):
+        os.kill(os.getppid(), signal.SIGTERM if mode == "signal" else signal.SIGINT)
+    if mode.startswith("cancelled-output"):
+        time.sleep(30)
+    sys.exit(17 if mode.startswith("failed-run") else 0)
+elif args[0] == "rm":
+    assert args[-1] == state.read_text()
+    # Native Podman can raise SIGPIPE when a stop warning reaches a closed reader.
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    os.write(2, b"stopping smoke container\\n")
+    if mode in ("failed-cleanup", "failed-run-and-cleanup", "cancelled-output-failed-cleanup"):
+        sys.exit(19)
+    if mode == "hung-cleanup":
+        time.sleep(30)
+    state.unlink()
+    print(args[-1])
+elif args[0] == "inspect" and mode == "cancelled-diagnostics":
+    time.sleep(30)
 elif args[0] == "exec":
-    cmd = args[2:]
+    cmd = args[3:] if args[1] == "-i" else args[2:]
     if cmd[:2] == ["systemctl", "is-active"]:
         assert len(cmd) == 4, "must check one service at a time"
-        sys.exit(1 if os.environ["TEST_SMOKE_MODE"] == "failed-service" and cmd[-1] == "frr.service" else 0)
+        if mode == "cancelled-probe":
+            time.sleep(30)
+        sys.exit(1 if mode in ("failed-service", "cancelled-diagnostics") and cmd[-1] == "frr.service" else 0)
     elif cmd[:4] == ["podman", "exec", "frr", "vtysh"]:
-        sys.exit(1 if os.environ["TEST_SMOKE_MODE"] == "failed-frr" else 0)
+        assert cmd[4:] == ["-c", "show bgp ipv4 unicast json"]
+        if mode == "failed-frr":
+            sys.exit(1)
+        if mode == "hung-frr":
+            time.sleep(30)
+        bgp = {"localAS": 65000, "routerId": "192.0.2.1"}
+        if mode == "unconfigured-frr":
+            bgp = {"warning": "Default BGP instance not found"}
+        elif mode == "wrong-frr-asn":
+            bgp["localAS"] = 65001
+        elif mode == "wrong-frr-router-id":
+            bgp["routerId"] = "192.0.2.2"
+        print("invalid JSON" if mode == "malformed-frr" else json.dumps(bgp))
+    elif cmd[0] == "python3":
+        os.execv(sys.executable, [sys.executable, *cmd[1:]])
+    elif cmd[:2] == ["podman", "info"]:
+        print("overlay" if mode == "wrong-driver" else "vfs", 2 if mode == "inherited-store" else 0)
+    elif cmd[:2] == ["systemctl", "restart"]:
+        if mode == "hung-restart":
+            time.sleep(30)
+        restarted.touch()
     elif cmd[0] == "curl":
-        print('node_exporter_build_info{version="fixture"} 1')
+        assert cmd[1:3] == ["--noproxy", "*"], "loopback metrics must bypass inherited proxies"
+        print('unrelated_metric 1' if mode == "failed-restart-metrics" and restarted.exists()
+              else 'node_exporter_build_info{version="fixture"} 1')
     elif cmd[0] not in ("journalctl", "systemctl"):
         sys.exit(3)
 '''
-        with tempfile.TemporaryDirectory() as temporary:
+        expected = {
+            "success": 0, "failed-service": 1, "failed-frr": 1,
+            "unconfigured-frr": 1, "wrong-frr-asn": 1, "wrong-frr-router-id": 1, "malformed-frr": 1,
+            "failed-run": 17, "failed-cleanup": 1, "failed-run-and-cleanup": 17,
+            "failed-artifact-open": 1, "failed-artifact-write": 1,
+            "failed-run-and-artifact-open": 17, "failed-run-and-artifact-write": 17,
+            "failed-restart-metrics": 1,
+            "rootless": 2, "old-cgroups": 2, "wrong-driver": 1, "inherited-store": 1, "signal": 143, "interrupt": 130,
+            "hung-frr": 1, "hung-cleanup": 1, "hung-restart": 124,
+            "cancelled-output": 143, "cancelled-output-failed-cleanup": 143,
+            "cancelled-probe": 143, "cancelled-diagnostics": 1,
+        }
+        # Cancelled modes are terminated as a process group once this call starts.
+        cancel_after = {
+            "cancelled-output": lambda call: call[0] == "run" and state.exists(),
+            "cancelled-output-failed-cleanup": lambda call: call[0] == "run" and state.exists(),
+            "cancelled-probe": lambda call: "is-active" in call,
+            "cancelled-diagnostics": lambda call: call[0] == "inspect",
+        }
+        with tempfile.TemporaryDirectory(prefix="ega smoke ") as temporary:
             directory = Path(temporary)
             (directory / "podman").write_text(fake_podman)
             (directory / "podman").chmod(0o755)
             (directory / "sleep").write_text("#!/bin/sh\nexit 0\n")
             (directory / "sleep").chmod(0o755)
-            for mode in ("success", "failed-service", "failed-frr"):
+            # Each clock reading advances 120s, so a 300s poll deadline allows two polls.
+            (directory / "date").write_text(
+                '#!/bin/sh\nnow=$(cat "$TEST_SMOKE_CLOCK" 2>/dev/null || echo 0)\n'
+                'echo $((now + 120)) >"$TEST_SMOKE_CLOCK"\necho "$now"\n'
+            )
+            (directory / "date").chmod(0o755)
+            # Shorten every deadline so a hung command fails quickly, unless a mode needs the real one.
+            real_timeout = shutil.which("timeout")
+            (directory / "timeout").write_text(
+                f'#!/usr/bin/env bash\n[[ -z ${{TEST_SMOKE_REAL_TIMEOUT:-}} ]] || exec {real_timeout} "$@"\n'
+                'options=()\nwhile [[ $1 == -* ]]; do options+=("$1"); shift; done\n'
+                f'shift\nexec {real_timeout} "${{options[@]}}" 3 "$@"\n'
+            )
+            (directory / "timeout").chmod(0o755)
+            for mode, status in expected.items():
                 with self.subTest(mode=mode):
-                    result = subprocess.run(
-                        ["bash", str(ROOT / "tools/smoke-nested.sh"), "localhost/fixture"],
-                        env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}", "TEST_SMOKE_MODE": mode},
-                        text=True, capture_output=True, check=False,
-                    )
-                    self.assertEqual(result.returncode == 0, mode == "success", result.stderr)
+                    log, state = directory / f"{mode}.jsonl", directory / f"{mode}.state"
+                    artifacts, scratch = directory / f"{mode} artifacts", directory / f"{mode} tmp"
+                    scratch.mkdir()
+                    if "artifact" in mode:
+                        artifacts.mkdir()
+                        if "open" in mode:
+                            (artifacts / "runtime.txt").mkdir()
+                        else:
+                            (artifacts / "runtime.txt").symlink_to("/dev/full")
+                    command = ["bash", str(ROOT / "tools/smoke-nested.sh"), "localhost/fixture"]
+                    environment = {**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
+                                   "TEST_SMOKE_MODE": mode, "TEST_SMOKE_LOG": str(log),
+                                   "TEST_SMOKE_STATE": str(state), "ARTIFACT_DIR": str(artifacts),
+                                   "TMPDIR": str(scratch), "TEST_SMOKE_CLOCK": str(state.with_suffix(".clock"))}
+                    if mode == "cancelled-probe":
+                        environment["TEST_SMOKE_REAL_TIMEOUT"] = "1"
+                    # Bash cannot trap a signal that was ignored when it started, as in `make verify &`.
+                    def default_sigint() -> None:
+                        signal.signal(signal.SIGINT, signal.SIG_DFL)
+                    if mode in cancel_after:
+                        # Like a remote timeout: the output reader is gone when the group is terminated.
+                        process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE,
+                                                   stderr=subprocess.STDOUT, start_new_session=True,
+                                                   preexec_fn=default_sigint)
+                        try:
+                            deadline = time.monotonic() + 10
+                            while time.monotonic() < deadline and not (log.exists() and any(
+                                    cancel_after[mode](json.loads(line)) for line in log.read_text().splitlines())):
+                                time.sleep(0.05)
+                            self.assertTrue(log.exists() and any(
+                                cancel_after[mode](json.loads(line)) for line in log.read_text().splitlines()),
+                                "smoke did not reach the cancellation point")
+                            process.stdout.close()
+                            os.killpg(process.pid, signal.SIGTERM)
+                            cancelled = time.monotonic()
+                            result = subprocess.CompletedProcess(command, process.wait(timeout=30), "", "")
+                            self.assertLess(time.monotonic() - cancelled, 10)
+                        finally:
+                            if process.poll() is None:
+                                os.killpg(process.pid, signal.SIGKILL)
+                                process.wait()
+                            process.stdout.close()
+                    else:
+                        result = subprocess.run(command, env=environment, text=True, capture_output=True,
+                                                check=False, timeout=30, preexec_fn=default_sigint)
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    if mode == "failed-service":
+                        self.assertIn("during startup", result.stderr)
+                    if mode == "failed-restart-metrics":
+                        self.assertIn("during restart", result.stderr)
+                    self.assertEqual(list(scratch.iterdir()), [])
+                    calls = [json.loads(line) for line in log.read_text().splitlines()]
+                    if mode in ("rootless", "old-cgroups"):
+                        self.assertEqual([call[0] for call in calls], ["info"])
+                        continue
+                    self.assertEqual(calls[-1][0], "rm")
+                    name = next(call for call in calls if call[0] == "run")
+                    name = name[name.index("--name") + 1]
+                    # Full inspection can contain credentials; only these fields are recorded.
+                    self.assertIn(["inspect", "--format", "{{.Id}} {{.State.Status}} {{.State.ExitCode}}", name],
+                                  calls[:-1])
+                    self.assertIn(["logs", "--tail", "200", name], calls[:-1])
+                    if "artifact" not in mode:
+                        self.assertTrue((artifacts / "runtime.txt").is_file())
+                    self.assertEqual(state.exists(), "cleanup" in mode)
+                    if mode in ("success", "failed-restart-metrics"):
+                        restarts = [call for call in calls if call[0] == "exec"
+                                    and call[2:4] == ["systemctl", "restart"]]
+                        self.assertEqual(len(restarts), 1)
+                        self.assertEqual(restarts[0][-2:], ["frr.service", "node-exporter.service"])
 
 
 if __name__ == "__main__":
