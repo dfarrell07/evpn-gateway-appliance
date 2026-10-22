@@ -157,8 +157,8 @@ split as follows:
 | Appliance, VLAN and tunnel status views | node-exporter (v1.12.1): default [`netclass`](https://github.com/prometheus/node_exporter/blob/6044da783597cc3b57aef7580ddcdcff58a4ee99/collector/netclass_linux.go) (`node_network_up`, carrier and carrier-change counters for every device, so VLAN, bridge, VXLAN and WireGuard interfaces) and `netdev` counters; `systemd`, off by default, for service state | Interface/service state is available; `node_network_up=0` includes `unknown`, which can still carry traffic ([kernel semantics](https://docs.kernel.org/networking/operstates.html)). IPsec has no per-tunnel series on the appliance: `xfrm`, also off by default, gives aggregate error counters only; use CloudWatch `TunnelState` for AWS VPN tunnels; appliance-side per-tunnel views need a selected source, for example a textfile from `ipsec status` |
 | BGP sessions, route churn | `frr-metrics`: per-peer, per-VRF session state and message counters (updates, keepalives, notifications) | Sessions covered; update-message counts are a churn proxy, not counts of individual route additions/withdrawals. Qualify the dashboard's stated meaning |
 | Prefix counts | `frr-metrics`: sent and accepted counters **summed across every address family** of a neighbor ([`parse.go`](https://github.com/metallb/frr-k8s/blob/20c36775/internal/frr/parse.go)) | Partial: EVPN routes cannot be separated from IPv4/IPv6 on a session that carries both; OpenShift's `release-4.22` and `release-5.1` builds parse it the same way and label series only by peer and VRF |
-| BFD | `frr-metrics` BFD collector: control/echo packets, session up/down events | Covered |
-| VNI and MAC learning, VTEP and DF alerts | None | Gap. The legacy exporter's L2VPN collector provided them |
+| BFD | `frr-metrics` BFD collector: control/echo packets, session up/down events | Series exist; BGP-based VRF discovery misses BFD-only VRFs, and peer/VRF labels can collide for distinct sessions ([source and live audit](frr-metrics-plan.md#existing-series)). Qualify identity and completeness before alerting |
+| VNI and MAC learning, VTEP and DF alerts | None | Gap. The legacy L2VPN collector provides VNI MAC/ARP-ND and known remote-VTEP counts, not DF state, learning-event rates or VTEP reachability ([source comparison](frr-metrics-plan.md#legacy-migration-contract)) |
 | DX, VPN, latency, bandwidth | CloudWatch ([`AWS/DX`](https://docs.aws.amazon.com/directconnect/latest/UserGuide/monitoring-cloudwatch.html), [`AWS/VPN`](https://docs.aws.amazon.com/vpn/latest/s2svpn/monitoring-cloudwatch-vpn.html) including `TunnelState`) | State and traffic/rates; latency needs a selected measurement source |
 | Cluster-side EVPN status | OVN-K's `ovnkube_clustermanager_cluster_user_defined_networks` gains a `transport` label, and CUDN and RouteAdvertisements condition metrics are planned ([CORENET-6581](https://redhat.atlassian.net/browse/CORENET-6581), Code Review) | Complements the appliance series from the OCP side; confirm names in the selected OCP release |
 
@@ -179,6 +179,12 @@ Interim options checked so far are the 4.22 binary, a build with authentication 
 exporter needs owner approval and standalone qualification. Configure the selected
 build's bind options and the deployment's TLS/authentication path explicitly; available
 flags and defaults differ by release.
+
+The [FRR metrics implementation plan](frr-metrics-plan.md) rechecks the 5.1 source
+on 2026-10-22, reproduces the failure, and proposes an explicit auth opt-out that
+preserves TLS and Kubernetes defaults. It separates that first change from
+collector-failure visibility, EVPN metrics, appliance integration and the full
+CORENET-7504 acceptance evidence. It does not resolve decisions 10 or 16.
 
 The 2026-10-01 review proposes adding EVPN metrics to `frr-metrics`; confirm the metric
 source, series and implementation owner before targeting those new series in dashboards.

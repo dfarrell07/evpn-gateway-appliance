@@ -87,6 +87,7 @@ parallel. Record accepted decisions in the decision list.
 | [BIB and delivery](bib-configuration-spec.md) | Disk task wiring, AWS tests and customer publication |
 | [Source findings](source-audit.md) | Public-import blockers and open defects at the inspected prototype revision |
 | [Networking handoff](networking-spec.md) | Source gaps and interfaces to networking/QE qualification |
+| [FRR metrics and observability](frr-metrics-plan.md) | CORENET-7504 source investigation, standalone exporter proposal, EVPN metric semantics and implementation/validation sequence |
 
 [Prior art](prior-art.md) identifies reusable code and its limits;
 [source evidence](source-evidence.md) records checked revisions and the reasons
