@@ -77,6 +77,11 @@ Each row is independent; take whichever has ready inputs.
 Later work belongs to [later CI](ci-bootstrap-spec.md#later-sequence): a native image build
 of the image sources (#16 proposes one, with a nested CI derivative), and Molecule role scenarios (pin Molecule in `Dockerfile.ci`; start with one
 role's controller-only negative cases, [test placement](ci-bootstrap-spec.md#test-placement)).
+
+Finding, 2026-10-22. `make nested-ci-appliance-image` builds that derivative on the host.
+The record is
+[Finding 2026-10-22 nested CI vfs image](containerfile-refactor-spec.md#finding-2026-10-22-nested-ci-vfs-image).
+
 `ansible-test sanity` is the standard collection check for publication, but it installs its
 test environments from the network, so it belongs in the destination-check lane (L4), not
 the offline gate.
