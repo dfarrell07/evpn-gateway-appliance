@@ -277,6 +277,8 @@ KFLUXSPRT-8581). KONFLUX-15262 and
 [Buildah #6944](https://github.com/podman-container-tools/buildah/issues/6944) remain
 open. Verify the embedded image's identity and runtime behavior, including any
 intentional transformation, rather than assuming base-image prefetch solves this.
+A 2026-10-22 finding records the nested smoke's vfs child in
+[Finding 2026-10-22 nested CI vfs image](#finding-2026-10-22-nested-ci-vfs-image).
 
 Select target-platform children for nested image pulls and the extracted metrics
 binary, and verify their architecture and execution in every shipped platform's
@@ -345,3 +347,29 @@ health-check topology is not a product interface.
    to-existing-root` conversion does not qualify the delivered AMI.
 5. Required transport, HA, OCP, AAP, security, upgrade, and rollback gates in
    `pipeline-spec.md` pass before calling the appliance supported.
+
+## Finding 2026-10-22 nested CI vfs image
+
+Recorded 2026-10-22 from commits `5c4deb2` and `92c90e1` on `bootc-image-import`.
+This is an implementation finding. It is not a row in
+[`kickoff-decisions.md`](kickoff-decisions.md).
+
+Nested Podman cannot use the overlay graph driver on an overlay backing store.
+The product image from `image/rhel10/Containerfile` does not set `driver = "vfs"`.
+The test image `image/rhel10/Containerfile.nested-ci` is `FROM`
+`localhost/evpn-appliance-rhel10:ci` and copies `storage.conf` to
+`/etc/containers/storage.conf.d/99-evpn-vfs.conf`.
+
+`make nested-ci-appliance-image` builds that child on the host. `make appliance-image`
+builds the product Containerfile. The CI appliance sets
+`APPLIANCE_TAG=localhost/evpn-appliance-rhel10:ci` and `BOOTC_BASE` to
+`bootcImageCi` in `image/streams.yaml`. On this date that value is
+`quay.io/centos-bootc/centos-bootc:stream10`. The nested target does not depend
+on `appliance-image`, because that target defaults to the `:dev` tag. Neither
+target is forwarded into `Dockerfile.ci`.
+
+The appliance build mounts secret id `dockerconfig`. The nested build mounts no
+secret. `image/tools/smoke-nested.py` does not bind-mount the drop-in.
+`image/tools/verify-nested.py` runs the two Make targets and then checks the
+vfs line. A nested smoke pass does not prove `bootc install`, upgrade,
+rollback, or a virtual-machine boot.

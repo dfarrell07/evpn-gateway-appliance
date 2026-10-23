@@ -1,0 +1,17 @@
+[Unit]
+Description=FRR from the embedded image
+After=payload-load.service
+Requires=payload-load.service
+ConditionPathExists=/etc/frr/frr.conf
+
+[Service]
+Restart=always
+RuntimeDirectory=frr
+RuntimeDirectoryMode=0777
+ExecStartPre=-/usr/bin/podman rm -f frr
+ExecStart=/usr/bin/podman run --pull=never --name frr --privileged --network host --rm \
+    -v /etc/frr:/etc/frr:Z -v /var/run/frr:/var/run/frr:Z frr:embedded
+ExecStop=/usr/bin/podman stop frr
+
+[Install]
+WantedBy=multi-user.target
