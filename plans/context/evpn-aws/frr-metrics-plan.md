@@ -320,6 +320,9 @@ describing all error visibility as absent.
 Recommend a small common collection status contract, for example
 `frrk8s_collector_success{collector="bgp|bfd|evpn"}` and
 `frrk8s_collector_duration_seconds{collector=...}`. Exact names require review.
+Use a const `collector` label in each collector's status/duration descriptors:
+[separate collectors cannot register identical descriptors](https://github.com/prometheus/client_golang/blob/48dd383f94cc36bb0179724166383effd9f64847/prometheus/registry.go).
+Test registration and gathering with BGP, BFD and enabled EVPN together.
 Emit status for every enabled collector, distinguish an empty successful result
 from a failed read, and omit affected data on failure. Success means all required
 reads, schema/presence checks and metric-identity checks passed, not just that
@@ -639,7 +642,7 @@ and operator runbooks require a live integration check beyond rule evaluation.
 
 ## Implementation sequence and validation
 
-Each row is a reviewable change with its own evidence; ordering is a proposal.
+Each slice needs its own evidence; keep independent fixes separately reviewable.
 The owner of 7504 can develop metric contracts and dashboard layouts while the
 standalone fix goes through upstream review. Do not wait for every release
 decision to write the minimal exporter patch and tests.
@@ -656,7 +659,7 @@ or an owner-approved criterion clarification, including route churn and latency.
 | Slice | Repository / concrete change | Required evidence |
 | --- | --- | --- |
 | 1. Standalone serving | frr-k8s: explicit opt-out from Kubernetes auth, unchanged default TLS/auth, CLI documentation and handler/startup tests | No service-account mount, no Kubernetes environment, nonexistent kubeconfig: standalone TLS scrape succeeds; default mode still fails; bad cluster credentials never bypass auth |
-| 2. Reliable collection | frr-k8s: status/duration, explicit BFD identity/compatibility, native scrape admission and bounded CLI execution; reuse #507 and evaluate bulk BFD queries | Command/parse failure, duplicate identity and timeout visible; empty success distinct; BFD-only VRF covered; partial BFD read handled; total multi-query budget, excess scrapes and recovery tested; no stranded CLI child/pipe wait; existing status-controller behavior preserved |
+| 2. Reliable collection | frr-k8s: status/duration, explicit BFD identity/compatibility, native scrape admission and bounded CLI execution; reuse #507 if merged and evaluate bulk BFD queries | Command/parse failure, duplicate identity and timeout visible; empty success distinct; BFD-only VRF covered; partial BFD read handled; total multi-query budget, excess scrapes and recovery tested; no stranded CLI child/pipe wait; existing status-controller behavior preserved |
 | 3. EVPN prefixes | frr-k8s: retain per-family neighbor values and add gauges without changing legacy aggregates | IPv4/IPv6/EVPN-only and mixed sessions; existing metric fixtures unchanged; down/unnegotiated family with absent advertised count; family disappearance, parse errors and peer resets covered |
 | 4. L2 VNI/MAC observations | frr-k8s: optional zebra EVPN collector with typed summary parsing and bounded labels | Empty/disabled EVPN, zero-MAC VNI, mixed L2/L3, `n/a`, unknown fields/commands, malformed JSON, disappearing VNI, scale/command budget |
 | 5. Local ES/DF and VTEP membership | frr-k8s, and FRRouting only if the agreed semantics require missing daemon data | Local/remote/bypass ES, active/down, DF failover, missing participant, bounded peer labels; no claim that membership proves reachability |
