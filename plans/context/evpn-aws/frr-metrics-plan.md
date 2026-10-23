@@ -6,6 +6,11 @@ Daniel Farrell is the story's current assignee. Its acceptance criteria cover
 dashboards and alerts for the complete EVPN solution; making `frr-metrics` work
 outside Kubernetes is the first enabling change, not the whole story.
 
+Implementation started in the public fork: [standalone auth, `fdf0421`](https://github.com/dfarrell07/frr-k8s/blob/fdf042173d728d4d93e2764f3a6c422a200059b3/cmd/metrics/exporter.go),
+then [certificate/HTTP lifecycle, `c0dc674`](https://github.com/dfarrell07/frr-k8s/blob/c0dc674b04d3f123f33a0ec27c7d2ad03cde7f47/cmd/metrics/exporter.go),
+checked 2026-10-23. These are unmerged, unreleased WIP changes; full upstream CI,
+real appliance qualification and CLI subprocess cancellation remain open.
+
 This document does not approve payload, endpoint exposure or support decisions.
 [Decisions 10 and 16](kickoff-decisions.md#decisions-at-a-glance) retain their
 existing status until accountable-owner approval is recorded. Read the controlling
@@ -52,7 +57,7 @@ deployed. All observations below are from 2026-10-22 unless otherwise dated.
 | [`FRRouting/frr` 10.4.3, `6ddbeb5e`](https://github.com/FRRouting/frr/tree/6ddbeb5eaf71bc5a3f05f22e211684fb85a34091/zebra) | C daemons and CLI JSON producers. Used to establish candidate EVPN fields. The actual RHEL package may have downstream patches; verify fixtures against the chosen image |
 | [`tynany/frr_exporter` v1.12.0, `85392e48`](https://github.com/tynany/frr_exporter/blob/85392e48b7b85c243298f23faf0a92821a7f7a28/collector/bgp.go) | Exporter selected by the merged Ansible role; comparison baseline for coverage lost on replacement |
 | EGA main, `5af03731` | Merged collection and source checks; no merged `image/` tree in this baseline |
-| [EGA image PR #6, `e3239e6c`](https://github.com/openshift/evpn-gateway-appliance/blob/e3239e6c59ef76b29eff0820a5ad2161a9b1e67d/image/rhel10/Containerfile) | Open proposal embeds FRR and node-exporter; its metrics unit is not installed/enabled. Product Containerfile and FRR/metrics units match the original `33e0be3e` inspection. Earlier package-based descriptions refer to older PR revisions |
+| [EGA image PR #6, `6f9ca70f`](https://github.com/openshift/evpn-gateway-appliance/blob/6f9ca70f7eb966724bd0e64ac961e2adc4404812/image/rhel10/Containerfile) | Rechecked 2026-10-23: open proposal embeds FRR and node-exporter; its metrics unit is not installed/enabled. Product Containerfile and FRR/metrics units are unchanged; payload-loader shell simplification preserves the embedded-image import behavior |
 
 The upstream module requires Go 1.26 and uses client-go 0.37.1 and
 controller-runtime 0.25.1. Upstream unit integration fixtures select FRR 10.6.2;
@@ -106,9 +111,9 @@ main
   ListenAndServeTLS
 ```
 
-`rest.InClusterConfig()` is unconditional. Neither a kubeconfig path flag nor a
-fallback to `KUBECONFIG` exists. An ordinary kubeconfig does not solve this code
-path. The filter delegates bearer-token authentication to Kubernetes TokenReview
+`rest.InClusterConfig()` is unconditional in the baseline. The inherited
+`--kubeconfig` flag and `KUBECONFIG` are not used by this auth path. The filter
+delegates bearer-token authentication to Kubernetes TokenReview
 and authorization to SubjectAccessReview. Its absence of a token is a 401;
 an authenticated request without permission is a 403; backend errors fail the
 request. The exported `/livez` handler is outside that filter but on the TLS
@@ -542,7 +547,7 @@ SELinux labels without qualification.
 
 ### Concrete EGA integration work
 
-At PR #6 `e3239e6c`, `frr-container.service` loads an embedded container and the
+At PR #6 `6f9ca70f`, `frr-container.service` loads an embedded container and the
 image does not install or enable `frr-metrics.service`. That unused file still
 expects `/usr/bin/frr-metrics` and orders after `frr.service`, a different unit.
 The existing runtime-smoke work is separate and must be rebased/rechecked before
@@ -707,13 +712,13 @@ contains only this reviewed summary; no raw Jira, credentials or lab inventory.
 | --- | --- |
 | Upstream package build, focused collector/liveness/TLS and short-mode parser tests, exporter/TLS `go vet`, on Go 1.26.9 | Passed; metrics main has no tests; parser run excludes Docker-backed integration |
 | Unmodified exporter, cluster variables removed, nonexistent kubeconfig | Exit 1 before listener setup, reporting failure to obtain in-cluster configuration |
-| External-only Go overlay adding the proposed explicit auth bypass | Built without modifying either FRR source checkout; prototype, not submitted implementation |
-| Prototype in a rootless read-only UBI container, network disabled, no capabilities or service-account mounts, synthetic `/usr/bin/vtysh` | HTTPS 200 with expected BGP and BFD samples and `/livez` 200; mixed-family advertised/received values were 7 and 10. This proves the executable path with fixtures, not actual FRR sockets, SELinux policy or FIPS qualification |
+| Auth WIP: focused unit/race/vet/lint and native Dockerfile builder stage | Passed; all four binaries built. This is not the full upstream CI or cluster e2e suite |
+| Auth WIP: native-built exporter in an isolated rootless read-only container, no capabilities or cluster configuration, synthetic vtysh | Both certificate modes served expected BGP/BFD samples over trusted HTTPS; default/explicit-false auth still rejected absent cluster configuration. TLS defaults, explicit minimum version, liveness and mode notice checked. Fixture coverage does not qualify FRR sockets or a release image |
 | Same fixture process changed to exit 1 | `/metrics` still returned 200 with FRR session series absent; `/livez` returned 500. Confirms why collector status and real-series checks are required |
 | Standalone prototype with cert path only and no private-key path | Listener started despite nonexistent cert path; confirms incomplete-pair fallback |
 | Standalone prototype with unbracketed IPv6 bind literal | Exit 1 with invalid-address construction; confirms the `JoinHostPort` follow-up |
 | Audit: supplied TLS certificate and SIGTERM | Trusted HTTPS succeeded; the unchanged certificate-watcher path kept the process alive after SIGTERM, while self-signed mode exited. The audit killed the remaining test process explicitly |
-| Audit: external-only shutdown overlay and blocked-handler process control | Idle signals exited with both certificate modes, but the overlay does not wait for shutdown completion. A process probe of that pattern exited before active-handler cleanup; waiting for shutdown completed cleanup and the request. This isolates lifecycle ordering, not exporter CLI/init/systemd qualification |
+| Lifecycle WIP: HTTP drain tests and native-built exporter signal probes | Active-request, listener/watcher-error and forced-close tests passed. With the selected image's init retained, idle SIGTERM/SIGINT exited zero with both certificate modes after a verified HTTPS request. Blocked CLI, real FRR/socket access and appliance lifecycle remain unqualified |
 | Audit: actual controller-runtime certificate watcher with files removed before `Start` | Registration failed after its ten-second retry, with no error logged and the initial certificate still available; neither watch nor periodic rereading started. Confirms the need to handle its returned error |
 | Audit: native promhttp admission and Go subprocess pipe waiting | With limit 1 and one blocked Gather, excess request returned 503 without another Gather; release restored 200. A 50 ms command deadline took about 1 second with an inherited pipe, versus 70 ms with a 20 ms `WaitDelay`; descendants still required cleanup. Isolates library behavior, not production FRR qualification |
 | Audit: private namespace and host-loopback port publication | Container-loopback listener was healthy internally but unreachable through the published port; container-interface listener with host-loopback publication returned HTTP 200 |
@@ -727,12 +732,11 @@ contains only this reviewed summary; no raw Jira, credentials or lab inventory.
 | Audit: peer removal/recreation with the non-root exporter kept running | BGP/BFD scrape state changed 1 → 0 → 1; prefix aggregates matched the summed daemon family values. This used stable named socket storage, not the image unit's directory-removal lifecycle |
 | Audit: one up single-hop and two down multihop BFD sessions sharing peer/VRF | Registry reported duplicate metrics; partial HTTP 200 retained a down-state sample. Confirms the need for endpoint identity and validation before status/scope changes |
 
-The prototype processes, containers, socket volumes and private test network
-were removed. No FRR
-implementation change or new runtime artifact is shipped by this planning
-branch. Cluster tests, bootc/SELinux-enforcing tests,
-image rebuild/publication, certificate rotation, scale/fault injection and
-release qualification remain implementation work.
+Test processes, containers, socket volumes and the private test network were
+removed. FRR implementation lives in the linked WIP fork; this planning branch
+ships no runtime artifact. Cluster tests, actual release-image rebuild/publication,
+bootc/SELinux/FIPS qualification, blocked CLI cleanup and scale/fault injection
+remain implementation work.
 
 ## Evidence and open questions
 
@@ -740,12 +744,12 @@ No matching standalone-auth PR was found in the searches used on 2026-10-22;
 that is a search observation, not proof that parallel work does not exist.
 [openshift/frr #141](https://github.com/openshift/frr/pull/141) is an open sync PR
 at `f31f540a`; its changed files did not include `cmd/metrics/exporter.go`.
-Recheck it and upstream #507 before branching implementation. Downstream's
+Recheck it and upstream #507 before proposing these patches upstream. Downstream's
 `OWNERS` identifies reviewers/approvers; coordinate the proposed behavior there
 and upstream rather than inferring approval from this plan.
 
-The next implementation can begin with slice 1. Resolve these questions at the
-point they affect a concrete change:
+Reliable collection is the next source slice while the auth/lifecycle WIP is
+reviewed and qualified. Resolve these questions when they affect a concrete change:
 
 - Upstream acceptance of the explicit auth flag name/semantics and which
   downstream branches must carry it; record the implementation PRs here.
