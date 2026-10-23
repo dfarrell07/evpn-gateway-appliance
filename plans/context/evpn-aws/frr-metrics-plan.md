@@ -329,14 +329,9 @@ reads, schema/presence checks and metric-identity checks passed, not just that
 the CLI exited zero. Prefer constructing a complete bounded collector result
 before emitting it: a failed BFD counters read must not leave the same collector
 advertising success with only its state half. Separate independent collectors
-can still produce useful data when another fails. A later last-success time
-can help if background caching is introduced; never serve old cached values as
-current without freshness information. Initially preserve the handler's partial
-response policy and add explicit collector failure signals, avoiding a new
-whole-endpoint outage when one source fails. Alert on both exporter `up` and
-collector validity. A future required-collector policy must be an explicit
-contract change with healthy/partial/failed-response tests, not a side effect of
-switching promhttp error options.
+can still produce useful data when another fails. Preserve the handler's partial
+response policy and add explicit collector failure signals. Alert on exporter
+`up` and required collector status presence and validity.
 
 `vtysh.Run` uses `exec.Command(...).CombinedOutput()` without a context/deadline.
 The HTTP server's three-second `ReadTimeout` bounds request reads, not FRR
@@ -623,12 +618,15 @@ panels/alerts apply.
 
 Observed inventory cannot detect something that vanished before the scrape.
 Derive a small declared expectation set from validated deployment configuration
-for enabled peers, VNIs, segments and transport resources. A node-exporter
+for enabled collectors, peers, VNIs, segments and transport resources. A node-exporter
 textfile or equivalent versioned scrape configuration is a candidate, not a new
 generic inventory framework. Define its update/removal ownership and freshness.
 Compare expected and observed identities explicitly; a global `absent()` test
 does not enumerate per-peer or per-VNI omissions. Keep exporter-down,
 collector-failed, expected-object-missing and object-observed-down distinct.
+Treat required collector status missing while `up == 1` as unavailable:
+[comparisons against zero do not detect absent series](https://prometheus.io/docs/prometheus/latest/querying/operators/#comparison-binary-operators).
+Include successful HTTP scraping with required status omitted in rule fixtures.
 
 Plan dashboards in layers: appliance/service/interface state; BGP/AFI/SAFI and
 BFD; VNI/MAC/segment observations; DX/VPN and explicit probes. Show unavailable
