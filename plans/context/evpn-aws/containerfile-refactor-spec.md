@@ -210,8 +210,8 @@ deliverable needs vmdk/ova and its own reviewed guest-integration delta
 ([platform evidence](source-evidence.md#9-payload-platform-and-ocp-test-inputs)).
 
 Agree the image/collection service contract with that first payload. The
-[source audit](source-audit.md#1-security--identity-findings) records the container-versus-host
-FRR lifecycle conflict between the proposed images (#6, #16) and the merged collection. Start one native host scenario
+[source audit](source-audit.md#1-security--identity-findings) records the FRR lifecycle
+mismatch between the merged embedded image and collection. Start one native host scenario
 for the selected image and installed collection: deployment and notified restart must use
 the intended lifecycle, preserve image-owned defaults and work after reboot. Do not use
 a build result or role lint as that proof, or add a general inventory validator to bridge

@@ -56,8 +56,8 @@ deployed. All observations below are from 2026-10-22 unless otherwise dated.
 | [`openshift/frr` release-4.22, `943578e5`](https://github.com/openshift/frr/blob/943578e55487fc99389a36e0b50ee3e02101050e/cmd/metrics/exporter.go) | Earlier HTTP exporter without native Kubernetes authentication; useful history, not the proposed target fix |
 | [`FRRouting/frr` 10.4.3, `6ddbeb5e`](https://github.com/FRRouting/frr/tree/6ddbeb5eaf71bc5a3f05f22e211684fb85a34091/zebra) | C daemons and CLI JSON producers. Used to establish candidate EVPN fields. The actual RHEL package may have downstream patches; verify fixtures against the chosen image |
 | [`tynany/frr_exporter` v1.12.0, `85392e48`](https://github.com/tynany/frr_exporter/blob/85392e48b7b85c243298f23faf0a92821a7f7a28/collector/bgp.go) | Exporter selected by the merged Ansible role; comparison baseline for coverage lost on replacement |
-| EGA main, `5af03731` | Merged collection and source checks; no merged `image/` tree in this baseline |
-| [EGA image PR #6, `6f9ca70f`](https://github.com/openshift/evpn-gateway-appliance/blob/6f9ca70f7eb966724bd0e64ac961e2adc4404812/image/rhel10/Containerfile) | Rechecked 2026-10-23: open proposal embeds FRR and node-exporter; its metrics unit is not installed/enabled. Product Containerfile and FRR/metrics units are unchanged; payload-loader shell simplification preserves the embedded-image import behavior |
+| Original EGA collection baseline, `5af03731` | Merged collection and source checks; no merged `image/` tree at that revision |
+| [EGA main, `be5a2b9a`](https://github.com/openshift/evpn-gateway-appliance/blob/be5a2b9ab49517c6c6082aabfadc78f5167f25d3/image/rhel10/Containerfile) | Image PR #6 merged 2026-10-23: embeds FRR and node-exporter; its metrics unit is not installed/enabled. Source availability does not establish runtime qualification or approval of decisions 10/16 |
 
 The upstream module requires Go 1.26 and uses client-go 0.37.1 and
 controller-runtime 0.25.1. Upstream unit integration fixtures select FRR 10.6.2;
@@ -500,7 +500,7 @@ source was found in the merged EGA collection at the inspected revision.
 
 ### Preferred appliance candidate
 
-For the embedded-FRR direction in current PR #6, prefer running the exporter in
+For the merged embedded-FRR image, prefer running the exporter in
 a separately managed container **from the same pinned FRR image**, with its
 command set to `/frr-metrics` while retaining the image's tini entrypoint. That
 preserves its own vtysh, RHEL users,
@@ -545,7 +545,7 @@ SELinux labels without qualification.
 
 ### Concrete EGA integration work
 
-At PR #6 `6f9ca70f`, `frr-container.service` loads an embedded container and the
+At EGA main `be5a2b9a`, `frr-container.service` loads an embedded container and the
 image does not install or enable `frr-metrics.service`. That unused file still
 expects `/usr/bin/frr-metrics` and orders after `frr.service`, a different unit.
 The existing runtime-smoke work is separate and must be rebased/rechecked before
@@ -561,7 +561,7 @@ rollback and scrape recovery. Put image-owned units in the selected image's
 vendor-unit location and Ansible-owned overrides/configuration in its local
 locations, as the [Containerfile contract](containerfile-refactor-spec.md) describes.
 
-In PR #6 the router unit owns `RuntimeDirectory=frr`. Stopping it can remove that
+The merged router unit owns `RuntimeDirectory=frr`. Stopping it can remove that
 directory; an exporter already bind-mounted to the old directory will not follow
 a newly created directory at the same host path. Choose either a stable, correctly
 owned runtime socket directory across service restarts or a dependency/recreation
@@ -592,7 +592,7 @@ before removing its container/configuration, otherwise `Restart=always` can
 recreate it. Test teardown and redeploy per group, limiting cleanup to resources
 owned by this deployment.
 
-Use the approved rebuilt image digest in the native consumer. Current PR #6 pins
+Use the approved rebuilt image digest in the native consumer. The merged Containerfile pins
 4.22 content; a flag present in source or a developer overlay is not proof the
 pinned image contains it. Verify `/frr-metrics --help`, actual startup and required
 series from every target-platform binary. Keep build provenance/SBOM and runtime

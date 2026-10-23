@@ -32,8 +32,8 @@ The proposal in brief:
   complete feature per pull request, with atomic commits ([source CI](ci-source.md)). In parallel, bring a reviewed copy
   of the internal prototype into the public
   [`openshift/evpn-gateway-appliance`](https://github.com/openshift/evpn-gateway-appliance)
-  repository (DPP-22292), now arriving in pieces (the collection has merged and its checks run in
-  `verify`; the image sources are an open pull request). GitHub Actions is
+  repository (DPP-22292), now arriving in pieces (the collection and image sources have merged;
+  source checks run in `verify`). GitHub Actions is
   optional and off by default in the organization.
 - Build one RHEL bootc image in Konflux and derive the qcow2 and raw/AMI artifacts
   that CORENET-7506/7522 require from its digest. Replace the prototype's community

@@ -10,8 +10,9 @@ internal [`evpn-on-cloud` at
 (2026-09-08, 18 commits), rechecked from a local clone on 2026-09-29.
 Collection PR #7 merged at `31cfdbb9` on 2026-10-14; the 2026-10-15 image-source
 observations below used #16 (`13189813`, then open) and #6 (`67524c74`, then on hold).
-On 2026-10-22, #16 is closed and #6 remains open with embedded FRR at `e3239e6c`
-([current source recheck](frr-metrics-plan.md#source-baseline-and-repository-boundaries)). Findings below belong to
+On 2026-10-22, #16 was closed and #6 was open with embedded FRR at `e3239e6c`.
+PR #6 merged on 2026-10-23 at `be5a2b9a`
+([current source baseline](frr-metrics-plan.md#source-baseline-and-repository-boundaries)). Findings below belong to
 the prototype or explicitly dated earlier snapshots; recheck each on the imported revision
 before treating it as a current defect. Local qualification is not merged or deployed code.
 
@@ -21,8 +22,8 @@ The canonical repository is now public
 [`openshift/evpn-gateway-appliance`](https://github.com/openshift/evpn-gateway-appliance)
 (DPP-22292, created 2026-09-28). It now holds these documents, a `Makefile` and a CI build image,
 and the import is arriving in reviewed pieces, not as one snapshot. Collection
-[#7](https://github.com/openshift/evpn-gateway-appliance/pull/7) has merged and image
-[#6](https://github.com/openshift/evpn-gateway-appliance/pull/6) is open (#16 closed, rechecked 2026-10-22); earlier findings cite
+[#7](https://github.com/openshift/evpn-gateway-appliance/pull/7) and image
+[#6](https://github.com/openshift/evpn-gateway-appliance/pull/6) have merged (#6 on 2026-10-23 at `be5a2b9a`; #16 closed); earlier findings cite
 collection [#3](https://github.com/openshift/evpn-gateway-appliance/pull/3). Anything
 pushed there is published permanently, so import a reviewed snapshot rather than the internal
 history, and vet each piece the same way:

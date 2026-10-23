@@ -46,13 +46,13 @@ scope decision before including or deferring the parent's L3 requirement.
 
 | Gate | Inputs needed | Exit evidence |
 | --- | --- | --- |
-| A — source CI | Existing Prow verify and tools; reviewed product import for product checks | Planning, public-safety, YAML, Markdown and collection checks run in `verify`. Add standard lint for helpers and Dockerfiles, then image-source checks once the image sources land. [Queue](ci-source.md#queue) |
+| A — source CI | Existing Prow verify and tools; reviewed product import for product checks | Planning, public-safety, YAML, Markdown, Python and collection checks run in `verify`. Extend checks against the merged image sources, including standard lint for Dockerfiles. [Queue](ci-source.md#queue) |
 | B — non-releasing Konflux builds | source access, tenant/cluster/RBAC, approved image/package inputs; MPC capacity for privileged-nested bootc builds and rootful disk builds | bootc build + provenance, then on-prem disk canaries, digest nudge, disk boot and target-policy results |
 | C-stage — trial publication | channel-specific stage destination, credentials, product metadata including the Engineering ID, applicable ECP/RP/RPA | stage container/download/AMI/collection install and launch evidence |
 | C-prod — supported release | approved configuration matrix and AWS/OCP support decision, qualified candidate, production destinations/listings, security/QE/PM sign-off | same candidate published, customer paths verified, rollback and operational handoff recorded |
 
 Source CI needs no Konflux tenant, cloud credentials or publication channel
-([queue](ci-source.md#queue)). Before importing the image source for A's image checks, remove baked access, tracked
+([queue](ci-source.md#queue)). Before further product imports, remove baked access, tracked
 private/generated material and unsafe build inputs ([public import](source-audit.md#0-public-import)).
 Feature completeness, HA qualification, final Marketplace IDs, and all parent
 deployment-matrix decisions are production requirements; they are not
