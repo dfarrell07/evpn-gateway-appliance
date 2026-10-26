@@ -48,6 +48,7 @@ export EGA_SSH_PUBKEY="${ssh_key}.pub"
 
 # Tear the topology down on exit for `full`; leave it up for `deploy`. Do NOT `exec` past
 # this point, or the trap is lost and the lab leaks.
+# shellcheck disable=SC2329 # invoked through the EXIT trap below
 cleanup() {
 	if [ "$stage" = deploy ]; then
 		echo ">> stage=deploy; leaving lab up for inspection: $topo" >&2

@@ -66,7 +66,8 @@ fi
 # Scratch staging dir (the same path is created on the target). On exit, tear down the target:
 # the scratch dir, the registry container, and the host state the steps wrote (run.sh tears down
 # its own clab topology). Runs on the VM too when remote -- best-effort, harmless if already gone.
-readonly WORK="$(mktemp -d)"
+WORK="$(mktemp -d)"
+readonly WORK
 cleanup() {
     rm -rf "${WORK}"
     # Leave the artifact dir (/tmp/ega/artifact): it is the collected output locally, and already
@@ -74,6 +75,7 @@ cleanup() {
     # and the work dir, which holds the throwaway key).
     local teardown='podman rm -f mirror >/dev/null 2>&1 || true; rm -rf /tmp/ega/build /tmp/ega/work /tmp/ega/empty-auth.json /etc/containers/registries.conf.d/99-local.conf'
     if [[ -n "${SSH_REMOTE:-}" ]]; then
+        # shellcheck disable=SC2029 # client-side expansion is intended; the remote shell gets the final path
         ssh "${ssh_opts[@]}" "${SSH_REMOTE}" "rm -rf '${WORK}'; sudo sh -c '${teardown}'" >/dev/null 2>&1 || true
     else
         sudo sh -c "${teardown}" >/dev/null 2>&1 || true
@@ -85,6 +87,7 @@ trap cleanup EXIT
 run_step() {
     local script="$1"
     if [[ -n "${SSH_REMOTE:-}" ]]; then
+        # shellcheck disable=SC2029 # client-side expansion is intended; the remote shell gets the final path
         ssh "${ssh_opts[@]}" "${SSH_REMOTE}" "sudo bash ${WORK}/${script}"
     else
         sudo bash "${WORK}/${script}"
@@ -182,6 +185,7 @@ chmod +x "${WORK}"/*.sh
 # --- Ship to the target (remote only) -------------------------------------------------
 if [[ -n "${SSH_REMOTE:-}" ]]; then
     banner "ship to ${SSH_REMOTE}:${WORK}"
+    # shellcheck disable=SC2029 # client-side expansion is intended; the remote shell gets the final path
     ssh "${ssh_opts[@]}" "${SSH_REMOTE}" "mkdir -p ${WORK}"
     scp "${ssh_opts[@]}" "${WORK}"/* "${SSH_REMOTE}:${WORK}/"
 fi
@@ -198,6 +202,7 @@ e2e_rc=0; run_step e2e.sh || e2e_rc=$?
 if [[ -n "${SSH_REMOTE:-}" ]]; then
     banner "collect artifacts -> ${ARTIFACTS}"
     mkdir -p "${ARTIFACTS}"
+    # shellcheck disable=SC2029 # client-side expansion is intended; the remote shell gets the final path
     if ssh "${ssh_opts[@]}" "${SSH_REMOTE}" "tar -C '${lane_artifacts}' -cf - . 2>/dev/null" \
         | tar -C "${ARTIFACTS}" -xf - 2>/dev/null; then :; else
         echo "run_remote: artifact copy-back failed or nothing to collect (continuing)" >&2
