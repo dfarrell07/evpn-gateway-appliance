@@ -1,0 +1,23 @@
+---
+# Remove everything tasks/main.yml creates. In the e2e, `containerlab destroy`
+# normally wipes the whole node, so this is for non-clab runs or an explicit
+# re-cleanup. Deleting a namespace also destroys its host-side veth peer
+# (veth-<name>), so the access-port veths need no separate removal.
+
+- name: Remove simulated host namespaces (also removes their host veths)
+  ansible.builtin.command: ip netns del vm-{{ item.name }}
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "vm-{{ item.name }}"
+  failed_when: false
+  changed_when: false
+
+- name: Remove CPE uplink veth (also removes the appliance-side trunk_interface)
+  ansible.builtin.command: ip link del cpe-uplink
+  failed_when: false
+  changed_when: false
+
+- name: Remove CPE bridge
+  ansible.builtin.command: ip link del cpe-br
+  failed_when: false
+  changed_when: false

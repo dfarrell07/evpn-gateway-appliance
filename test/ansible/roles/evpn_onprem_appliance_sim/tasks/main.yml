@@ -1,0 +1,133 @@
+---
+# Simulate the on-prem customer side the appliance attaches to, as a real CPE
+# switch: a VLAN-aware bridge (cpe-br) with one untagged access port per stretch
+# (a network namespace standing in for an on-prem host), and an 802.1Q-tagged
+# uplink whose far end is the appliance's trunk_interface. The appliance role then
+# enslaves that trunk_interface and builds its per-stretch VTEP on top — exactly as
+# with a real tagged trunk from a customer switch. This replaces the old in-role
+# "simulate" mode, and unlike it does NOT touch anything the appliance owns
+# (trunk-br, trunk.<vlan>); it only provides trunk_interface + the hosts behind it.
+#
+# trunk_interface must match the value the appliance uses (inventory default: trunk0).
+
+- name: Create CPE bridge (VLAN-aware)
+  ansible.builtin.command: ip link add cpe-br type bridge vlan_filtering 1
+  register: _cpe_br
+  failed_when: _cpe_br.rc != 0 and 'File exists' not in _cpe_br.stderr
+  changed_when: _cpe_br.rc == 0
+
+- name: Bring up CPE bridge
+  ansible.builtin.command: ip link set cpe-br up
+  changed_when: false
+
+# Tagged uplink: trunk_interface is handed to the appliance; cpe-uplink is the CPE
+# switch's trunk port, carrying every stretch VLAN tagged.
+- name: Create uplink veth (appliance trunk_interface <-> CPE trunk port)
+  ansible.builtin.command: ip link add {{ trunk_interface }} type veth peer name cpe-uplink
+  register: _uplink
+  failed_when: _uplink.rc != 0 and 'File exists' not in _uplink.stderr
+  changed_when: _uplink.rc == 0
+
+- name: Attach CPE uplink to CPE bridge
+  ansible.builtin.command: ip link set cpe-uplink master cpe-br
+  register: _uplink_master
+  failed_when: _uplink_master.rc != 0 and 'already a member' not in _uplink_master.stderr
+  changed_when: _uplink_master.rc == 0
+
+- name: Bring up CPE uplink
+  ansible.builtin.command: ip link set cpe-uplink up
+  changed_when: false
+
+- name: Allow each stretch VLAN tagged on the CPE uplink (trunk port)
+  ansible.builtin.command: bridge vlan add vid {{ item.vlan }} dev cpe-uplink
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "cpe-uplink tagged VLAN {{ item.vlan }}"
+  changed_when: false
+
+# ── Per-stretch simulated host (namespace behind an untagged access port) ──
+- name: Create network namespaces for simulated hosts
+  ansible.builtin.command: ip netns add vm-{{ item.name }}
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "vm-{{ item.name }}"
+  register: _ns_create
+  failed_when: _ns_create.rc != 0 and 'File exists' not in _ns_create.stderr
+  changed_when: _ns_create.rc == 0
+
+- name: Create host veth pairs
+  ansible.builtin.command: ip link add veth-{{ item.name }} type veth peer name eth0 netns vm-{{ item.name }}
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "veth-{{ item.name }}"
+  register: _veth_create
+  failed_when: _veth_create.rc != 0 and 'File exists' not in _veth_create.stderr
+  changed_when: _veth_create.rc == 0
+
+- name: Attach host veth to CPE bridge
+  ansible.builtin.command: ip link set veth-{{ item.name }} master cpe-br
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "veth-{{ item.name }} → cpe-br"
+  register: _veth_master
+  failed_when: _veth_master.rc != 0 and 'already a member' not in _veth_master.stderr
+  changed_when: _veth_master.rc == 0
+
+- name: Bring up host veth
+  ansible.builtin.command: ip link set veth-{{ item.name }} up
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "veth-{{ item.name }}"
+  changed_when: false
+
+- name: Configure access port — remove default VLAN
+  ansible.builtin.command: bridge vlan del vid 1 dev veth-{{ item.name }}
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "veth-{{ item.name }}"
+  failed_when: false
+  changed_when: false
+
+- name: Configure access port — assign stretch VLAN as untagged pvid
+  ansible.builtin.command: bridge vlan add vid {{ item.vlan }} dev veth-{{ item.name }} pvid untagged
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "veth-{{ item.name }} access VLAN {{ item.vlan }}"
+  changed_when: false
+
+# ── Configure the simulated host inside its namespace ──
+- name: Bring up loopback in namespace
+  ansible.builtin.command: ip netns exec vm-{{ item.name }} ip link set lo up
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "vm-{{ item.name }}"
+  changed_when: false
+
+- name: Bring up eth0 in namespace
+  ansible.builtin.command: ip netns exec vm-{{ item.name }} ip link set eth0 up
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "vm-{{ item.name }}"
+  changed_when: false
+
+- name: Assign IP in namespace
+  ansible.builtin.command: >
+    ip netns exec vm-{{ item.name }}
+    ip addr add {{ item.subnet | ansible.utils.ipaddr('network') | ansible.utils.ipmath(10) }}/{{ item.subnet | ansible.utils.ipaddr('prefix') }} dev eth0
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "vm-{{ item.name }} {{ item.subnet | ansible.utils.ipaddr('network') | ansible.utils.ipmath(10) }}"
+  register: _ns_ip
+  failed_when: _ns_ip.rc != 0 and 'already' not in _ns_ip.stderr and 'File exists' not in _ns_ip.stderr
+  changed_when: _ns_ip.rc == 0
+
+- name: Set default route in namespace
+  ansible.builtin.command: >
+    ip netns exec vm-{{ item.name }}
+    ip route add default via {{ item.onprem_gateway }}
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "vm-{{ item.name }} gw {{ item.onprem_gateway }}"
+  register: _ns_route
+  failed_when: _ns_route.rc != 0 and 'already' not in _ns_route.stderr and 'File exists' not in _ns_route.stderr
+  changed_when: _ns_route.rc == 0

@@ -139,29 +139,3 @@
   loop_control:
     label: "→ {{ item.cloud_gateway }}"
   when: "'onprem_appliances' in group_names"
-
-- name: "HEALTH [onprem]: Simulated VM can ping cloud gateway"
-  ansible.builtin.command: >
-    ip netns exec vm-{{ item.name }} ping -c 2 -W 3 {{ item.cloud_gateway }}
-  changed_when: false
-  loop: "{{ stretches }}"
-  loop_control:
-    label: "vm-{{ item.name }} → {{ item.cloud_gateway }}"
-  when:
-    - "'onprem_appliances' in group_names"
-    - trunk_interface == "simulate"
-
-# DISABLED pending a decision on what it should assert. It fails because prod
-# reaches staging via L3 routing (ttl=63, one routed hop), not an L2 VLAN leak
-# (which would be ttl=64): the VMs are in different subnets, so the appliance
-# routes between them and nothing isolates the tenants at L3.
-# - name: "HEALTH [onprem]: VLAN isolation — prod cannot reach staging VM"
-#   ansible.builtin.command: >
-#     ip netns exec vm-{{ stretches[0].name }} ping -c 1 -W 1 {{ stretches[1].subnet | ansible.utils.ipaddr('network') | ansible.utils.ipmath(10) }}
-#   register: _isolation
-#   changed_when: false
-#   failed_when: _isolation.rc == 0
-#   when:
-#     - "'onprem_appliances' in group_names"
-#     - trunk_interface == "simulate"
-#     - stretches | length >= 2

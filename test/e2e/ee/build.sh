@@ -21,11 +21,14 @@ build_dir="$(mktemp -d)"
 trap 'rm -rf "$build_dir"' EXIT
 cp "$here/execution-environment.yml" "$build_dir/"
 cp -r "$repo_root/ansible" "$build_dir/collection-src"
+cp -r "$repo_root/test/ansible" "$build_dir/test-collection-src"
 
 # Generate the collection tarball + EE build context with the CI image.
 podman run --rm --user 0 -v "$build_dir:/ee:Z" -w /ee "$ci_image" sh -c '
 	ansible-galaxy collection build collection-src --force --output-path .
 	mv -f network-evpn_gateway-*.tar.gz network-evpn_gateway.tar.gz
+	ansible-galaxy collection build test-collection-src --force --output-path .
+	mv -f network-evpn_gateway_test-*.tar.gz network-evpn_gateway_test.tar.gz
 	ansible-builder create -f execution-environment.yml -c context
 '
 

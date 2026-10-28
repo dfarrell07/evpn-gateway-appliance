@@ -1,0 +1,12 @@
+---
+# Simulated-host data-plane checks. Run by the e2e AFTER the deploy and the
+# product's own evpn_health_check, to assert the fake on-prem hosts reach the
+# cloud gateway across the stretched fabric.
+- name: Simulated on-prem health checks
+  hosts: onprem_appliances
+  become: true
+  tasks:
+    - name: Run simulated-VM health checks
+      ansible.builtin.include_role:
+        name: network.evpn_gateway_test.evpn_onprem_appliance_sim
+        tasks_from: healthcheck

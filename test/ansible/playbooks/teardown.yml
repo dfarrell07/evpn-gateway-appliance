@@ -1,0 +1,12 @@
+---
+# Tear down the simulated on-prem environment (trunk + fake hosts). In the e2e,
+# `containerlab destroy` wipes the nodes, so this is for non-clab runs or explicit
+# cleanup — the counterpart of the simulate playbook.
+- name: Tear down the simulated on-prem side
+  hosts: onprem_appliances
+  become: true
+  tasks:
+    - name: Remove simulated on-prem resources
+      ansible.builtin.include_role:
+        name: network.evpn_gateway_test.evpn_onprem_appliance_sim
+        tasks_from: teardown

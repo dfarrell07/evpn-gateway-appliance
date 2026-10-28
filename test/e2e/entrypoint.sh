@@ -71,7 +71,10 @@ ansible -i "$inv" all -u root --private-key "$ssh_key" \
 
 # Stage the e2e inventory into the work dir so the EE (launched below as a sibling via
 # the host socket) can bind it: podman-remote resolves bind sources on the host, and run.sh
-# mounts the work dir at the same path on the host and here.
+# mounts the work dir at the same path on the host and here. Remove any previous copy first:
+# the work dir persists across runs, and `cp -r` into an existing dir would nest
+# (inventory/inventory/) and silently reuse the stale inventory from an earlier run.
+rm -rf "${lab_dir}/inventory"
 cp -r "${self_dir}/inventory" "${lab_dir}/inventory"
 
 # Run the collection's deploy.yml from the execution environment — the same artifact AAP
@@ -80,17 +83,28 @@ cp -r "${self_dir}/inventory" "${lab_dir}/inventory"
 # nothing is built, installed or pre-seeded here. It joins the host network to reach the
 # nodes on the clab management network, and runs as root to read the (root-owned) key and
 # inventory and write ansible's temp dirs.
-echo ">> ansible-playbook deploy.yml (via execution environment: $EGA_EE_IMAGE)"
-# The toolchain ships podman-remote (not a local podman): launch the EE as a sibling on the
-# host runtime through the same mounted socket containerlab uses.
-podman-remote --url "unix://${EGA_RUNTIME_SOCK}" run --rm --net=host --user 0 \
-	-v "${lab_dir}:${lab_dir}:Z" \
-	-e ANSIBLE_HOST_KEY_CHECKING=False \
-	-w "${lab_dir}" \
-	"$EGA_EE_IMAGE" \
-	ansible-playbook -i "${lab_dir}/inventory/hosts.yml" \
-		network.evpn_gateway.deploy \
-		-u root --private-key "$ssh_key"
+# Run a collection playbook from the execution environment. The toolchain ships
+# podman-remote (not a local podman): launch the EE as a sibling on the host runtime
+# through the same mounted socket containerlab uses.
+ee_playbook() {
+	local pb="$1"
+	echo ">> ansible-playbook ${pb} (via execution environment: $EGA_EE_IMAGE)"
+	podman-remote --url "unix://${EGA_RUNTIME_SOCK}" run --rm --net=host --user 0 \
+		-v "${lab_dir}:${lab_dir}:Z" \
+		-e ANSIBLE_HOST_KEY_CHECKING=False \
+		-w "${lab_dir}" \
+		"$EGA_EE_IMAGE" \
+		ansible-playbook -i "${lab_dir}/inventory/hosts.yml" \
+			"$pb" \
+			-u root --private-key "$ssh_key"
+}
 
-echo ">> deploy complete (assertions not yet added)"
+# Build the simulated on-prem side (trunk + fake hosts) BEFORE the product deploy so
+# the appliance role finds the trunk to build its VTEP on; deploy the product; then run
+# the simulated-host data-plane checks.
+ee_playbook network.evpn_gateway_test.simulate
+ee_playbook network.evpn_gateway.deploy
+ee_playbook network.evpn_gateway_test.healthcheck
+
+echo ">> deploy + simulated-host health checks complete"
 exit 0
