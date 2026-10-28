@@ -25,6 +25,20 @@
   ansible.builtin.command: ip link set {{ trunk_interface }} up
   changed_when: false
 
+- name: Admit each stretch VLAN tagged on the trunk port
+  ansible.builtin.command: bridge vlan add vid {{ item.vlan }} dev {{ trunk_interface }}
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "{{ trunk_interface }} tagged VLAN {{ item.vlan }}"
+  changed_when: false
+
+- name: Deliver each stretch VLAN to the trunk bridge itself
+  ansible.builtin.command: bridge vlan add vid {{ item.vlan }} dev trunk-br self
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "trunk-br self VLAN {{ item.vlan }}"
+  changed_when: false
+
 - name: Create VLAN sub-interfaces on trunk
   ansible.builtin.command: ip link add link trunk-br name trunk.{{ item.vlan }} type vlan id {{ item.vlan }}
   loop: "{{ stretches }}"
