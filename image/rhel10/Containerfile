@@ -7,6 +7,8 @@ FROM ${BOOTC_BASE}
 ARG FRR_IMAGE=registry.redhat.io/openshift4/frr-rhel9@sha256:82fd7cc0123f6286bad46231a9939799ae79c30b9369047d2ffd109dacefa76e
 ARG NODE_EXPORTER_IMAGE=registry.redhat.io/openshift4/ose-prometheus-node-exporter-rhel9@sha256:7d2884dc16f902e31b897d475d3e0dc09bc735df16b22544d0fefc4396a0ca48
 
+# Package versions are not pinned; they follow the base image's repositories.
+# hadolint ignore=DL3041
 RUN dnf install -y \
     wireguard-tools \
     libreswan \
