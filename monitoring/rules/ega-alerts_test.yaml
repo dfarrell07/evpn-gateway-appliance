@@ -1,0 +1,645 @@
+rule_files:
+- ega-alerts.yaml
+evaluation_interval: 1m
+tests:
+- name: healthy
+  input_series:
+  - {series: 'ega_expected_inventory_items{appliance="a1"}', values: 5x30}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-node-exporter"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_max_prefix{appliance="a1",vrf="default",peer="192.0.2.1"}', values: 100x30}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x30}
+  - {series: 'ega_expected_interface{appliance="a1",role="onprem",site="dc1",device="vxlan10010"}', values: 1x30}
+  - {series: 'ega_expected_interface_mtu_bytes{appliance="a1",device="vxlan10010"}', values: 9000x30}
+  - {series: 'up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'up{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 12x30}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 0x30}
+  - {series: 'promhttp_metric_handler_errors_total{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",cause="gathering"}', values: 0x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="vxlan10010",operstate="unknown"}', values: 1x30}
+  - {series: 'node_network_mtu_bytes{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="vxlan10010"}', values: 9000x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="netclass"}', values: 1x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="netdev"}', values: 1x30}
+  alert_rule_test:
+  - {eval_time: 25m, alertname: EGAInventoryMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAExporterDown, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAExporterTargetMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAFrrBgpSeriesMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAFrrMetricsGatherErrors, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpSessionDown, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpDownBfdUp, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpUnexpectedSession, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpExpectedSessionMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpSessionFlapping, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpNoPrefixesReceived, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpMaxPrefixNear, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABfdSessionDown, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABfdExpectedSessionMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABfdSessionFlapping, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAInterfaceDown, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAExpectedInterfaceMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAInterfaceMtuMismatch, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGANodeCollectorFailed, exp_alerts: []}
+
+- name: inventory-missing
+  input_series:
+  # a1 renders 3 items but only 2 exist; z1 is scraped with no inventory at all.
+  - {series: 'ega_expected_inventory_items{appliance="a1"}', values: 3x30}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-node-exporter"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="z1:9141",appliance="z1",role="onprem",site="dc2"}', values: 1x30}
+  # z2 is scraped only by node-exporter; q1 is another job and is ignored.
+  - {series: 'up{job="ega-node-exporter",instance="z2:9100",appliance="z2",role="onprem",site="dc2"}', values: 1x30}
+  - {series: 'up{job="other",instance="q1:80",appliance="q1"}', values: 1x30}
+  alert_rule_test:
+  - eval_time: 8m
+    alertname: EGAInventoryMissing
+    exp_alerts: []
+  - eval_time: 11m
+    alertname: EGAInventoryMissing
+    exp_alerts:
+    - exp_labels: {severity: warning, component: inventory, appliance: a1}
+      exp_annotations: {summary: 'Expected inventory for a1 is missing or incomplete', description: &inventory 'Every inventory-gated alert for this appliance is silent while its inventory is absent. Check the generated PrometheusRule.'}
+    - exp_labels: {severity: warning, component: inventory, appliance: z1}
+      exp_annotations: {summary: 'Expected inventory for z1 is missing or incomplete', description: *inventory}
+    - exp_labels: {severity: warning, component: inventory, appliance: z2}
+      exp_annotations: {summary: 'Expected inventory for z2 is missing or incomplete', description: *inventory}
+
+- name: exporter-down-target-missing-and-maintenance
+  input_series:
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_target{appliance="r1",role="relay",site="aws1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_target{appliance="m1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_maintenance{appliance="m1"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1"}', values: 1x4 0x15 1x10}
+  - {series: 'up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1"}', values: 0x30}
+  # a1's node-exporter stays up; r1 has only an unexpected node-exporter target.
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-node-exporter"}', values: 1x30}
+  - {series: 'up{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'up{job="ega-node-exporter",instance="r1:9100",appliance="r1",role="relay",site="aws1"}', values: 1x30}
+  alert_rule_test:
+  - eval_time: 8m
+    alertname: EGAExporterDown
+    exp_alerts: []
+  - {eval_time: 8m, alertname: EGAExporterTargetMissing, exp_alerts: []}
+  - eval_time: 12m
+    alertname: EGAExporterDown
+    exp_alerts:
+    - exp_labels: {severity: warning, component: ega-frr-metrics, job: ega-frr-metrics, appliance: a1, role: onprem, site: dc1}
+      exp_annotations: {summary: 'ega-frr-metrics on a1 cannot be scraped', description: &exporter_down 'Prometheus cannot scrape the exporter. Says nothing about routing or forwarding state; all series from this target are unknown, not zero.'}
+  - eval_time: 25m
+    alertname: EGAExporterDown
+    exp_alerts: []
+  - eval_time: 12m
+    alertname: EGAExporterTargetMissing
+    exp_alerts:
+    - exp_labels: {severity: warning, component: ega-frr-metrics, appliance: r1, role: relay, site: aws1, job: ega-frr-metrics}
+      exp_annotations: {summary: 'No ega-frr-metrics target is discovered for r1', description: &target_missing 'An expected scrape target has no up series at all (discovery or scrape-config gap). Distinct from EGAExporterDown.'}
+
+- name: absent-series-while-up
+  input_series:
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1x5 stale}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-node-exporter"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x30}
+  # a2: frr-metrics down, node-exporter up (EGAExporterDown's job). a3: no BGP expected.
+  - {series: 'ega_expected_target{appliance="a2",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a2",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="a2:9141",appliance="a2",role="onprem",site="dc1"}', values: 0x30}
+  - {series: 'up{job="ega-node-exporter",instance="a2:9100",appliance="a2",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'ega_expected_target{appliance="a3",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="a3:9141",appliance="a3",role="onprem",site="dc1"}', values: 1x30}
+  alert_rule_test:
+  - {eval_time: 8m, alertname: EGAFrrBgpSeriesMissing, exp_alerts: []}
+  - {eval_time: 15m, alertname: EGABfdExpectedSessionMissing, exp_alerts: []}
+  - eval_time: 15m
+    alertname: EGAFrrBgpSeriesMissing
+    exp_alerts:
+    - exp_labels: {severity: warning, component: frr-metrics, job: ega-frr-metrics, appliance: a1, role: onprem, site: dc1}
+      exp_annotations: {summary: 'frr-metrics on a1 returns no BGP series', description: &series_missing 'BGP collection failed (vtysh error, parse error or FRR down) while the exporter is reachable. BGP state is unknown, not down.'}
+  - {eval_time: 15m, alertname: EGABgpExpectedSessionMissing, exp_alerts: []}
+  - {eval_time: 15m, alertname: EGABgpSessionDown, exp_alerts: []}
+
+- name: unpaired-down-admin-down-unexpected-and-recovery
+  input_series:
+  - {series: 'ega_expected_target{appliance="r1",role="relay",site="aws1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="198.51.100.7",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="198.51.100.8",peer_role="leaf",admin_down="true",expect_prefixes="false"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1"}', values: 1x4 0x15 1x10}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="198.51.100.8"}', values: 0x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="203.0.113.9"}', values: 1x30}
+  # Same peer IPs in another VRF (unexpected) and on another appliance (expected there).
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="red",peer="198.51.100.7"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="r2",role="relay",site="aws1",vrf="default",peer="203.0.113.9",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="r2",role="relay",site="aws1",vrf="default",peer="198.51.100.7",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r2:9141",appliance="r2",role="relay",site="aws1",vrf="default",peer="203.0.113.9"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r2:9141",appliance="r2",role="relay",site="aws1",vrf="default",peer="198.51.100.7"}', values: 1x30}
+  alert_rule_test:
+  - {eval_time: 4m, alertname: EGABgpExpectedSessionMissing, exp_alerts: []}
+  - eval_time: 8m
+    alertname: EGABgpSessionDown
+    exp_alerts: []
+  - eval_time: 12m
+    alertname: EGABgpSessionDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: bgp, appliance: r1, role: relay, site: aws1, vrf: default, peer: 192.0.2.1, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP session 192.0.2.1 (vrf default, leaf) on r1 not Established', description: &bgp_down 'An expected, not administratively down neighbor is in any state other than Established. Does not prove the data path is down, and an Established session does not prove VXLAN forwarding works.'}
+  - eval_time: 25m
+    alertname: EGABgpSessionDown
+    exp_alerts: []
+  - eval_time: 6m
+    alertname: EGABgpExpectedSessionMissing
+    exp_alerts:
+    - exp_labels: {severity: critical, component: bgp, appliance: r1, role: relay, site: aws1, vrf: default, peer: 198.51.100.7, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'Expected BGP peer 198.51.100.7 (vrf default) absent on r1', description: &bgp_missing 'Collection works for other peers but this expected neighbor is not configured in FRR (or its VRF is not discovered). Not the same as down.'}
+  - eval_time: 12m
+    alertname: EGABgpUnexpectedSession
+    exp_alerts: []
+  - eval_time: 16m
+    alertname: EGABgpUnexpectedSession
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, job: ega-frr-metrics, instance: "r1:9141", appliance: r1, role: relay, site: aws1, vrf: default, peer: 203.0.113.9}
+      exp_annotations: {summary: 'BGP neighbor 203.0.113.9 (vrf default) on r1 is not in the inventory', description: &bgp_unexpected 'FRR has a neighbor the inventory does not list, so no session alert covers it. Add it to the inventory or remove it from FRR; dynamic "bgp listen" neighbors always land here.'}
+    - exp_labels: {severity: warning, component: bgp, job: ega-frr-metrics, instance: "r1:9141", appliance: r1, role: relay, site: aws1, vrf: red, peer: 198.51.100.7}
+      exp_annotations: {summary: 'BGP neighbor 198.51.100.7 (vrf red) on r1 is not in the inventory', description: *bgp_unexpected}
+  - {eval_time: 12m, alertname: EGAFrrBgpSeriesMissing, exp_alerts: []}
+
+- name: pair-failover-and-recovery
+  input_series:
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1",peer_role="relay",redundancy_group="p1/relay",admin_down="false",expect_prefixes="true"}', values: 1x45}
+  - {series: 'ega_expected_bgp_session{appliance="a2",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.2",peer_role="relay",redundancy_group="p1/relay",admin_down="false",expect_prefixes="true"}', values: 1x45}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1"}', values: 1x4 0x25 1x15}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a2:9141",appliance="a2",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.2"}', values: 1x14 0x15 1x15}
+  # a1's BFD follows its BGP. a3 (also p1/relay) shares a1's peer IP and is down with BFD
+  # up: not a path alert at either severity. a1's tgw session (group p1/tgw, VRF red, same IP) and b1 (group p2/relay) stay
+  # up, as does a1's BFD to another BGP peer (192.0.2.8); none of them masks p1/relay.
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x45}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1"}', values: 1x4 0x25 1x15}
+  - {series: 'ega_expected_bgp_session{appliance="a3",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1",peer_role="relay",redundancy_group="p1/relay",admin_down="false",expect_prefixes="true"}', values: 1x45}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a3:9141",appliance="a3",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1"}', values: 1x4 0x41}
+  - {series: 'ega_expected_bfd_session{appliance="a3",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x45}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="a3:9141",appliance="a3",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.1"}', values: 1x45}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",pair="p1",vrf="red",peer="192.0.2.1",peer_role="tgw",redundancy_group="p1/tgw",admin_down="false",expect_prefixes="true"}', values: 1x45}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",pair="p1",vrf="red",peer="192.0.2.1"}', values: 1x45}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",pair="p1",vrf="red",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x45}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",pair="p1",vrf="red",peer="192.0.2.1"}', values: 1x45}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.8",bgp_peer="192.0.2.8"}', values: 1x45}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",pair="p1",vrf="default",peer="192.0.2.8"}', values: 1x45}
+  - {series: 'ega_expected_bgp_session{appliance="b1",role="onprem",site="dc2",pair="p2",vrf="default",peer="192.0.2.5",peer_role="relay",redundancy_group="p2/relay",admin_down="false",expect_prefixes="true"}', values: 1x45}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="b1:9141",appliance="b1",role="onprem",site="dc2",pair="p2",vrf="default",peer="192.0.2.5"}', values: 1x45}
+  alert_rule_test:
+  - {eval_time: 8m, alertname: EGABgpSessionDown, exp_alerts: []}
+  - eval_time: 12m
+    alertname: EGABgpDownBfdUp
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, appliance: a3, role: onprem, site: dc1, pair: p1, vrf: default, peer: 192.0.2.1, peer_role: relay, redundancy_group: p1/relay, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP 192.0.2.1 on a3 down while its BFD session is up', description: &bgp_bfd_up 'The path answers BFD, so look at BGP configuration, policy or the maximum-prefix limit (cleared only by hand) rather than transport.'}
+  # One member down: warning. Both down: critical for both. Both back: nothing.
+  - eval_time: 12m
+    alertname: EGABgpSessionDown
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, appliance: a1, role: onprem, site: dc1, pair: p1, vrf: default, peer: 192.0.2.1, peer_role: relay, redundancy_group: p1/relay, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP session 192.0.2.1 (vrf default, relay) on a1 not Established', description: *bgp_down}
+  - eval_time: 22m
+    alertname: EGABgpSessionDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: bgp, appliance: a1, role: onprem, site: dc1, pair: p1, vrf: default, peer: 192.0.2.1, peer_role: relay, redundancy_group: p1/relay, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP session 192.0.2.1 (vrf default, relay) on a1 not Established', description: *bgp_down}
+    - exp_labels: {severity: critical, component: bgp, appliance: a2, role: onprem, site: dc1, pair: p1, vrf: default, peer: 192.0.2.2, peer_role: relay, redundancy_group: p1/relay, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP session 192.0.2.2 (vrf default, relay) on a2 not Established', description: *bgp_down}
+  - eval_time: 40m
+    alertname: EGABgpSessionDown
+    exp_alerts: []
+
+- name: maintenance
+  input_series:
+  # Maintenance ends at 20m with the session and interface still down.
+  - {series: 'ega_maintenance{appliance="a1"}', values: 1x19 stale}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_interface{appliance="a1",role="onprem",site="dc1",device="trunk.10"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 0x30}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1+1x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="trunk.10",operstate="down"}', values: 1x30}
+  alert_rule_test:
+  - {eval_time: 15m, alertname: EGABgpSessionDown, exp_alerts: []}
+  - {eval_time: 15m, alertname: EGABgpSessionFlapping, exp_alerts: []}
+  - {eval_time: 15m, alertname: EGAInterfaceDown, exp_alerts: []}
+  - eval_time: 28m
+    alertname: EGABgpSessionDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: bgp, appliance: a1, role: onprem, site: dc1, vrf: default, peer: 192.0.2.1, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP session 192.0.2.1 (vrf default, leaf) on a1 not Established', description: *bgp_down}
+  - eval_time: 28m
+    alertname: EGAInterfaceDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: trunk.10}
+      exp_annotations: {summary: 'trunk.10 on a1 is down'}
+
+- name: intentional-removal
+  input_series:
+  # Inventory drops 198.51.100.7 at 10m (count 3 -> 2), then FRR drops it at 13m.
+  - {series: 'ega_expected_inventory_items{appliance="a1"}', values: 3x9 2x30}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x40}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x40}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="198.51.100.7",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x9 stale}
+  - {series: 'up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1"}', values: 1x40}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1x40}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="198.51.100.7"}', values: 1x12 stale}
+  # Control: never in the inventory, so it alerts after 15m while the removed peer never does.
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="198.51.100.99"}', values: 1x40}
+  alert_rule_test:
+  - {eval_time: 12m, alertname: EGABgpUnexpectedSession, exp_alerts: []}
+  - {eval_time: 12m, alertname: EGAInventoryMissing, exp_alerts: []}
+  - eval_time: 35m
+    alertname: EGABgpUnexpectedSession
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, job: ega-frr-metrics, instance: "a1:9141", appliance: a1, role: onprem, site: dc1, vrf: default, peer: 198.51.100.99}
+      exp_annotations: {summary: 'BGP neighbor 198.51.100.99 (vrf default) on a1 is not in the inventory', description: *bgp_unexpected}
+  - {eval_time: 35m, alertname: EGABgpExpectedSessionMissing, exp_alerts: []}
+  - {eval_time: 35m, alertname: EGABgpSessionDown, exp_alerts: []}
+  - {eval_time: 35m, alertname: EGAInventoryMissing, exp_alerts: []}
+
+- name: counter-reset-vs-flapping
+  input_series:
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.9",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 5x10 0 1x20}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.9"}', values: 1x10 2 3 4 5 6 7 7x15}
+  # Flapping, but outside the inventory (another peer, appliance or VRF): no flapping alert.
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.50"}', values: 1x10 2 3 4 5 6 7 7x15}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="x1:9141",appliance="x1",role="onprem",site="dc1",vrf="default",peer="192.0.2.9"}', values: 1x10 2 3 4 5 6 7 7x15}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="red",peer="192.0.2.9"}', values: 1x10 2 3 4 5 6 7 7x15}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 0x10 1 2 3 3x15}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="x1:9141",appliance="x1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 0x10 1 2 3 3x15}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="red",peer="192.0.2.1"}', values: 0x10 1 2 3 3x15}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.50"}', values: 0x10 1 2 3 3x15}
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: EGABgpSessionFlapping
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, job: ega-frr-metrics, instance: "a1:9141", appliance: a1, role: onprem, site: dc1, vrf: default, peer: 192.0.2.9}
+      exp_annotations: {summary: 'BGP session 192.0.2.9 on a1 re-opened repeatedly', description: &bgp_flap 'OPEN messages received count session (re)establishment attempts. Sampling session_up would miss flaps shorter than the scrape interval.'}
+  - eval_time: 15m
+    alertname: EGABfdSessionFlapping
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bfd, job: ega-frr-metrics, instance: "a1:9141", appliance: a1, role: onprem, site: dc1, vrf: default, peer: 192.0.2.1}
+      exp_annotations: {summary: 'BFD session 192.0.2.1 on a1 went down repeatedly'}
+  - eval_time: 30m
+    alertname: EGABfdSessionFlapping
+    exp_alerts: []
+
+- name: bfd-bgp-correlation-and-gather-errors
+  input_series:
+  - {series: 'ega_expected_target{appliance="r1",role="relay",site="aws1",job="ega-frr-metrics"}', values: 1x30}
+  # .1: BGP and its BFD both down (one path alert). .2: BGP down, BFD up.
+  # .3: standalone BFD down. .4: registered BFD down, BGP up (no alert).
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.2",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.4",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.2",bgp_peer="192.0.2.2"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.3"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.4",bgp_peer="192.0.2.4"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="red",peer="203.0.113.5"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1"}', values: 1x4 0x25}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.2"}', values: 1x4 0x25}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.4"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1"}', values: 1x4 0x25}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.2"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.3"}', values: 1x4 0x25}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.4"}', values: 1x4 0x25}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.77"}', values: 0x30}
+  - {series: 'promhttp_metric_handler_errors_total{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",cause="gathering"}', values: 0x5 1+1x10 11x15}
+  # Same errors on an appliance outside the inventory: no alert.
+  - {series: 'promhttp_metric_handler_errors_total{job="ega-frr-metrics",instance="x1:9141",appliance="x1",role="relay",site="aws1",cause="gathering"}', values: 0x5 1+1x10 11x15}
+  # One encoding error at 26m alerts; node-exporter errors on r1 do not.
+  - {series: 'promhttp_metric_handler_errors_total{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",cause="encoding"}', values: 0x25 1x5}
+  - {series: 'promhttp_metric_handler_errors_total{job="ega-node-exporter",instance="r1:9100",appliance="r1",role="relay",site="aws1",cause="gathering"}', values: 0x5 1+1x10 11x15}
+  # .6: standalone BFD up. r1 BFD at 203.0.113.6 (red), 203.0.113.5 (default) and x1's
+  # 203.0.113.5 (red) must not hide the missing red 203.0.113.5 on r1.
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.6"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.6"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="red",peer="203.0.113.6"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",role="relay",site="aws1",vrf="default",peer="203.0.113.5"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="x1:9141",appliance="x1",role="relay",site="aws1",vrf="red",peer="203.0.113.5"}', values: 1x30}
+  alert_rule_test:
+  - {eval_time: 8m, alertname: EGABgpDownBfdUp, exp_alerts: []}
+  - {eval_time: 4m, alertname: EGABfdExpectedSessionMissing, exp_alerts: []}
+  - eval_time: 12m
+    alertname: EGABgpSessionDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: bgp, appliance: r1, role: relay, site: aws1, vrf: default, peer: 192.0.2.1, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP session 192.0.2.1 (vrf default, leaf) on r1 not Established', description: *bgp_down}
+  - eval_time: 12m
+    alertname: EGABgpDownBfdUp
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, appliance: r1, role: relay, site: aws1, vrf: default, peer: 192.0.2.2, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP 192.0.2.2 on r1 down while its BFD session is up', description: *bgp_bfd_up}
+  - eval_time: 7m
+    alertname: EGABfdSessionDown
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bfd, appliance: r1, role: relay, site: aws1, vrf: default, peer: 192.0.2.3}
+      exp_annotations: {summary: 'BFD session 192.0.2.3 on r1 down', description: &bfd_down 'Identity is (peer, vrf) only; a single-hop and multihop session to one peer collide. Check EGAFrrMetricsGatherErrors before trusting the value.'}
+  - eval_time: 6m
+    alertname: EGABfdExpectedSessionMissing
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bfd, appliance: r1, role: relay, site: aws1, vrf: red, peer: 203.0.113.5}
+      exp_annotations: {summary: 'Expected BFD session 203.0.113.5 not observed on r1', description: &bfd_missing 'Not configured, in a VRF without BGP (not discovered), or the BFD read failed. Unobservable is not healthy.'}
+  - eval_time: 10m
+    alertname: EGAFrrMetricsGatherErrors
+    exp_alerts:
+    - exp_labels: {severity: warning, component: frr-metrics, job: ega-frr-metrics, instance: "r1:9141", appliance: r1, role: relay, site: aws1, cause: gathering}
+      exp_annotations: {summary: 'frr-metrics on r1 served a partial scrape (gathering)', description: &gather_errors 'Some samples were dropped by the registry. BFD values for colliding peer,vrf pairs may be wrong.'}
+  - eval_time: 24m
+    alertname: EGAFrrMetricsGatherErrors
+    exp_alerts:
+    - exp_labels: {severity: warning, component: frr-metrics, job: ega-frr-metrics, instance: "r1:9141", appliance: r1, role: relay, site: aws1, cause: gathering}
+      exp_annotations: {summary: 'frr-metrics on r1 served a partial scrape (gathering)', description: *gather_errors}
+  - eval_time: 29m
+    alertname: EGAFrrMetricsGatherErrors
+    exp_alerts:
+    - exp_labels: {severity: warning, component: frr-metrics, job: ega-frr-metrics, instance: "r1:9141", appliance: r1, role: relay, site: aws1, cause: encoding}
+      exp_annotations: {summary: 'frr-metrics on r1 served a partial scrape (encoding)', description: *gather_errors}
+
+- name: prefixes
+  input_series:
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.2",peer_role="leaf",admin_down="false",expect_prefixes="false"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_max_prefix{appliance="a1",vrf="default",peer="192.0.2.1"}', values: 100x30}
+  - {series: 'ega_expected_bgp_max_prefix{appliance="a1",vrf="default",peer="192.0.2.3"}', values: 100x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.2"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3"}', values: 1x30}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 4x5 0x25}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.2"}', values: 0x30}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3"}', values: 50x5 85x25}
+  # Same peer IP on another appliance and in another VRF, both with 0 prefixes.
+  - {series: 'ega_expected_bgp_max_prefix{appliance="b1",vrf="default",peer="192.0.2.3"}', values: 100x30}
+  - {series: 'ega_expected_bgp_max_prefix{appliance="a1",vrf="red",peer="192.0.2.3"}', values: 100x30}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="b1:9141",appliance="b1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3"}', values: 0x30}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="a1:9141",appliance="a1",role="onprem",site="dc1",vrf="red",peer="192.0.2.3"}', values: 0x30}
+  alert_rule_test:
+  - {eval_time: 12m, alertname: EGABgpNoPrefixesReceived, exp_alerts: []}
+  - eval_time: 20m
+    alertname: EGABgpNoPrefixesReceived
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, appliance: a1, role: onprem, site: dc1, vrf: default, peer: 192.0.2.1, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP peer 192.0.2.1 on a1 is up with 0 accepted prefixes', description: &no_prefixes 'Accepted (post-policy) prefixes summed across every address family is zero. Cannot tell EVPN from IPv4 routes until per-AFI series exist.'}
+  - {eval_time: 8m, alertname: EGABgpMaxPrefixNear, exp_alerts: []}
+  - eval_time: 15m
+    alertname: EGABgpMaxPrefixNear
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, appliance: a1, role: onprem, site: dc1, vrf: default, peer: 192.0.2.3, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP peer 192.0.2.3 on a1 at 85% of maximum-prefix', description: &max_prefix 'Exceeding maximum-prefix tears the session down and keeps it down until "clear bgp" is run by hand.'}
+
+- name: interfaces
+  input_series:
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-node-exporter"}', values: 1x30}
+  - {series: 'ega_expected_interface{appliance="a1",role="onprem",site="dc1",device="trunk.10"}', values: 1x30}
+  - {series: 'ega_expected_interface{appliance="a1",role="onprem",site="dc1",device="br-vni10010"}', values: 1x30}
+  - {series: 'ega_expected_interface_mtu_bytes{appliance="a1",device="trunk.10"}', values: 9000x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="netclass"}', values: 1x20 0x10}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="netdev"}', values: 0x30}
+  - {series: 'node_network_mtu_bytes{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="trunk.10"}', values: 1500x30}
+  # trunk.10 alternates down / lowerlayerdown every minute from 5m: for: must not reset.
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="trunk.10",operstate="up"}', values: 1x4 stale}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="trunk.10",operstate="down"}', values: _x4 1 stale 1 stale 1 stale 1 stale 1 stale 1 stale 1 stale 1 stale}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="trunk.10",operstate="lowerlayerdown"}', values: _x5 1 stale 1 stale 1 stale 1 stale 1 stale 1 stale 1 stale 1x10}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="br-vni10010",operstate="up"}', values: 1x2 stale}
+  # wg0 dormant and eth9 notpresent from 0m; br-vni10010 MTU above expected.
+  - {series: 'ega_expected_interface{appliance="a1",role="onprem",site="dc1",device="wg0"}', values: 1x30}
+  - {series: 'ega_expected_interface{appliance="a1",role="onprem",site="dc1",device="eth9"}', values: 1x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="wg0",operstate="dormant"}', values: 1x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="eth9",operstate="notpresent"}', values: 1x30}
+  - {series: 'ega_expected_interface_mtu_bytes{appliance="a1",device="br-vni10010"}', values: 1500x30}
+  - {series: 'node_network_mtu_bytes{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",device="br-vni10010"}', values: 9000x30}
+  # Another appliance has the same device names: down, and with a wrong MTU.
+  - {series: 'ega_expected_interface_mtu_bytes{appliance="b1",device="trunk.10"}', values: 9000x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="b1:9100",appliance="b1",role="onprem",site="dc1",device="br-vni10010",operstate="down"}', values: 1x30}
+  - {series: 'node_network_mtu_bytes{job="ega-node-exporter",instance="b1:9100",appliance="b1",role="onprem",site="dc1",device="trunk.10"}', values: 1500x30}
+  # Listed collectors fail; hwmon (not listed) fails; cpu succeeds (does not gate netclass).
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="textfile"}', values: 0x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="systemd"}', values: 0x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="hwmon"}', values: 0x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="a1:9100",appliance="a1",role="onprem",site="dc1",collector="cpu"}', values: 1x30}
+  alert_rule_test:
+  - {eval_time: 1m, alertname: EGAInterfaceDown, exp_alerts: []}
+  - eval_time: 3m
+    alertname: EGAInterfaceDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: wg0}
+      exp_annotations: {summary: 'wg0 on a1 is down'}
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: eth9}
+      exp_annotations: {summary: 'eth9 on a1 is down'}
+  - {eval_time: 6m, alertname: EGAExpectedInterfaceMissing, exp_alerts: []}
+  - eval_time: 12m
+    alertname: EGAInterfaceDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: wg0}
+      exp_annotations: {summary: 'wg0 on a1 is down'}
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: eth9}
+      exp_annotations: {summary: 'eth9 on a1 is down'}
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: trunk.10}
+      exp_annotations: {summary: 'trunk.10 on a1 is down'}
+  - eval_time: 12m
+    alertname: EGAExpectedInterfaceMissing
+    exp_alerts:
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: br-vni10010}
+      exp_annotations: {summary: 'Expected interface br-vni10010 does not exist on a1'}
+  - eval_time: 28m
+    alertname: EGAExpectedInterfaceMissing
+    exp_alerts: []
+  - {eval_time: 8m, alertname: EGAInterfaceMtuMismatch, exp_alerts: []}
+  - eval_time: 11m
+    alertname: EGAInterfaceMtuMismatch
+    exp_alerts:
+    - exp_labels: {severity: warning, component: interface, appliance: a1, role: onprem, site: dc1, device: trunk.10}
+      exp_annotations: {summary: 'trunk.10 on a1 has MTU 1500, not the expected value'}
+    - exp_labels: {severity: warning, component: interface, appliance: a1, role: onprem, site: dc1, device: br-vni10010}
+      exp_annotations: {summary: 'br-vni10010 on a1 has MTU 9000, not the expected value'}
+  - {eval_time: 8m, alertname: EGANodeCollectorFailed, exp_alerts: []}
+  - eval_time: 11m
+    alertname: EGANodeCollectorFailed
+    exp_alerts:
+    - exp_labels: {severity: warning, component: node-exporter, job: ega-node-exporter, instance: "a1:9100", appliance: a1, role: onprem, site: dc1, collector: netdev}
+      exp_annotations: {summary: 'node-exporter netdev collector failing on a1'}
+    - exp_labels: {severity: warning, component: node-exporter, job: ega-node-exporter, instance: "a1:9100", appliance: a1, role: onprem, site: dc1, collector: textfile}
+      exp_annotations: {summary: 'node-exporter textfile collector failing on a1'}
+    - exp_labels: {severity: warning, component: node-exporter, job: ega-node-exporter, instance: "a1:9100", appliance: a1, role: onprem, site: dc1, collector: systemd}
+      exp_annotations: {summary: 'node-exporter systemd collector failing on a1'}
+  - eval_time: 32m
+    alertname: EGANodeCollectorFailed
+    exp_alerts:
+    - exp_labels: {severity: warning, component: node-exporter, job: ega-node-exporter, instance: "a1:9100", appliance: a1, role: onprem, site: dc1, collector: netclass}
+      exp_annotations: {summary: 'node-exporter netclass collector failing on a1'}
+    - exp_labels: {severity: warning, component: node-exporter, job: ega-node-exporter, instance: "a1:9100", appliance: a1, role: onprem, site: dc1, collector: netdev}
+      exp_annotations: {summary: 'node-exporter netdev collector failing on a1'}
+    - exp_labels: {severity: warning, component: node-exporter, job: ega-node-exporter, instance: "a1:9100", appliance: a1, role: onprem, site: dc1, collector: textfile}
+      exp_annotations: {summary: 'node-exporter textfile collector failing on a1'}
+    - exp_labels: {severity: warning, component: node-exporter, job: ega-node-exporter, instance: "a1:9100", appliance: a1, role: onprem, site: dc1, collector: systemd}
+      exp_annotations: {summary: 'node-exporter systemd collector failing on a1'}
+
+- name: maintenance-silences-every-gated-alert
+  input_series:
+  # m1 is in maintenance with every failure that an inventory-gated alert detects.
+  - {series: 'ega_maintenance{appliance="m1"}', values: 1x30}
+  - {series: 'ega_maintenance{appliance="m2"}', values: 1x30}
+  - {series: 'ega_maintenance{appliance="m3"}', values: 1x30}
+  # m2: exporter scrape failing. m3: exporter up but no BGP series for its expected session.
+  - {series: 'ega_expected_target{appliance="m2",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="m2:9141",appliance="m2",role="onprem",site="dc1"}', values: 0x30}
+  - {series: 'ega_expected_target{appliance="m3",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="m3:9141",appliance="m3",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="m3",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="false"}', values: 1x30}
+  # m1: a down session with no BFD, a down session whose BFD is up, a flapping session,
+  # an up session with zero accepted prefixes, and a down interface.
+  - {series: 'ega_expected_bgp_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.4",peer_role="leaf",admin_down="false",expect_prefixes="false"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.4"}', values: 0x30}
+  - {series: 'ega_expected_bgp_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.8",peer_role="leaf",admin_down="false",expect_prefixes="false"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.8"}', values: 0x30}
+  - {series: 'ega_expected_bfd_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.10",bgp_peer="192.0.2.8"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.10"}', values: 1x30}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 0+1x30}
+  - {series: 'ega_expected_bgp_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.11",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.11"}', values: 1x30}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.11"}', values: 0x30}
+  - {series: 'ega_expected_interface{appliance="m1",role="onprem",site="dc1",device="eth8"}', values: 1x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="m1:9100",appliance="m1",role="onprem",site="dc1",device="eth8",operstate="down"}', values: 1x30}
+  - {series: 'ega_expected_target{appliance="m1",role="onprem",site="dc1",job="ega-frr-metrics"}', values: 1x30}
+  - {series: 'ega_expected_target{appliance="m1",role="onprem",site="dc1",job="ega-node-exporter"}', values: 1x30}
+  - {series: 'up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1"}', values: 1x30}
+  - {series: 'promhttp_metric_handler_errors_total{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",cause="gathering"}', values: 0+1x30}
+  - {series: 'ega_expected_bgp_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.7",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bgp_max_prefix{appliance="m1",vrf="default",peer="192.0.2.1"}', values: 100x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.99"}', values: 1x30}
+  - {series: 'frrk8s_bgp_received_prefixes_total{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1"}', values: 90x30}
+  - {series: 'ega_expected_bfd_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.5"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3"}', values: 0x30}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="m1:9141",appliance="m1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3"}', values: 0+1x30}
+  - {series: 'ega_expected_interface{appliance="m1",role="onprem",site="dc1",device="eth9"}', values: 1x30}
+  - {series: 'ega_expected_interface{appliance="m1",role="onprem",site="dc1",device="trunk.10"}', values: 1x30}
+  - {series: 'ega_expected_interface_mtu_bytes{appliance="m1",device="trunk.10"}', values: 9000x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="m1:9100",appliance="m1",role="onprem",site="dc1",device="trunk.10",operstate="up"}', values: 1x30}
+  - {series: 'node_network_mtu_bytes{job="ega-node-exporter",instance="m1:9100",appliance="m1",role="onprem",site="dc1",device="trunk.10"}', values: 1500x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="m1:9100",appliance="m1",role="onprem",site="dc1",collector="netclass"}', values: 1x30}
+  - {series: 'node_scrape_collector_success{job="ega-node-exporter",instance="m1:9100",appliance="m1",role="onprem",site="dc1",collector="netdev"}', values: 0x30}
+  alert_rule_test:
+  - {eval_time: 25m, alertname: EGAExporterTargetMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAFrrMetricsGatherErrors, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpUnexpectedSession, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpExpectedSessionMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpMaxPrefixNear, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABfdSessionDown, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABfdExpectedSessionMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABfdSessionFlapping, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAExpectedInterfaceMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAInterfaceMtuMismatch, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGANodeCollectorFailed, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAExporterDown, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAFrrBgpSeriesMissing, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpSessionDown, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpDownBfdUp, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpSessionFlapping, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGABgpNoPrefixesReceived, exp_alerts: []}
+  - {eval_time: 25m, alertname: EGAInterfaceDown, exp_alerts: []}
+
+# Inventory rendered without admin_down: counts as not administratively down.
+- name: admin-down-label-missing
+  input_series:
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1",peer_role="leaf",expect_prefixes="true"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",vrf="default",peer="192.0.2.1"}', values: 0x30}
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: EGABgpSessionDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: bgp, appliance: r1, role: relay, site: aws1, vrf: default, peer: 192.0.2.1, peer_role: leaf, expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP session 192.0.2.1 (vrf default, leaf) on r1 not Established', description: *bgp_down}
+
+# ega_maintenance rendered as 0 means not in maintenance, for every :active rule.
+- name: maintenance-zero
+  input_series:
+  - {series: 'ega_maintenance{appliance="a1"}', values: 0x30}
+  - {series: 'ega_expected_target{appliance="a1",role="onprem",site="dc1",job="ega-node-exporter"}', values: 1x30}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="relay",admin_down="false",expect_prefixes="false"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",vrf="default",peer="192.0.2.1"}', values: 0x30}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.3"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="a1:9141",appliance="a1",vrf="default",peer="192.0.2.3"}', values: 0x30}
+  - {series: 'ega_expected_interface{appliance="a1",role="onprem",site="dc1",device="trunk.10"}', values: 1x30}
+  - {series: 'node_network_info{job="ega-node-exporter",instance="a1:9100",appliance="a1",device="trunk.10",operstate="down"}', values: 1x30}
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: EGAInterfaceDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: interface, appliance: a1, role: onprem, site: dc1, device: trunk.10}
+      exp_annotations: {summary: 'trunk.10 on a1 is down'}
+  - eval_time: 15m
+    alertname: EGAExporterTargetMissing
+    exp_alerts:
+    - exp_labels: {severity: warning, component: ega-node-exporter, appliance: a1, role: onprem, site: dc1, job: ega-node-exporter}
+      exp_annotations: {summary: 'No ega-node-exporter target is discovered for a1', description: *target_missing}
+  - eval_time: 15m
+    alertname: EGABgpSessionDown
+    exp_alerts:
+    - exp_labels: {severity: critical, component: bgp, appliance: a1, role: onprem, site: dc1, vrf: default, peer: 192.0.2.1, peer_role: relay, admin_down: "false", expect_prefixes: "false"}
+      exp_annotations: {summary: 'BGP session 192.0.2.1 (vrf default, relay) on a1 not Established', description: *bgp_down}
+  - eval_time: 15m
+    alertname: EGABfdSessionDown
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bfd, appliance: a1, role: onprem, site: dc1, vrf: default, peer: 192.0.2.3}
+      exp_annotations: {summary: 'BFD session 192.0.2.3 on a1 down', description: *bfd_down}
+
+# Extrapolation turns exactly 2 OPENs (1 BFD down event) into slightly more than 2 (1):
+# .1 must not alert. 3 OPENs 26-28m earlier and 2 BFD down events 9-10m earlier (.2) must.
+- name: flap-threshold-extrapolation
+  input_series:
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x60}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x60}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",vrf="default",peer="192.0.2.1"}', values: 1x40 2 3x20}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="a1:9141",appliance="a1",vrf="default",peer="192.0.2.1"}', values: 3x40 4x20}
+  - {series: 'ega_expected_bgp_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.2",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x60}
+  - {series: 'ega_expected_bfd_session{appliance="a1",role="onprem",site="dc1",vrf="default",peer="192.0.2.2",bgp_peer="192.0.2.2"}', values: 1x60}
+  - {series: 'frrk8s_bgp_opens_received{job="ega-frr-metrics",instance="a1:9141",appliance="a1",vrf="default",peer="192.0.2.2"}', values: 1x21 2 3 4x38}
+  - {series: 'frrk8s_bfd_session_down_events{job="ega-frr-metrics",instance="a1:9141",appliance="a1",vrf="default",peer="192.0.2.2"}', values: 0x39 1 2x21}
+  alert_rule_test:
+  - eval_time: 50m
+    alertname: EGABgpSessionFlapping
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, job: ega-frr-metrics, instance: "a1:9141", appliance: a1, vrf: default, peer: 192.0.2.2}
+      exp_annotations: {summary: 'BGP session 192.0.2.2 on a1 re-opened repeatedly', description: *bgp_flap}
+  - eval_time: 50m
+    alertname: EGABfdSessionFlapping
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bfd, job: ega-frr-metrics, instance: "a1:9141", appliance: a1, vrf: default, peer: 192.0.2.2}
+      exp_annotations: {summary: 'BFD session 192.0.2.2 on a1 went down repeatedly'}
+
+# Two BFD sessions (single-hop and multihop) registered to one BGP neighbor.
+- name: two-bfd-one-bgp-peer
+  input_series:
+  - {series: 'ega_expected_bgp_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1",peer_role="leaf",admin_down="false",expect_prefixes="true"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="192.0.2.1",bgp_peer="192.0.2.1"}', values: 1x30}
+  - {series: 'ega_expected_bfd_session{appliance="r1",role="relay",site="aws1",vrf="default",peer="198.51.100.21",bgp_peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bgp_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",vrf="default",peer="192.0.2.1"}', values: 0x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",vrf="default",peer="192.0.2.1"}', values: 1x30}
+  - {series: 'frrk8s_bfd_session_up{job="ega-frr-metrics",instance="r1:9141",appliance="r1",vrf="default",peer="198.51.100.21"}', values: 1x30}
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: EGABgpDownBfdUp
+    exp_alerts:
+    - exp_labels: {severity: warning, component: bgp, appliance: r1, role: relay, site: aws1, vrf: default, peer: 192.0.2.1, peer_role: leaf, admin_down: "false", expect_prefixes: "true"}
+      exp_annotations: {summary: 'BGP 192.0.2.1 on r1 down while its BFD session is up', description: *bgp_bfd_up}
+  - {eval_time: 15m, alertname: EGABgpSessionDown, exp_alerts: []}

@@ -1,0 +1,325 @@
+# DRAFT for CORENET-7504; see ../README.md. Series names checked against frr-k8s
+# 58664da/ae39e72 (cmd/metrics/collector) and node_exporter v1.12.1 (6044da78).
+groups:
+  - name: ega-inventory
+    rules:
+      # Inventory minus appliances in maintenance; every gated alert joins on these.
+      - record: ega:expected_target:active
+        expr: ega_expected_target unless on(appliance) (ega_maintenance > 0)
+      - record: ega:expected_bgp_session:active
+        expr: ega_expected_bgp_session unless on(appliance) (ega_maintenance > 0)
+      - record: ega:expected_bfd_session:active
+        expr: ega_expected_bfd_session unless on(appliance) (ega_maintenance > 0)
+      - record: ega:expected_interface:active
+        expr: ega_expected_interface unless on(appliance) (ega_maintenance > 0)
+      # Observed state with the inventory's labels; admin_down="true" sessions excluded.
+      - record: ega:bgp_session_up:expected
+        expr: |
+          ega:expected_bgp_session:active{admin_down!="true"}
+            * on(appliance, vrf, peer) group_left()
+              max by(appliance, vrf, peer) (frrk8s_bgp_session_up)
+      - record: ega:bfd_session_up:expected
+        expr: |
+          ega:expected_bfd_session:active
+            * on(appliance, vrf, peer) group_left()
+              max by(appliance, vrf, peer) (frrk8s_bfd_session_up)
+      # Per BGP neighbor (as peer): 1 if any BFD session registered to it is up.
+      - record: ega:bgp_peer_bfd_up:max
+        expr: |
+          label_replace(
+            max by(appliance, vrf, bgp_peer) (ega:bfd_session_up:expected{bgp_peer!=""}),
+            "peer", "$1", "bgp_peer", "(.+)"
+          )
+      # Sessions down without a registered BFD session up: a path failure.
+      - record: ega:bgp_session_down:path
+        expr: |
+          ega:bgp_session_up:expected == 0
+            unless on(appliance, vrf, peer) (ega:bgp_peer_bfd_up:max == 1)
+      - alert: EGAInventoryMissing
+        # Rendered item count differs from the observed one, or a scraped appliance
+        # has no rendered inventory at all.
+        expr: |
+          (
+            ega_expected_inventory_items
+              unless on(appliance)
+                (
+                  count by(appliance) ({__name__=~"ega_expected_(target|bgp_session|bfd_session|interface)"})
+                    == on(appliance) ega_expected_inventory_items
+                )
+          )
+          or
+          (
+            group by(appliance) (up{job=~"ega-frr-metrics|ega-node-exporter"})
+              unless on(appliance) ega_expected_inventory_items
+          )
+        for: 10m
+        labels:
+          severity: warning
+          component: inventory
+        annotations:
+          summary: "Expected inventory for {{ $labels.appliance }} is missing or incomplete"
+          description: >-
+            Every inventory-gated alert for this appliance is silent while its
+            inventory is absent. Check the generated PrometheusRule.
+
+  - name: ega-scrape
+    rules:
+      - alert: EGAExporterDown
+        expr: ega:expected_target:active and on(appliance, job) (up == 0)
+        for: 5m
+        labels:
+          severity: warning
+          component: "{{ $labels.job }}"
+        annotations:
+          summary: "{{ $labels.job }} on {{ $labels.appliance }} cannot be scraped"
+          description: >-
+            Prometheus cannot scrape the exporter. Says nothing about routing or
+            forwarding state; all series from this target are unknown, not zero.
+      - alert: EGAExporterTargetMissing
+        expr: ega:expected_target:active unless on(appliance, job) up
+        for: 10m
+        labels:
+          severity: warning
+          component: "{{ $labels.job }}"
+        annotations:
+          summary: "No {{ $labels.job }} target is discovered for {{ $labels.appliance }}"
+          description: >-
+            An expected scrape target has no up series at all (discovery or
+            scrape-config gap). Distinct from EGAExporterDown.
+      - alert: EGAFrrBgpSeriesMissing
+        # The BGP collector only logs vtysh and parse errors, so this is their only signal.
+        expr: |
+          ega:expected_target:active{job="ega-frr-metrics"}
+            and on(appliance) (up{job="ega-frr-metrics"} == 1)
+            and on(appliance) ega:expected_bgp_session:active
+            unless on(appliance) frrk8s_bgp_session_up
+        for: 5m
+        labels:
+          severity: warning
+          component: frr-metrics
+        annotations:
+          summary: "frr-metrics on {{ $labels.appliance }} returns no BGP series"
+          description: >-
+            BGP collection failed (vtysh error, parse error or FRR down) while the
+            exporter is reachable. BGP state is unknown, not down.
+      - alert: EGAFrrMetricsGatherErrors
+        # Catches duplicate label sets (BFD peer,vrf collisions) and encoding errors,
+        # not collector errors that are only logged.
+        expr: |
+          increase(promhttp_metric_handler_errors_total{job="ega-frr-metrics"}[10m]) > 0
+            and on(appliance) ega:expected_target:active
+        labels:
+          severity: warning
+          component: frr-metrics
+        annotations:
+          summary: "frr-metrics on {{ $labels.appliance }} served a partial scrape ({{ $labels.cause }})"
+          description: >-
+            Some samples were dropped by the registry. BFD values for colliding
+            peer,vrf pairs may be wrong.
+
+  - name: ega-bgp
+    rules:
+      # Critical unless another session in its redundancy_group is up.
+      - alert: EGABgpSessionDown
+        expr: |
+          ega:bgp_session_down:path
+            unless on(redundancy_group) (ega:bgp_session_up:expected{redundancy_group!=""} == 1)
+        for: 5m
+        labels:
+          severity: critical
+          component: bgp
+        annotations: &bgp_down_annotations
+          summary: "BGP session {{ $labels.peer }} (vrf {{ $labels.vrf }}, {{ $labels.peer_role }}) on {{ $labels.appliance }} not Established"
+          description: >-
+            An expected, not administratively down neighbor is in any state other
+            than Established. Does not prove the data path is down, and an
+            Established session does not prove VXLAN forwarding works.
+      - alert: EGABgpSessionDown
+        expr: |
+          ega:bgp_session_down:path
+            and on(redundancy_group) (ega:bgp_session_up:expected{redundancy_group!=""} == 1)
+        for: 5m
+        labels:
+          severity: warning
+          component: bgp
+        annotations: *bgp_down_annotations
+      - alert: EGABgpDownBfdUp
+        expr: |
+          ega:bgp_session_up:expected == 0
+            and on(appliance, vrf, peer) (ega:bgp_peer_bfd_up:max == 1)
+        for: 5m
+        labels:
+          severity: warning
+          component: bgp
+        annotations:
+          summary: "BGP {{ $labels.peer }} on {{ $labels.appliance }} down while its BFD session is up"
+          description: >-
+            The path answers BFD, so look at BGP configuration, policy or the
+            maximum-prefix limit (cleared only by hand) rather than transport.
+      - alert: EGABgpUnexpectedSession
+        expr: |
+          frrk8s_bgp_session_up
+            unless on(appliance, vrf, peer) ega_expected_bgp_session
+            and on(appliance) ega:expected_target:active
+        for: 15m
+        labels:
+          severity: warning
+          component: bgp
+        annotations:
+          summary: "BGP neighbor {{ $labels.peer }} (vrf {{ $labels.vrf }}) on {{ $labels.appliance }} is not in the inventory"
+          description: >-
+            FRR has a neighbor the inventory does not list, so no session alert
+            covers it. Add it to the inventory or remove it from FRR; dynamic
+            "bgp listen" neighbors always land here.
+      - alert: EGABgpExpectedSessionMissing
+        expr: |
+          ega:expected_bgp_session:active
+            unless on(appliance, vrf, peer) frrk8s_bgp_session_up
+            and on(appliance) count by(appliance) (frrk8s_bgp_session_up)
+        for: 5m
+        labels:
+          severity: critical
+          component: bgp
+        annotations:
+          summary: "Expected BGP peer {{ $labels.peer }} (vrf {{ $labels.vrf }}) absent on {{ $labels.appliance }}"
+          description: >-
+            Collection works for other peers but this expected neighbor is not
+            configured in FRR (or its VRF is not discovered). Not the same as down.
+      - alert: EGABgpSessionFlapping
+        # 3 or more OPENs. Half-integer threshold: extrapolation turns exactly 2 into ~2.07.
+        expr: |
+          increase(frrk8s_bgp_opens_received[30m]) > 2.5
+            and on(appliance, vrf, peer) ega:expected_bgp_session:active
+        labels:
+          severity: warning
+          component: bgp
+        annotations:
+          summary: "BGP session {{ $labels.peer }} on {{ $labels.appliance }} re-opened repeatedly"
+          description: >-
+            OPEN messages received count session (re)establishment attempts.
+            Sampling session_up would miss flaps shorter than the scrape interval.
+      - alert: EGABgpNoPrefixesReceived
+        # *_prefixes_total are gauges summed over every AFI/SAFI; never rate() them.
+        expr: |
+          ega:bgp_session_up:expected{expect_prefixes="true"} == 1
+            and on(appliance, vrf, peer) (frrk8s_bgp_received_prefixes_total == 0)
+        for: 10m
+        labels:
+          severity: warning
+          component: bgp
+        annotations:
+          summary: "BGP peer {{ $labels.peer }} on {{ $labels.appliance }} is up with 0 accepted prefixes"
+          description: >-
+            Accepted (post-policy) prefixes summed across every address family is
+            zero. Cannot tell EVPN from IPv4 routes until per-AFI series exist.
+      - alert: EGABgpMaxPrefixNear
+        # The summed gauge counts every family, so this errs early until per-AFI series.
+        expr: |
+          ega:expected_bgp_session:active
+            * on(appliance, vrf, peer) group_left()
+              (
+                max by(appliance, vrf, peer) (frrk8s_bgp_received_prefixes_total)
+                  / on(appliance, vrf, peer) ega_expected_bgp_max_prefix
+              )
+            > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: bgp
+        annotations:
+          summary: "BGP peer {{ $labels.peer }} on {{ $labels.appliance }} at {{ $value | humanizePercentage }} of maximum-prefix"
+          description: >-
+            Exceeding maximum-prefix tears the session down and keeps it down until
+            "clear bgp" is run by hand.
+
+  - name: ega-bfd
+    # Only sessions the inventory declares; BFD-only VRFs are never collected.
+    rules:
+      - alert: EGABfdSessionDown
+        # Standalone sessions only: a registered neighbor goes down with its BFD
+        # session and alerts as EGABgpSessionDown.
+        expr: ega:bfd_session_up:expected{bgp_peer=""} == 0
+        for: 1m
+        labels:
+          severity: warning
+          component: bfd
+        annotations:
+          summary: "BFD session {{ $labels.peer }} on {{ $labels.appliance }} down"
+          description: >-
+            Identity is (peer, vrf) only; a single-hop and multihop session to one
+            peer collide. Check EGAFrrMetricsGatherErrors before trusting the value.
+      - alert: EGABfdExpectedSessionMissing
+        expr: |
+          ega:expected_bfd_session:active
+            unless on(appliance, vrf, peer) frrk8s_bfd_session_up
+            and on(appliance) count by(appliance) (frrk8s_bgp_session_up)
+        for: 5m
+        labels:
+          severity: warning
+          component: bfd
+        annotations:
+          summary: "Expected BFD session {{ $labels.peer }} not observed on {{ $labels.appliance }}"
+          description: >-
+            Not configured, in a VRF without BGP (not discovered), or the BFD read
+            failed. Unobservable is not healthy.
+      - alert: EGABfdSessionFlapping
+        # 2 or more down events; half-integer threshold as for BGP.
+        expr: |
+          increase(frrk8s_bfd_session_down_events[15m]) > 1.5
+            and on(appliance, vrf, peer) ega:expected_bfd_session:active
+        labels:
+          severity: warning
+          component: bfd
+        annotations:
+          summary: "BFD session {{ $labels.peer }} on {{ $labels.appliance }} went down repeatedly"
+
+  - name: ega-interfaces
+    rules:
+      - alert: EGAInterfaceDown
+        # Not node_network_up == 0: VXLAN and WireGuard report operstate "unknown"
+        # while working. The inventory side aggregates operstate away, so a move
+        # between down states does not reset for:.
+        expr: |
+          ega:expected_interface:active
+            and on(appliance, device) node_network_info{operstate=~"down|lowerlayerdown|notpresent|dormant"}
+        for: 2m
+        labels:
+          severity: critical
+          component: interface
+        annotations:
+          summary: "{{ $labels.device }} on {{ $labels.appliance }} is down"
+      - alert: EGAExpectedInterfaceMissing
+        expr: |
+          ega:expected_interface:active
+            unless on(appliance, device) node_network_info
+            and on(appliance) (node_scrape_collector_success{collector="netclass"} == 1)
+        for: 5m
+        labels:
+          severity: critical
+          component: interface
+        annotations:
+          summary: "Expected interface {{ $labels.device }} does not exist on {{ $labels.appliance }}"
+      - alert: EGAInterfaceMtuMismatch
+        expr: |
+          ega:expected_interface:active
+            * on(appliance, device) group_left()
+              (
+                max by(appliance, device) (node_network_mtu_bytes)
+                  != on(appliance, device) ega_expected_interface_mtu_bytes
+              )
+        for: 10m
+        labels:
+          severity: warning
+          component: interface
+        annotations:
+          summary: "{{ $labels.device }} on {{ $labels.appliance }} has MTU {{ $value }}, not the expected value"
+      - alert: EGANodeCollectorFailed
+        expr: |
+          node_scrape_collector_success{job="ega-node-exporter", collector=~"netclass|netdev|textfile|systemd"} == 0
+            and on(appliance) ega:expected_target:active
+        for: 10m
+        labels:
+          severity: warning
+          component: node-exporter
+        annotations:
+          summary: "node-exporter {{ $labels.collector }} collector failing on {{ $labels.appliance }}"

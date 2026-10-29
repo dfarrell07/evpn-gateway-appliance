@@ -1,0 +1,26 @@
+id	query
+A1	up{job=~"ega-.*",appliance=~"$appliance"}
+A2	time() - node_boot_time_seconds{job="ega-node-exporter",appliance=~"$appliance"}
+A3	node_network_info{job="ega-node-exporter",appliance=~"$appliance",device=~"$iface"}
+A4	increase(node_network_carrier_changes_total{appliance=~"$appliance",device=~"$iface"}[$__rate_interval])
+A5	rate(node_network_receive_bytes_total{appliance=~"$appliance",device=~"$iface"}[$__rate_interval]) * 8
+A6	rate(node_network_transmit_bytes_total{appliance=~"$appliance",device=~"$iface"}[$__rate_interval]) * 8
+A7	rate(node_network_receive_errors_total{appliance=~"$appliance",device=~"$iface"}[$__rate_interval]) + rate(node_network_receive_dropped_total{appliance=~"$appliance",device=~"$iface"}[$__rate_interval])
+A8	node_network_mtu_bytes{appliance=~"$appliance",device=~"$iface"}
+A10	node_scrape_collector_success{job="ega-node-exporter",appliance=~"$appliance"}
+B1	frrk8s_bgp_session_up{appliance=~"$appliance"}
+B2	count by (appliance) (frrk8s_bgp_session_up{appliance=~"$appliance"} == 1 and on(appliance, vrf, peer) ega_expected_bgp_session{admin_down!="true"}) / on(appliance) count by (appliance) (ega_expected_bgp_session{appliance=~"$appliance", admin_down!="true"})
+B3	frrk8s_bgp_received_prefixes_total{appliance=~"$appliance"}
+B4	frrk8s_bgp_announced_prefixes_total{appliance=~"$appliance"}
+B5	rate(frrk8s_bgp_updates_total_received{appliance=~"$appliance"}[$__rate_interval])
+B6	rate(frrk8s_bgp_updates_total{appliance=~"$appliance"}[$__rate_interval])
+B7	increase(frrk8s_bgp_opens_received{appliance=~"$appliance"}[1h])
+B8	increase(frrk8s_bgp_notifications_sent{appliance=~"$appliance"}[1h])
+B9	rate(frrk8s_bgp_keepalives_received{appliance=~"$appliance"}[$__rate_interval])
+B10	scrape_duration_seconds{job="ega-frr-metrics",appliance=~"$appliance"}
+B11	increase(promhttp_metric_handler_errors_total{job="ega-frr-metrics",appliance=~"$appliance"}[1h])
+C1	frrk8s_bfd_session_up{appliance=~"$appliance"}
+C2	increase(frrk8s_bfd_session_down_events{appliance=~"$appliance"}[1h])
+C3	rate(frrk8s_bfd_control_packet_input{appliance=~"$appliance"}[$__rate_interval])
+D1	rate(node_network_receive_bytes_total{appliance=~"$appliance",device=~"vxlan[0-9]+"}[$__rate_interval]) * 8
+D2	node_network_info{appliance=~"$appliance",device=~"vxlan[0-9]+|br-vni[0-9]+"}
