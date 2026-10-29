@@ -71,7 +71,7 @@ Each row is independent; take whichever has ready inputs.
 | --- | --- | --- |
 | Python and shell: Ruff, ShellCheck | Git-tracked and new unignored `*.py`, `*.sh` | Draft [#18](https://github.com/openshift/evpn-gateway-appliance/pull/18) and [#19](https://github.com/openshift/evpn-gateway-appliance/pull/19); basic rule sets (Ruff `E4,E7,E9,F`) |
 | Dockerfile: hadolint | Git-tracked and new unignored `Dockerfile*` and `Containerfile*` | [#20](https://github.com/openshift/evpn-gateway-appliance/pull/20) pins Hadolint 2.15.1 via `hadolint-py`, fixes DL3059/SC2155 and records reviewed exceptions for DL3007/DL3041 in `Dockerfile.ci` and DL3041 in `image/rhel10/Containerfile`. Lint does not replace the native image build |
-| Ansible lint findings | `ansible/` | Main runs the `production` profile, skips only `var-naming[no-role-prefix]`. Fix those findings and drop the skip; no new tool |
+| Ansible lint findings | `ansible/` | Main runs the `production` profile, skips only `var-naming[no-role-prefix]`. Fix those findings and drop the skip; no new tool. Validated-content work: [plan](ansible-validated-content-plan.md) |
 | Role-discovery smoke | `check-ansible-install` | Set `ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false` for `ansible-doc` so a collection on the Python path cannot satisfy the role count ([tool notes](#tool-notes)) |
 
 Later work belongs to [later CI](ci-bootstrap-spec.md#later-sequence): a native image build
@@ -82,9 +82,10 @@ Finding, 2026-10-22. `make nested-ci-appliance-image` builds that derivative on 
 The record is
 [Finding 2026-10-22 nested CI vfs image](containerfile-refactor-spec.md#finding-2026-10-22-nested-ci-vfs-image).
 
-`ansible-test sanity` is the standard collection check for publication, but it installs its
-test environments from the network, so it belongs in the destination-check lane (L4), not
-the offline gate.
+`ansible-test sanity` is the standard collection check for publication, but its test
+environments need network setup. Keep that setup outside the offline gate; CORENET-7705
+needs repeatable per-PR sanity evidence ([candidacy plan](ansible-validated-content-plan.md)).
+A local command alone does not establish a Prow or GitHub workflow.
 
 ## Deferred
 
