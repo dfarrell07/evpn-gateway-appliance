@@ -50,7 +50,7 @@ comes from, and the source audit and networking handoff cite its files and lines
 
 | Path | What it holds |
 | --- | --- |
-| `ansible/roles/evpn_onprem_appliance` | On-prem appliance: VLAN sub-interfaces, a bridge and a VXLAN device per stretch, FRR VTEP. `simulate.yml` uses veth and namespaces; `physical.yml` targets a real trunk and is unvalidated |
+| `ansible/roles/evpn_onprem_appliance` | On-prem appliance: VLAN sub-interfaces, a bridge and a VXLAN device per stretch, FRR VTEP. `physical.yml` attaches a real tagged trunk, now exercised by the 7508 e2e; the veth/namespace simulation was extracted to the `network.evpn_gateway_test` test collection (7515) |
 | `ansible/roles/evpn_cloud_infra` | Infra-VPC relay: WireGuard server plus an FRR relay with `next-hop-unchanged` and no VXLAN |
 | `ansible/roles/evpn_cloud_workload` | Standalone cloud VTEP that validated the proof of concept; CORENET-7515 removes it from production, where OCP-native EVPN is the workload VTEP |
 | `ansible/roles/evpn_aws_infra` | AWS provisioning (infra and workload VPCs, TGW, security groups, router instances) through `aws` CLI calls |

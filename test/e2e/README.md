@@ -17,14 +17,16 @@ VM; the runner only provides env and collects artifacts.
 ## Layout
 
 ```text
-test/e2e/
-  run.sh              run the lane locally (rootful): podman run the toolchain image
-  run_remote.sh       run against a remote target (or locally, no target): export, ship, build, run
-  entrypoint.sh       in-container steps: clab deploy -> deploy.yml + health check
-  topology/
-    evpn.clab.yml     the emulated fabric
-  inventory/          e2e Ansible inventory + group_vars
-  ee/                 execution-environment definition + build.sh (make ee-image)
+test/
+  ansible/            test-only collection (network.evpn_gateway_test): on-prem sim role + playbooks; installed into the EE
+  e2e/
+    run.sh            run the lane locally (rootful): podman run the toolchain image
+    run_remote.sh     run against a remote target (or locally, no target): export, ship, build, run
+    entrypoint.sh     in-container steps: clab deploy -> simulate -> deploy.yml -> health checks
+    topology/
+      evpn.clab.yml   the emulated fabric
+    inventory/        e2e Ansible inventory + group_vars
+    ee/               execution-environment definition + build.sh (make ee-image)
 ```
 
 ## run.sh — local, rootful

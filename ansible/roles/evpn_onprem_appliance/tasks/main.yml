@@ -40,13 +40,8 @@
   when: tunnel.type == 'wireguard'
 
 # ── Trunk + VLAN setup ──────────────────────────────────────────
-- name: Set up simulated trunk (veth + namespaces)
-  ansible.builtin.include_tasks: simulate.yml
-  when: trunk_interface == "simulate"
-
 - name: Set up physical trunk
   ansible.builtin.include_tasks: physical.yml
-  when: trunk_interface != "simulate"
 
 # ── Per-stretch VXLAN + Bridge ──────────────────────────────────
 - name: Create VXLAN interfaces

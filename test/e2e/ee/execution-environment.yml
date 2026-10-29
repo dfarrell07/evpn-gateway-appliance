@@ -31,11 +31,17 @@ dependencies:
       # additional_build_files below. build.sh builds it to this stable name.
       - name: _collection/network-evpn_gateway.tar.gz
         type: file
+      # Test-only companion (test/ansible): simulates the on-prem side for
+      # the lane. Built alongside the product collection by build.sh. Not published.
+      - name: _collection/network-evpn_gateway_test.tar.gz
+        type: file
 
 # Copy the collection tarball into the build context so the galaxy install can find it
 # (ansible-builder does not auto-stage local files referenced in galaxy requirements).
 additional_build_files:
   - src: network-evpn_gateway.tar.gz
+    dest: _collection
+  - src: network-evpn_gateway_test.tar.gz
     dest: _collection
 
 additional_build_steps:

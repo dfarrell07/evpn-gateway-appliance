@@ -1,0 +1,25 @@
+---
+namespace: network
+name: evpn_gateway_test
+version: 0.1.0
+readme: README.md
+authors:
+  - OpenShift Core Networking
+description: >-
+  Test-only helpers for the EVPN Gateway Appliance e2e lane. Not published:
+  installed into the e2e execution environment alongside network.evpn_gateway to
+  simulate the on-prem customer side (VLAN trunk + hosts) the appliance attaches
+  to, and to assert data-plane reachability from those simulated hosts.
+license:
+  - Apache-2.0
+tags:
+  - networking
+  - evpn
+  - testing
+repository: https://github.com/openshift/evpn-gateway-appliance
+homepage: https://github.com/openshift/evpn-gateway-appliance
+issues: https://github.com/openshift/evpn-gateway-appliance/issues
+
+dependencies:
+  # ipaddr/ipmath filters, used to derive the simulated VM addresses.
+  ansible.utils: ">=2.10.0"

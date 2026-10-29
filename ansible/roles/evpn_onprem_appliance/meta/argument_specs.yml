@@ -5,9 +5,8 @@ argument_specs:
     description:
       - >-
         Brings up the on-prem side of the EVPN fabric: the transport endpoint,
-        the VLAN trunk (simulated veth/namespaces or a physical interface),
-        per-stretch VXLAN interfaces and bridges, and FRR configured as the
-        on-prem VTEP.
+        the VLAN trunk on a physical interface, per-stretch VXLAN interfaces
+        and bridges, and FRR configured as the on-prem VTEP.
     options:
       infra_relay_host:
         type: str
@@ -98,8 +97,8 @@ argument_specs:
         type: str
         required: true
         description: >-
-          "simulate" to build a veth/namespace trunk for local testing, or a
-          real interface name to attach a physical trunk port.
+          Name of the tagged VLAN trunk interface to attach. The role enslaves it
+          to the trunk bridge and builds a per-stretch VLAN sub-interface on it.
       frr_image:
         type: str
         required: true
