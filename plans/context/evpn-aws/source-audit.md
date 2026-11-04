@@ -65,7 +65,7 @@ before working on them.
 | --- | --- | --- | --- |
 | [ ] | **Baked SSH key** creates permanent root access | Releng / Source Owner | `image/Containerfile:169` |
 | [x] | **Host key checking disabled** globally | Releng | Prototype `ansible/ansible.cfg:4`; fixed in #7 (left at the secure default) |
-| [x] | **WireGuard private keys** written/echoed without `no_log` | Releng | Prototype `ansible/roles/evpn_cloud_infra/tasks/wireguard_keys.yml:26-52`; fixed in #7 (`no_log: true`) |
+| [x] | **WireGuard private keys** written/echoed without `no_log` | Releng | Prototype `ansible/roles/evpn_cloud_infra/tasks/wireguard_keys.yml:26-52`; generation/cache handling fixed in #7 (`no_log: true`). Config-template output remains exposed on main; [#34](https://github.com/openshift/evpn-gateway-appliance/pull/34) proposes the separate fix |
 | [x] | **Collection build ships lab files and git-ignored keys** | Releng | `ansible-galaxy collection build` ignores `.gitignore`; without `build_ignore` the tarball includes `inventory/hosts.yml`, `ansible.cfg` and any `.wg-keys/` present ([measured](ci-bootstrap-spec.md#measured-collection-build-and-import-behavior)). Fixed in #7: `build_ignore` plus the `check-ansible-build` tarball allowlist |
 | [x] | **SSH open to `0.0.0.0/0`** | Releng / Source Owner | Prototype `ansible/roles/evpn_aws_infra/tasks/main.yml:253`; fixed in #7 (`evpn_aws_infra_admin_cidr` required unless a lab opts in) |
 | [x] | **WireGuard open to `0.0.0.0/0`** | Releng / Source Owner | Prototype `ansible/roles/evpn_aws_infra/tasks/main.yml:255`; fixed in #7 (same admin CIDR) |
