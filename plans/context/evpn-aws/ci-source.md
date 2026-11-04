@@ -82,10 +82,11 @@ Finding, 2026-10-22. `make nested-ci-appliance-image` builds that derivative on 
 The record is
 [Finding 2026-10-22 nested CI vfs image](containerfile-refactor-spec.md#finding-2026-10-22-nested-ci-vfs-image).
 
-`ansible-test sanity` is the standard collection check for publication, but its test
-environments need network setup. Keep that setup outside the offline gate; CORENET-7705
-needs repeatable per-PR sanity evidence ([candidacy plan](ansible-validated-content-plan.md)).
-A local command alone does not establish a Prow or GitHub workflow.
+Run `make check-ansible-sanity` online to test the built and installed collection with
+native `ansible-test`, the CI toolchain and Python 3.12. Its test environments need
+network setup, separate from offline `verify`. In a linked worktree, add `USE_IMAGE=0`
+and provide those tools locally. [release#88274](https://github.com/openshift/release/pull/88274)
+proposes an optional per-PR job for the [candidacy plan](ansible-validated-content-plan.md).
 
 ## Deferred
 

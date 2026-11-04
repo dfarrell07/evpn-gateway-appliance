@@ -147,3 +147,11 @@ check-ansible-install: check-ansible-build
 	expected=$$(ls -d $(ANSIBLE)/roles/*/ | wc -l); \
 	found=$$(ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_SMOKE_DIR) ansible-doc -t role -l 2>/dev/null | grep -cE '^network\.evpn_gateway\.[a-z_]+:$$'); \
 	test "$$found" = "$$expected" || { echo "ERROR: expected $$expected collection roles discoverable from the clean install, found $$found" >&2; exit 1; }
+
+# Publication sanity uses ansible-test's native environments, which download their
+# requirements. Keep it separate from the network-less verify gate. Exercise the
+# installed artifact so omitted files cannot be borrowed from the source checkout.
+.PHONY: check-ansible-sanity
+check-ansible-sanity: check-ansible-install
+	@test -z "$(OFFLINE)" || { echo "ERROR: check-ansible-sanity needs network access; omit OFFLINE" >&2; exit 1; }
+	cd $(ANSIBLE_SMOKE_DIR)/ansible_collections/network/evpn_gateway && ansible-test sanity --python 3.12 --requirements
