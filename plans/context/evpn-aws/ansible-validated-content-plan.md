@@ -7,12 +7,12 @@ Automation Hub upload. Review is due 2026-11-13. This does not complete CORENET-
 production qualification. Unsupported checklist claims may remain unticked with reasons;
 the ticket does not require making every box true.
 
-In the 2026-11-10 review, Jaime proposed using the existing
-[`galaxy.yml` dependencies](https://github.com/openshift/evpn-gateway-appliance/pull/28#discussion_r4525991902)
-and [Prow `OWNERS`](https://github.com/openshift/evpn-gateway-appliance/pull/28#discussion_r4526006542)
-instead of adding `requirements.yml` and `CODEOWNERS`. CORENET-7705 still explicitly
-requires both files; reconcile that criterion with the review direction before claiming
-story completion. This does not settle the collection support matrix or publication decisions.
+The ticket asks for collection dependencies in `ansible/galaxy.yml` and maintainers and
+reviewers in Prow `OWNERS`, following the 2026-11-10 review
+([dependencies](https://github.com/openshift/evpn-gateway-appliance/pull/28#discussion_r4525991902),
+[`OWNERS`](https://github.com/openshift/evpn-gateway-appliance/pull/28#discussion_r4526006542)).
+The candidate issue's literal CODEOWNERS box therefore stays unticked unless the candidacy
+reviewers accept `OWNERS`. This does not settle the collection support matrix or publication decisions.
 
 ## State of each box on main (`1238348`, 2026-11-04)
 
@@ -21,12 +21,12 @@ story completion. This does not settle the collection support matrix or publicat
 | Production-ready | README limits use to lab/dev/test; WireGuard is dev/test only; the workload VTEP still ships | Untick with an explanation; owner confirms production scope |
 | Moved into `redhat-cop` | Repository remains in `openshift` | Untick; confirm the existing repository home |
 | Lint in a GitHub workflow | Lint runs per PR in Prow; no `.github/` workflow | Link Prow lint results in the candidate issue; add an Action only if Actions is enabled |
-| Production lint passes | `var-naming[no-role-prefix]` remains skipped; pipefail and ignore-errors fixes merged in [#30](https://github.com/openshift/evpn-gateway-appliance/pull/30) | Merge [#37](https://github.com/openshift/evpn-gateway-appliance/pull/37), or leave lint boxes unticked with a reason if it cannot land before review |
+| Production lint passes | `var-naming[no-role-prefix]` remains skipped; pipefail and ignore-errors fixes merged in [#30](https://github.com/openshift/evpn-gateway-appliance/pull/30) | [#37](https://github.com/openshift/evpn-gateway-appliance/pull/37) prefixes the remaining role variables, including the nmstate facts from [#32](https://github.com/openshift/evpn-gateway-appliance/pull/32), and removes the skip; link its verify run, or leave lint boxes unticked with a reason if it does not merge |
 | README: license link, install, versions | Missing | [#28](https://github.com/openshift/evpn-gateway-appliance/pull/28) documents installation and the current CI baseline; a supported ansible-core/Python/AAP matrix remains to be defined |
 | Installation information points at Hub | Dependencies are declared in `galaxy.yml`; no `requirements.yml` | #28 documents selecting private Hub configuration for published and source installs |
 | 2+ active maintainers in CODEOWNERS | Prow `OWNERS` lists four; no `CODEOWNERS` | Retain Prow ownership; explain the alternative in #57 and leave the literal CODEOWNERS claim unticked unless accepted in candidacy review |
 | Changelog, Code of Conduct | Missing | #28 |
-| Sanity evidence | Native Prow sanity result pending | Reuse suitable Prow sanity evidence from the collection CI effort, [CORENET-7667](https://redhat.atlassian.net/browse/CORENET-7667), when available; link it in the candidate issue. No separate 7705 CI implementation or requirement to complete the broader story |
+| Sanity evidence | No Prow lane runs `ansible-test sanity`; [CORENET-7667](https://redhat.atlassian.net/browse/CORENET-7667) plans none. Since #32 (`a7739d0`), local sanity of the installed artifact (2026-11-16) failed only `shebang`, on its root-run NetworkManager dispatcher templates | #37 keeps their absolute `#!/bin/bash` and records a justified ignore; add a Prow sanity lane and link its results in the candidate issue (the ticket asks for Prow results, so local runs are not a substitute) |
 | OpenSSF badge | Not done; box already unticked | Leave unticked |
 | No duplicate, no legal blocker | Candidate author's declaration | No additional work identified |
 | Packaging, YAML only, OSI license, README purpose | Present | Retain clean-build evidence |
