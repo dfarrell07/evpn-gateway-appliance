@@ -12,10 +12,10 @@
 # and the VXLAN neigh_suppress flag.
 #
 # The desired state is a pure function of `stretches`: with none, the present body is suppressed and only
-# the two companion lists render. _ega_detach lists interfaces enslaved to trunk-br other than the desired
+# the two companion lists render. _evpn_onprem_appliance_detach lists interfaces enslaved to trunk-br other than the desired
 # trunk; each is detached with controller: "" so nmstate clears the controller from its (foreign, non-ega)
 # profile and persists it. This handles swapping the trunk (detach the old one) and teardown (no desired
-# trunk, so detach all). _ega_absent lists ega-* interfaces no longer desired, marked absent.
+# trunk, so detach all). _evpn_onprem_appliance_absent lists ega-* interfaces no longer desired, marked absent.
 interfaces:
 {% if stretches | length > 0 %}
   - name: trunk-br
@@ -66,11 +66,11 @@ interfaces:
         - name: trunk.{{ s.vlan }}
 {% endfor %}
 {% endif %}
-{% for iface in _ega_detach | default([]) %}
+{% for iface in _evpn_onprem_appliance_detach | default([]) %}
   - name: {{ iface }}
     controller: ""
 {% endfor %}
-{% for iface in _ega_absent | default([]) %}
+{% for iface in _evpn_onprem_appliance_absent | default([]) %}
   - name: {{ iface }}
     state: absent
 {% endfor %}
