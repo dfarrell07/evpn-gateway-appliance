@@ -390,6 +390,11 @@ and relevant counterexamples as [source CI](ci-source.md#how-to-add-a-check) des
   directory) ships by default. This measured the deny-list path, not Ansible's `manifest`
   inclusion feature. The later manifest migration ([notes](ci-source.md#tool-notes)) uses that
   maintained builder feature plus required-path assertions, replacing `check-collection-tarball.sh`.
+- **File symlinks, checked 2026-11-04.** With ansible-core 2.21.4, a synthetic file
+  symlink under `roles/` to a file outside the collection is dereferenced into a regular file in the
+  tarball, accepted by the path allowlist. Neither main `4513031` nor docs PR #28 `87788bc`
+  contains such a link. A configured-term control confirmed the public scanner follows
+  the link and rejects matching content; the tar-path allowlist does not establish source provenance.
 - **Identity.** Two builds of one tree differ in tarball bytes but produce identical
   `MANIFEST.json` and `FILES.json`, and on this fixture those files were identical across
   ansible-core 2.16.14, 2.18.9, 2.19.4 and 2.21.4. Comparing the manifest digest therefore
