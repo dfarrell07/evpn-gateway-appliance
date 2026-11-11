@@ -1,9 +1,8 @@
 # evpn_onprem_appliance
 
-Configures the on-prem side of the EVPN fabric: the transport endpoint, a
-VLAN trunk (simulated with veth/network namespaces, or a real physical trunk
-interface), per-stretch VXLAN interfaces and bridges, and FRR configured as
-the on-prem VTEP.
+Configures the on-prem side of the EVPN fabric: the transport endpoint, the
+VLAN trunk interface, per-stretch VXLAN interfaces and bridges, and FRR
+configured as the on-prem VTEP.
 
 See [`meta/argument_specs.yml`](meta/argument_specs.yml) for the full input
 schema (`tunnel`, `stretches`, `trunk_interface`, `frr_image`, `bgp`,
@@ -13,9 +12,9 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
 
 ## Known limitations (tracked, not fixed by this role)
 
-- `trunk_interface: simulate` is well exercised; a real physical trunk
-  (`tasks/physical.yml`) is unvalidated against actual hardware
-  (source-audit.md).
+- The on-prem networking (nmstate, `tasks/nm_networking.yml`) is exercised by
+  the Molecule lane against a veth stand-in trunk; it is not yet validated
+  against actual hardware or a real tagged customer trunk (source-audit.md).
 - `tunnel.type: wireguard` is the only implemented transport. `ipsec` and
   `direct-connect` are accepted values but have no implementation yet —
   production requires Direct Connect or Site-to-Site VPN.
@@ -48,6 +47,6 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
         subnet: 10.42.1.0/24
         onprem_gateway: 10.42.1.1
         cloud_gateway: 10.42.1.2
-    trunk_interface: simulate
+    trunk_interface: trunk0
     frr_image: quay.io/frrouting/frr:10.5.3
 ```

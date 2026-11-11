@@ -1,0 +1,38 @@
+#!/bin/bash
+# NetworkManager dispatcher — reconcile trunk-br's own (self) VLAN membership to the desired stretch
+# VLANs. Managed by the evpn_onprem_appliance role (CORENET-7499). Do not edit.
+#
+# nmstate (and NM) cannot express a vlan-aware bridge's self VLAN membership, which the per-stretch
+# trunk.<vlan> sub-interfaces need to receive their tagged frames. This reconciles it to EXACTLY the
+# desired set: add missing VIDs and remove stale ones (a modify that drops a stretch must drop its self
+# VID; the default PVID 1 is left alone). It is fired by NM when trunk-br comes up (boot/deploy) AND run
+# directly by the role after nmstatectl apply — a modify reconciles in place without flapping trunk-br,
+# so the up hook alone would miss both the add and the remove.
+iface="$1"
+action="$2"
+
+[ "$iface" = "trunk-br" ] || exit 0
+[ "$action" = "up" ] || exit 0
+
+desired=" {% for s in stretches %}{{ s.vlan }} {% endfor %}"
+
+# Current self VIDs (first numeric field of each row under `dev trunk-br`, header skipped), space-
+# separated so the " $vid " membership tests below work.
+current=" $(bridge vlan show dev trunk-br | awk 'NR>1 {for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) {print $i; break}}' | tr '\n' ' ')"
+
+# Remove any self VID we no longer want (never the default PVID 1).
+for vid in $current; do
+    [ "$vid" = "1" ] && continue
+    case "$desired" in
+        *" $vid "*) ;;
+        *) bridge vlan del vid "$vid" dev trunk-br self ;;
+    esac
+done
+
+# Add any desired VID not already present.
+for vid in $desired; do
+    case " $current " in
+        *" $vid "*) ;;
+        *) bridge vlan add vid "$vid" dev trunk-br self ;;
+    esac
+done

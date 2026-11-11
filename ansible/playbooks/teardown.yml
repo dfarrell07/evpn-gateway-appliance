@@ -6,44 +6,10 @@
   hosts: onprem_appliances
   become: true
   tasks:
-    - name: Stop and remove FRR container
-      containers.podman.podman_container:
-        name: frr
-        state: absent
-
-    - name: Stop and remove frr_exporter container
-      containers.podman.podman_container:
-        name: frr_exporter
-        state: absent
-
-    - name: Stop and remove node_exporter container
-      containers.podman.podman_container:
-        name: node_exporter
-        state: absent
-
-    - name: Stop WireGuard
-      ansible.builtin.systemd:
-        name: wg-quick@wg0
-        state: stopped
-        enabled: false
-      register: _wg_stop
-      failed_when: _wg_stop.failed and 'Could not find' not in (_wg_stop.msg | default(''))
-
-    - name: Remove bridges, VXLAN, VLAN interfaces
-      ansible.builtin.shell: |
-        {% for s in stretches %}
-        {% set vni = 10000 + s.vlan %}
-        ip link del br-vni{{ vni }} 2>/dev/null || true
-        ip link del vxlan{{ vni }} 2>/dev/null || true
-        ip link del trunk.{{ s.vlan }} 2>/dev/null || true
-        {% endfor %}
-        ip link del trunk-br 2>/dev/null || true
-      changed_when: false
-
-    - name: Remove FRR config
-      ansible.builtin.file:
-        path: /etc/frr
-        state: absent
+    - name: Tear down the on-prem appliance
+      ansible.builtin.include_role:
+        name: evpn_onprem_appliance
+        tasks_from: teardown
 
 - name: Teardown cloud workload
   hosts: cloud_workload
