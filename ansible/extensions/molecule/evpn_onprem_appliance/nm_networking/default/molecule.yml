@@ -1,0 +1,21 @@
+---
+# default scenario (name: evpn_onprem_appliance/nm_networking/default): converge + ownership-reconcile
+# + reboot. The platform, driver, provisioner and verifier are inherited from the shared
+# extensions/molecule/config.yml; side_effect.yml and verify.yml here are auto-discovered.
+#
+# test_sequence is overridden (vs the shared one in config.yml) to run verify BOTH before and after the
+# reboot side_effect: the first asserts converge applied the desired LIVE state; the second asserts it
+# PERSISTS across reboot. With only the post-reboot verify, a converge that wrote correct keyfiles but
+# failed to apply live would be masked by the reboot re-reading those keyfiles.
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - verify
+    - side_effect
+    - verify
+    - destroy

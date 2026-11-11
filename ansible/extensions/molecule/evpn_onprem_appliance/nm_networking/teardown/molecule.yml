@@ -1,0 +1,6 @@
+---
+# teardown scenario (name: evpn_onprem_appliance/nm_networking/teardown): converge, then tear down and
+# assert empty. Everything — platform, driver, provisioner, test_sequence, verifier — is inherited from
+# the shared extensions/molecule/config.yml; side_effect.yml and verify.yml here are auto-discovered, so
+# this file needs no scenario-specific config.
+{}

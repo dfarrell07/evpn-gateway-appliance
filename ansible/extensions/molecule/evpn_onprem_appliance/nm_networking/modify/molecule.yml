@@ -1,0 +1,7 @@
+---
+# modify scenario (name: evpn_onprem_appliance/nm_networking/modify): converge the baseline (config A),
+# then re-converge a modified config (config B: remove 300, add 400, change 100's SVI) and assert the
+# reconcile converged to B. Everything — platform, driver, provisioner, test_sequence, verifier — is
+# inherited from the shared extensions/molecule/config.yml; side_effect.yml and verify.yml here are
+# auto-discovered, so this file needs no scenario-specific config.
+{}

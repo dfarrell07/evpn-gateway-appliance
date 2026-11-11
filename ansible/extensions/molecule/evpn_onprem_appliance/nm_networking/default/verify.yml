@@ -1,0 +1,97 @@
+---
+# Verify the networking contract after converge + reboot: the fabric is up, the trunk NIC's
+# pre-existing profile is preserved (adopted in place, not replaced) while enslaved to trunk-br, the
+# stale orphan was pruned, and the dispatcher-managed flags are set.
+# Runs after the reboot side_effect, so passing here also proves persistence. Each check captures
+# state (failed_when:false) then asserts with a readable message.
+- name: Verify
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../resources/deploy_vars.yml
+  tasks:
+    - name: Query the trunk interface
+      ansible.builtin.command: ip -o link show {{ trunk_interface }}
+      register: _trunk
+      changed_when: false
+      failed_when: false
+
+    - name: Trunk NIC is up and enslaved to trunk-br
+      ansible.builtin.assert:
+        that: "'master trunk-br' in _trunk.stdout"
+        fail_msg: "{{ trunk_interface }} is not enslaved to trunk-br: {{ _trunk.stdout or _trunk.stderr }}"
+        success_msg: "{{ trunk_interface }} is enslaved to trunk-br"
+
+    - name: Query each per-stretch VNI bridge SVI address
+      ansible.builtin.command: ip -4 -o addr show br-vni{{ 10000 + item.vlan }}
+      loop: "{{ stretches }}"
+      loop_control:
+        label: "br-vni{{ 10000 + item.vlan }}"
+      register: _svi
+      changed_when: false
+      failed_when: false
+
+    - name: Each VNI bridge carries its SVI gateway
+      ansible.builtin.assert:
+        that: "item.item.onprem_gateway in item.stdout"
+        fail_msg: "br-vni{{ 10000 + item.item.vlan }} missing SVI {{ item.item.onprem_gateway }}: {{ item.stdout or item.stderr }}"
+      loop: "{{ _svi.results }}"
+      loop_control:
+        label: "br-vni{{ 10000 + item.item.vlan }}"
+
+    - name: Query trunk-br self VLAN membership
+      ansible.builtin.command: bridge vlan show dev trunk-br
+      register: _selfvlan
+      changed_when: false
+      failed_when: false
+
+    - name: trunk-br has each stretch VLAN in its own (self) membership (dispatcher)
+      ansible.builtin.assert:
+        that: "item.vlan | string in _selfvlan.stdout.split()"
+        fail_msg: "trunk-br self VLAN {{ item.vlan }} missing: {{ _selfvlan.stdout }}"
+      loop: "{{ stretches }}"
+      loop_control:
+        label: "vlan {{ item.vlan }}"
+
+    - name: Query each VXLAN bridge-port detail
+      ansible.builtin.command: bridge -d link show dev vxlan{{ 10000 + item.vlan }}
+      loop: "{{ stretches }}"
+      loop_control:
+        label: "vxlan{{ 10000 + item.vlan }}"
+      register: _nsup
+      changed_when: false
+      failed_when: false
+
+    - name: Each VXLAN bridge port has neigh_suppress on (dispatcher)
+      ansible.builtin.assert:
+        that: "'neigh_suppress on' in item.stdout"
+        fail_msg: "vxlan{{ 10000 + item.item.vlan }} neigh_suppress not set: {{ item.stdout }}"
+      loop: "{{ _nsup.results }}"
+      loop_control:
+        label: "vxlan{{ 10000 + item.item.vlan }}"
+
+    - name: Query the trunk device's owning connection
+      ansible.builtin.command: nmcli -t -f GENERAL.CONNECTION device show {{ trunk_interface }}
+      register: _owner
+      changed_when: false
+      failed_when: false
+
+    # The trunk is NOT owned by an ega-* profile: nmstate enslaves it by merging controller into its
+    # pre-existing profile in place. So the owning connection must still be the pre-existing one
+    # (here the 'squatter' fixture, standing in for a prod LACP profile) — a new ega-port-* name here
+    # would mean nmstate REPLACED the profile, losing whatever config (e.g. LACP) it carried.
+    - name: Trunk NIC keeps its pre-existing profile (adopted in place, not replaced)
+      ansible.builtin.assert:
+        that: "'squatter' in _owner.stdout"
+        fail_msg: "{{ trunk_interface }} owned by '{{ _owner.stdout }}', expected the pre-existing 'squatter' profile preserved by merge-in-place"
+
+    - name: Query the stale orphan bridge
+      ansible.builtin.command: ip link show br-vni19999
+      register: _orphan
+      changed_when: false
+      failed_when: false
+
+    - name: Stale ega-* orphan was pruned
+      ansible.builtin.assert:
+        that: _orphan.rc != 0
+        fail_msg: "br-vni19999 is still present — the stale orphan was not pruned"

@@ -73,12 +73,19 @@ RUN dnf install -y podman-remote skopeo openssh-clients iproute iputils tcpdump 
 RUN bash -c "$(curl -fsSL https://get.containerlab.dev)" -- -v 0.81.1
 
 # Python test toolchain. testinfra pinned to latest (10.2.2, 2026-10-19); pytest pinned
-# conservatively for broad testinfra compatibility. (deploy.yml renders its templates
-# inside the execution environment, which carries its own netaddr; the toolchain only
-# drives clab + the assertions.)
+# conservatively for broad testinfra compatibility. molecule drives the role suite
+# (test/e2e/entrypoint_molecule.sh); 26.9.0 is the release paired with ansible-core 2.21.x. The molecule
+# lane uses the `podman` driver (molecule-plugins) against the mounted rootful socket via podman-remote
+# (MOLECULE_PODMAN_EXECUTABLE + CONTAINER_HOST). netaddr: the roles' ansible.utils.ipaddr filter renders
+# on the controller (this image, not the instance), so the molecule lane needs it here; baked at build
+# (not pulled at lane runtime) because the lanes must run disconnected. Pinned for a reproducible image —
+# the EE derives the same dep unpinned from ansible.utils. The static checks don't exercise it.
 RUN pip install --no-cache-dir \
         pytest==8.3.4 \
-        pytest-testinfra==10.2.2
+        pytest-testinfra==10.2.2 \
+        molecule==26.9.0 \
+        molecule-plugins[podman]==26.11.0 \
+        netaddr==1.3.0
 
 # Copy the source code into the container
 COPY . /src

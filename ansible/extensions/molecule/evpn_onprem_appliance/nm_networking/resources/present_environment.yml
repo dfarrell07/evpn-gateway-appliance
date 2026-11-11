@@ -1,0 +1,53 @@
+---
+# Present the appliance's "hardware/boot" environment the way a real appliance has it at boot — and
+# PERSISTENTLY, so a `podman restart` (the reboot proxy) reproduces a real boot: the trunk NIC and the
+# tunnel address come up BEFORE NetworkManager, and the trunk is managed, so NM finds and autoconnects
+# it on boot (no reactive re-presentation after the fact). In prod the trunk is a physical NIC (present
+# at boot, managed by default) and the tunnel address is wg0; here a systemd unit ordered before NM
+# recreates a veth stand-in + the loopback address, and an NM drop-in marks the veth managed (veths are
+# unmanaged by default — a real NIC is not). Both live in /etc so they survive the restart. Shared by
+# every scenario's prepare; the unit is also started now so the trunk is present for the first converge.
+- name: Wait for NetworkManager to be active (systemd is still booting right after create)
+  ansible.builtin.command: systemctl is-active NetworkManager
+  register: _nm
+  until: _nm.stdout == "active"
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Install the boot-time trunk/tunnel unit (ordered before NetworkManager)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ega-molecule-trunk.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Create the molecule stand-in trunk veth and tunnel address before NetworkManager
+      Before=NetworkManager.service
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/bin/sh -c 'ip link show {{ trunk_interface }} >/dev/null 2>&1 || ip link add {{ trunk_interface }} type veth peer name cpe'
+      ExecStart=/bin/sh -c 'ip link set {{ trunk_interface }} up && ip link set cpe up'
+      ExecStart=/bin/sh -c 'ip address add {{ tunnel.onprem_ip }}/32 dev lo 2>/dev/null || true'
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Mark the trunk device NetworkManager-managed (veths are unmanaged by default)
+  ansible.builtin.copy:
+    dest: /etc/NetworkManager/conf.d/99-ega-molecule-trunk.conf
+    mode: "0644"
+    content: |
+      [device-ega-molecule-trunk]
+      match-device=interface-name:{{ trunk_interface }}
+      managed=1
+
+- name: Enable the boot unit and apply it to the current boot (creates the veth + tunnel address now)
+  ansible.builtin.systemd:
+    name: ega-molecule-trunk.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Reload NetworkManager config so it manages the trunk device now
+  ansible.builtin.command: nmcli general reload
+  changed_when: true

@@ -1,0 +1,13 @@
+---
+# Tear down by running the role's own teardown entry point — the SAME code the shipped
+# playbooks/teardown.yml onprem play runs (it includes this tasks file too) — so the scenario validates
+# the real teardown, not a copy. The FRR/WireGuard stops inside it no-op here, since the networking-
+# scoped converge deploys neither.
+- name: Side effect — tear down the on-prem appliance
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Tear down the on-prem appliance
+      ansible.builtin.include_role:
+        name: network.evpn_gateway.evpn_onprem_appliance
+        tasks_from: teardown

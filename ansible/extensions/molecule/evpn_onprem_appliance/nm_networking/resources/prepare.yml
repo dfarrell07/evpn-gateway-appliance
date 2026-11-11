@@ -1,0 +1,47 @@
+---
+# Prepare (shared by all scenarios): present the appliance boot environment (NM, tunnel address, trunk
+# NIC — see present_environment.yml) and plant the reconcile fixtures: a pre-existing profile on the
+# trunk NIC (the 'squatter', standing in for a prod LACP profile) that converge must ADOPT IN PLACE —
+# enslaving it to trunk-br without replacing it — and a stale ega-* orphan (a stretch no longer
+# declared) that converge must prune.
+- name: Prepare
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - deploy_vars.yml
+  tasks:
+    - name: Present the appliance boot environment (NM, tunnel addr, trunk NIC)
+      ansible.builtin.include_tasks: present_environment.yml
+
+    - name: Plant a pre-existing profile on the trunk NIC (converge must adopt it in place, not replace it)
+      ansible.builtin.shell: |
+        set -e
+        nmcli connection show squatter >/dev/null 2>&1 || \
+          nmcli connection add type ethernet ifname {{ trunk_interface }} con-name squatter \
+            autoconnect yes ipv4.method disabled ipv6.method disabled
+        nmcli connection up squatter
+      changed_when: true
+
+    - name: Plant a stale ega-* orphan profile (converge must prune it)
+      ansible.builtin.copy:
+        dest: /etc/NetworkManager/system-connections/ega-bridge-vni19999.nmconnection
+        mode: "0600"
+        content: |
+          [connection]
+          id=ega-bridge-vni19999
+          type=bridge
+          interface-name=br-vni19999
+          autoconnect=true
+          [bridge]
+          stp=false
+          [ipv4]
+          method=disabled
+          [ipv6]
+          method=disabled
+
+    - name: Activate the planted orphan so it is a live, owned device to prune
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - nmcli connection reload
+        - nmcli connection up ega-bridge-vni19999
+      changed_when: true

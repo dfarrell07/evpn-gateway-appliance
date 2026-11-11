@@ -1,0 +1,75 @@
+---
+# Verify the reconcile converged from config A (baseline) to config B (modify_vars): the added stretch
+# (400) is present, the removed stretch (300) is pruned, and the changed SVI (100 -> .254) is updated.
+# The trunk-br self-VLAN checks are the revealing ones: self-VLANs are set by the dispatcher on
+# trunk-br *up*, so a modify (no flap) may not reconcile them — these assert whether self-VLAN
+# membership actually follows add/remove on a modify.
+- name: Verify modify
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../resources/modify_vars.yml
+  vars:
+    removed_vlan: 300
+    removed_vni: 10300
+  tasks:
+    - name: Query each config-B VNI bridge SVI
+      ansible.builtin.command: ip -4 -o addr show br-vni{{ 10000 + item.vlan }}
+      loop: "{{ stretches }}"
+      loop_control:
+        label: "br-vni{{ 10000 + item.vlan }}"
+      register: _svi
+      changed_when: false
+      failed_when: false
+
+    - name: Each config-B stretch has its (updated) SVI gateway
+      ansible.builtin.assert:
+        that: "item.item.onprem_gateway in item.stdout"
+        fail_msg: "br-vni{{ 10000 + item.item.vlan }} missing SVI {{ item.item.onprem_gateway }}: {{ item.stdout or item.stderr }}"
+      loop: "{{ _svi.results }}"
+      loop_control:
+        label: "br-vni{{ 10000 + item.item.vlan }}"
+
+    - name: Query the removed stretch's VNI bridge
+      ansible.builtin.command: ip link show br-vni{{ removed_vni }}
+      register: _removed_bridge
+      changed_when: false
+      failed_when: false
+
+    - name: Removed stretch's VNI bridge is pruned
+      ansible.builtin.assert:
+        that: _removed_bridge.rc != 0
+        fail_msg: "br-vni{{ removed_vni }} still present — removed stretch not pruned"
+
+    - name: Query NetworkManager connections
+      ansible.builtin.command: nmcli -t -f NAME connection show
+      register: _conns
+      changed_when: false
+      failed_when: false
+
+    - name: Removed stretch's ega-* profiles are gone
+      ansible.builtin.assert:
+        that:
+          - "('ega-bridge-vni' ~ removed_vni) not in _conns.stdout_lines"
+          - "('ega-vxlan-' ~ removed_vni) not in _conns.stdout_lines"
+          - "('ega-vlan-' ~ removed_vlan) not in _conns.stdout_lines"
+        fail_msg: "ega-* profiles for the removed stretch still present: {{ _conns.stdout_lines | select('match', '^ega-') | list }}"
+
+    - name: Query trunk-br self VLANs
+      ansible.builtin.command: bridge vlan show dev trunk-br
+      register: _selfvlan
+      changed_when: false
+      failed_when: false
+
+    - name: trunk-br self-VLANs include each config-B stretch (added 400 present)
+      ansible.builtin.assert:
+        that: "item.vlan | string in _selfvlan.stdout.split()"
+        fail_msg: "trunk-br self-VLAN {{ item.vlan }} missing after modify: {{ _selfvlan.stdout }}"
+      loop: "{{ stretches }}"
+      loop_control:
+        label: "vlan {{ item.vlan }}"
+
+    - name: trunk-br self-VLAN of the removed stretch is gone (no stale leftover)
+      ansible.builtin.assert:
+        that: "(removed_vlan | string) not in _selfvlan.stdout.split()"
+        fail_msg: "trunk-br still has stale self-VLAN {{ removed_vlan }} after removal: {{ _selfvlan.stdout }}"
