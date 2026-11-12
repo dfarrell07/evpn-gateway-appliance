@@ -21,10 +21,26 @@ Entry points, by how they are meant to be run:
 
 Set `EGA_SCENARIO=multihoming EGA_TOPOLOGY=evpn-7502.clab.yml` to run the CORENET-7502
 lane. It configures two appliances with the product role, verifies the shared Ethernet
-Segment identity and checks the requested 802.3ad bond members. An upstream LACP-peer
-assertion is enabled by the qualification inventory, where a physical MLAG fabric exists.
-The same test playbook is intended for later qualification runs; only the topology and
-inventory change.
+Segment identity, checks the requested 802.3ad bond members, and verifies VLAN traffic
+survives one appliance bond being disabled. The same test playbook is intended for later
+qualification runs; only the topology and inventory change.
+
+### CORENET-7502 coverage boundary
+
+The CI topology emulates the upstream DVS/edge segment with a VLAN-aware Linux bridge.
+Each appliance has a two-member 802.3ad bond toward the shared bridge, and VLANs 100,
+200, and 300 are trunked across it.
+
+The lane validates:
+
+- LACP negotiation on both appliance bonds;
+- shared EVPN Ethernet Segment configuration;
+- VLAN reachability through the shared edge;
+- traffic continuity after one appliance is taken out of the data path.
+
+This is CI emulation, not physical NSX DVS/MLAG qualification. Physical switch behavior,
+cabling failure, and full EVPN Type-1/Type-4 designated-forwarder election against a
+remote VTEP require a separate qualification environment.
 
 All are runner-agnostic — the same scripts work under a Prow test step or a GitHub Actions
 VM; the runner only provides env and collects artifacts.
