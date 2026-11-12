@@ -1,0 +1,32 @@
+---
+# CORENET-7502 emulated all-active multihoming lane.
+# The two appliance containers are directly dual-attached to each other so the
+# CI validates the appliance-side 802.3ad configuration and shared EVPN
+# Ethernet Segment identity. Qualification can reuse the same assertions with
+# an inventory that enables the upstream LACP-peer check on a physical MLAG
+# fabric.
+name: ega-evpn
+
+mgmt:
+  network: clab
+  ipv4-subnet: 172.20.20.0/24
+
+topology:
+  defaults:
+    kind: linux
+    image: ${EGA_NODE_IMAGE}
+    cgroupns-mode: host
+    tmpfs:
+      /run: rw,nosuid,nodev
+      /run/lock: rw,nosuid,nodev,noexec
+      /tmp: rw,nosuid,nodev
+    binds:
+      - ${EGA_SSH_PUBKEY}:/root/.ssh/authorized_keys:ro
+  nodes:
+    appliance-a:
+      mgmt-ipv4: 172.20.20.21
+    appliance-b:
+      mgmt-ipv4: 172.20.20.22
+  links:
+    - endpoints: ["appliance-a:eth1", "appliance-b:eth1"]
+    - endpoints: ["appliance-a:eth2", "appliance-b:eth2"]

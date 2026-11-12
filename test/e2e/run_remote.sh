@@ -28,7 +28,12 @@
 #   REGISTRY_AUTH_FILE   pull secret for the export (default: local docker config; used only if present)
 #   ARTIFACTS    local dir the lane's artifacts are collected into (default /tmp/ega/artifact; Prow
 #                sets it). For a remote target they are copied back here off the target.
+#   EGA_TOPOLOGY, EGA_SCENARIO  topology and scenario passed through to the target lane.
 set -euo pipefail
+
+# Image exports are several GiB in aggregate; prefer disk-backed staging over
+# hosts where /tmp is a small tmpfs (common on disposable CI VMs).
+export TMPDIR="${TMPDIR:-/var/tmp}"
 
 # This script installs nothing -- provisioning handles tools. skopeo does the base-image export
 # here, so require it; the target's tools are checked in each step script below.

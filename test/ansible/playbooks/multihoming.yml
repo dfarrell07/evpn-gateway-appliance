@@ -1,0 +1,89 @@
+---
+# CORENET-7502 CI acceptance checks. This deliberately exercises the product
+# role's multihoming tasks directly; the qualification environment can reuse
+# this playbook with a different inventory and physical topology.
+- name: Configure the two appliance bonds
+  hosts: onprem_appliances
+  become: true
+  gather_facts: false
+  vars:
+    trunk_interface: bond0
+    multihoming:
+      enabled: true
+      bond_interfaces: [eth1, eth2]
+      es_id: "00:aa:bb:cc:dd:ee:ff:00:00:01"
+      es_sys_mac: "02:aa:bb:cc:dd:ee"
+      df_pref: 32767
+    tunnel:
+      type: direct-connect
+      onprem_ip: 10.44.44.1
+      cloud_ip: 10.44.44.2
+      network_cidr: 10.44.44.0/24
+    bgp:
+      onprem_asn: 65044
+      infra_asn: 65100
+      workload_asn: 65200
+    stretches:
+      - vlan: 100
+        name: production
+        subnet: 10.42.1.0/24
+        onprem_gateway: 10.42.1.1
+        cloud_gateway: 10.42.1.2
+    frr_image: quay.io/frrouting/frr:10.5.3
+    # Qualification inventories can enable the upstream-peer assertion. The
+    # containerlab lane validates the requested bond configuration; its veth
+    # links do not provide an upstream MLAG LACP responder.
+    require_lacp_peer: false
+  tasks:
+    - name: Include the product multihoming implementation
+      ansible.builtin.include_role:
+        name: network.evpn_gateway.evpn_onprem_appliance
+        tasks_from: multihoming.yml
+
+    - name: Render the product EVPN multihoming configuration
+      ansible.builtin.include_role:
+        name: network.evpn_gateway.evpn_onprem_appliance
+        tasks_from: frr_config.yml
+
+    - name: Read the rendered FRR configuration
+      ansible.builtin.slurp:
+        src: /etc/frr/frr.conf
+      register: frr_config
+
+    - name: Read the negotiated bond state
+      ansible.builtin.command: cat /proc/net/bonding/{{ trunk_interface }}
+      register: bond_state
+      changed_when: false
+
+    - name: Assert both appliances configured the shared Ethernet Segment bond
+      ansible.builtin.assert:
+        that:
+          - "'Bonding Mode: IEEE 802.3ad Dynamic link aggregation' in bond_state.stdout"
+          - "'Slave Interface: eth1' in bond_state.stdout"
+          - "'Slave Interface: eth2' in bond_state.stdout"
+        fail_msg: >-
+          {{ inventory_hostname }} did not configure the requested 802.3ad bond with both members.
+
+    - name: Assert both appliances negotiated an upstream LACP peer
+      ansible.builtin.assert:
+        that:
+          - "'Partner Mac Address:' in bond_state.stdout"
+          - >-
+            (bond_state.stdout | regex_findall('(?m)^Partner Mac Address: (?!00:00:00:00:00:00).+$'))
+            | length >= 2
+        fail_msg: >-
+          {{ inventory_hostname }} did not negotiate both LACP members with the upstream peer.
+      when: require_lacp_peer | bool
+
+    - name: Assert the shared Ethernet Segment identity is present in test input
+      ansible.builtin.assert:
+        that:
+          - >-
+            'evpn mh es-id 00:aa:bb:cc:dd:ee:ff:00:00:01' in
+            (frr_config.content | b64decode)
+          - >-
+            'evpn mh es-sys-mac 02:aa:bb:cc:dd:ee' in
+            (frr_config.content | b64decode)
+        fail_msg: >-
+          {{ inventory_hostname }} did not render the shared CORENET-7502
+          Ethernet Segment identity into FRR configuration.

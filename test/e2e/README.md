@@ -19,6 +19,13 @@ Entry points, by how they are meant to be run:
   the e2e or molecule lane. A Prow status then reads `e2e` / `molecule`. The molecule wrapper also
   skips the EE build (molecule drives the role with the CI image's own ansible, not the shipped EE).
 
+Set `EGA_SCENARIO=multihoming EGA_TOPOLOGY=evpn-7502.clab.yml` to run the CORENET-7502
+lane. It configures two appliances with the product role, verifies the shared Ethernet
+Segment identity and checks the requested 802.3ad bond members. An upstream LACP-peer
+assertion is enabled by the qualification inventory, where a physical MLAG fabric exists.
+The same test playbook is intended for later qualification runs; only the topology and
+inventory change.
+
 All are runner-agnostic — the same scripts work under a Prow test step or a GitHub Actions
 VM; the runner only provides env and collects artifacts.
 
@@ -176,6 +183,9 @@ test/e2e/run_remote.sh
 
 The remote must be provisioned with `podman`, `skopeo` and `make`, `podman.socket` enabled, and
 passwordless `sudo`; the script installs nothing on it.
+
+The runner stages image exports under `/var/tmp` by default so hosts with a small `/tmp` tmpfs do
+not run out of space. Override `TMPDIR` when a different staging filesystem is required.
 
 For convenience and testing it can also run with **no target** (`SSH_REMOTE` unset), doing the
 same export/build/run entirely on this host. That path is rootful, so build into the rootful
