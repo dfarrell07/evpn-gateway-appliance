@@ -1,10 +1,8 @@
 ---
 # CORENET-7502 emulated all-active multihoming lane.
-# The two appliance containers are directly dual-attached to each other so the
-# CI validates the appliance-side 802.3ad configuration and shared EVPN
-# Ethernet Segment identity. Qualification can reuse the same assertions with
-# an inventory that enables the upstream LACP-peer check on a physical MLAG
-# fabric.
+# The edge node terminates one LACP bundle per appliance and joins both bundles
+# to a VLAN-aware bridge. This models the shared DVS/edge-segment behavior that
+# a direct appliance-to-appliance link cannot exercise.
 name: ega-evpn
 
 mgmt:
@@ -27,6 +25,59 @@ topology:
       mgmt-ipv4: 172.20.20.21
     appliance-b:
       mgmt-ipv4: 172.20.20.22
+    edge-bridge:
+      mgmt-ipv4: 172.20.20.23
+      exec:
+        - bash -c 'modprobe bonding || true; for i in 1 2 3 4 5; do nmcli dev set eth$i managed no || true; done; systemctl stop NetworkManager || true'
+        - ip link add bond-a type bond mode 802.3ad
+        - ip link set bond-a type bond lacp_rate fast xmit_hash_policy layer3+4
+        - ip link add bond-b type bond mode 802.3ad
+        - ip link set bond-b type bond lacp_rate fast xmit_hash_policy layer3+4
+        - ip link set eth1 down
+        - ip link set eth2 down
+        - ip link set eth3 down
+        - ip link set eth4 down
+        - ip link set eth1 master bond-a
+        - ip link set eth2 master bond-a
+        - ip link set eth3 master bond-b
+        - ip link set eth4 master bond-b
+        - ip link set eth1 up
+        - ip link set eth2 up
+        - ip link set eth3 up
+        - ip link set eth4 up
+        - ip link add br-edge type bridge
+        - ip link set br-edge type bridge vlan_filtering 1
+        - ip link set bond-a master br-edge
+        - ip link set bond-b master br-edge
+        - ip link set eth5 master br-edge
+        - ip link set br-edge up
+        - ip link set bond-a up
+        - ip link set bond-b up
+        - bridge vlan add vid 100 dev bond-a
+        - bridge vlan add vid 200 dev bond-a
+        - bridge vlan add vid 300 dev bond-a
+        - bridge vlan add vid 100 dev bond-b
+        - bridge vlan add vid 200 dev bond-b
+        - bridge vlan add vid 300 dev bond-b
+        - bridge vlan add vid 100 dev br-edge self
+        - bridge vlan add vid 200 dev br-edge self
+        - bridge vlan add vid 300 dev br-edge self
+        - bridge vlan add vid 100 dev eth5
+        - bridge vlan add vid 200 dev eth5
+        - bridge vlan add vid 300 dev eth5
+        - ip link set eth5 up
+    edge-host:
+      mgmt-ipv4: 172.20.20.24
+      exec:
+        - bash -c 'nmcli dev set eth1 managed no || true; systemctl stop NetworkManager || true'
+        - ip link set eth1 up
+        - ip link add link eth1 name eth1.100 type vlan id 100
+        - ip addr add 10.42.1.10/24 dev eth1.100
+        - ip link set eth1.100 up
+        - ip route replace default via 10.42.1.1 dev eth1.100
   links:
-    - endpoints: ["appliance-a:eth1", "appliance-b:eth1"]
-    - endpoints: ["appliance-a:eth2", "appliance-b:eth2"]
+    - endpoints: ["appliance-a:eth1", "edge-bridge:eth1"]
+    - endpoints: ["appliance-a:eth2", "edge-bridge:eth2"]
+    - endpoints: ["appliance-b:eth1", "edge-bridge:eth3"]
+    - endpoints: ["appliance-b:eth2", "edge-bridge:eth4"]
+    - endpoints: ["edge-host:eth1", "edge-bridge:eth5"]

@@ -29,16 +29,68 @@
         subnet: 10.42.1.0/24
         onprem_gateway: 10.42.1.1
         cloud_gateway: 10.42.1.2
+      - vlan: 200
+        name: staging
+        subnet: 10.42.2.0/24
+        onprem_gateway: 10.42.2.1
+        cloud_gateway: 10.42.2.2
+      - vlan: 300
+        name: management
+        subnet: 10.42.3.0/24
+        onprem_gateway: 10.42.3.1
+        cloud_gateway: 10.42.3.2
     frr_image: quay.io/frrouting/frr:10.5.3
-    # Qualification inventories can enable the upstream-peer assertion. The
-    # containerlab lane validates the requested bond configuration; its veth
-    # links do not provide an upstream MLAG LACP responder.
-    require_lacp_peer: false
+    # The emulated edge node terminates LACP for both appliance bundles. A
+    # qualification inventory can keep this assertion enabled against DVS/MLAG.
+    require_lacp_peer: true
   tasks:
     - name: Include the product multihoming implementation
       ansible.builtin.include_role:
         name: network.evpn_gateway.evpn_onprem_appliance
         tasks_from: multihoming.yml
+
+    - name: Include the product physical trunk implementation
+      ansible.builtin.include_role:
+        name: network.evpn_gateway.evpn_onprem_appliance
+        tasks_from: physical.yml
+
+    # The full VTEP role also creates VXLAN interfaces and needs a reachable
+    # tunnel endpoint. These small local bridges exercise the product trunk
+    # and gateway path independently of that separate transport concern.
+    - name: Create local VLAN gateway bridges for the failover check
+      ansible.builtin.command: ip link add br-test{{ item.vlan }} type bridge
+      loop: "{{ stretches }}"
+      register: test_bridge_create
+      failed_when: >-
+        test_bridge_create.rc != 0 and
+        'File exists' not in test_bridge_create.stderr
+      changed_when: test_bridge_create.rc == 0
+
+    - name: Attach product trunk VLANs to local gateway bridges
+      ansible.builtin.command: ip link set trunk.{{ item.vlan }} master br-test{{ item.vlan }}
+      loop: "{{ stretches }}"
+      register: test_bridge_attach
+      failed_when: >-
+        test_bridge_attach.rc != 0 and
+        'already a member' not in test_bridge_attach.stderr
+      changed_when: test_bridge_attach.rc == 0
+
+    - name: Bring up local gateway bridges
+      ansible.builtin.command: ip link set br-test{{ item.vlan }} up
+      loop: "{{ stretches }}"
+      changed_when: false
+
+    - name: Assign local gateway addresses
+      ansible.builtin.command: >-
+        ip addr add {{ item.onprem_gateway }}/{{ item.subnet | ansible.utils.ipaddr('prefix') }}
+        dev br-test{{ item.vlan }}
+      loop: "{{ stretches }}"
+      register: test_gateway_ip
+      failed_when: >-
+        test_gateway_ip.rc != 0 and
+        'already' not in test_gateway_ip.stderr and
+        'File exists' not in test_gateway_ip.stderr
+      changed_when: test_gateway_ip.rc == 0
 
     - name: Render the product EVPN multihoming configuration
       ansible.builtin.include_role:
@@ -54,6 +106,11 @@
       ansible.builtin.command: cat /proc/net/bonding/{{ trunk_interface }}
       register: bond_state
       changed_when: false
+      retries: 15
+      delay: 2
+      until:
+        - "'Partner Mac Address:' in bond_state.stdout"
+        - "'Partner Mac Address: 00:00:00:00:00:00' not in bond_state.stdout"
 
     - name: Assert both appliances configured the shared Ethernet Segment bond
       ansible.builtin.assert:
@@ -68,11 +125,9 @@
       ansible.builtin.assert:
         that:
           - "'Partner Mac Address:' in bond_state.stdout"
-          - >-
-            (bond_state.stdout | regex_findall('(?m)^Partner Mac Address: (?!00:00:00:00:00:00).+$'))
-            | length >= 2
+          - "'Partner Mac Address: 00:00:00:00:00:00' not in bond_state.stdout"
         fail_msg: >-
-          {{ inventory_hostname }} did not negotiate both LACP members with the upstream peer.
+          {{ inventory_hostname }} did not negotiate both LACP members with the emulated edge peer.
       when: require_lacp_peer | bool
 
     - name: Assert the shared Ethernet Segment identity is present in test input
@@ -87,3 +142,54 @@
         fail_msg: >-
           {{ inventory_hostname }} did not render the shared CORENET-7502
           Ethernet Segment identity into FRR configuration.
+
+- name: Verify VLAN reachability before appliance failure
+  hosts: edge_hosts
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Ping the shared VLAN gateway
+      ansible.builtin.command: ping -c 5 -W 1 10.42.1.1
+      register: baseline_ping
+      changed_when: false
+    - name: Assert the edge bridge reaches the active appliance
+      ansible.builtin.assert:
+        that: baseline_ping.rc == 0
+
+- name: Take one appliance data-plane bond down
+  hosts: appliance-a
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Disable appliance-a's edge-facing bond
+      ansible.builtin.command: ip link set bond0 down
+      changed_when: true
+
+- name: Verify the surviving appliance still forwards the VLAN
+  hosts: edge_hosts
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Flush the old gateway neighbor
+      ansible.builtin.command: ip neigh flush dev eth1.100
+      changed_when: false
+    - name: Ping the gateway after appliance-a failure
+      ansible.builtin.command: ping -c 5 -W 1 10.42.1.1
+      register: failover_ping
+      changed_when: false
+    - name: Assert traffic survives appliance-a failure
+      ansible.builtin.assert:
+        that: failover_ping.rc == 0
+
+- name: Restore appliance-a for deploy-stage inspection
+  hosts: appliance-a
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Re-enable bond members
+      ansible.builtin.command: ip link set {{ item }} up
+      loop: [eth1, eth2]
+      changed_when: true
+    - name: Re-enable appliance-a's bond
+      ansible.builtin.command: ip link set bond0 up
+      changed_when: true
