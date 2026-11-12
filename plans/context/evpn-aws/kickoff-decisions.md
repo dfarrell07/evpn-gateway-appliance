@@ -3,7 +3,7 @@
 Use these inputs with [`pipeline-spec.md`](pipeline-spec.md). Jira acceptance
 criteria are requirements; an item below is a decision only once it records an
 owner, date and evidence. Everything else is a proposal for discussion, and role
-owners are proposed. Status rechecked on 2026-10-15; decision 16 updated 2026-11-10.
+owners are proposed. Status rechecked on 2026-10-15; decision 16 updated 2026-11-10; decisions 20 and 21 recorded 2026-11-17 and 2026-11-18.
 Review directions retain their dates.
 
 ## Decisions at a glance
@@ -34,6 +34,8 @@ and publication needs its destination. Resolve the remaining choices alongside r
 | 17 | Product identity: Engineering ID, CPE, registry paths, ProdSec stream | PM / Product Security / releng | [Gate C-stage](#gate-c-stage--trial-publication) for the Engineering ID; [Gate C-prod](#gate-c-prod--supported-release) for the rest | Open |
 | 18 | Support matrix, including the AWS/OCP support decision and ROSA | PM / Architecture / QE | [Gate C-prod](#gate-c-prod--supported-release) | Open |
 | 19 | Qualification evidence and sign-offs | Networking / QE / Product Security / docs | [Gate C-prod](#gate-c-prod--supported-release) | Open |
+| 20 | CORENET-7500 gateway, tunnel profile, scope split and canary | Daniel Farrell (CORENET-7500) | 7500 acceptance (AC1, AC2, AC6) | Closed 2026-11-17 by the CORENET-7500 owner; [#52](https://github.com/openshift/evpn-gateway-appliance/pull/52) implements it: Transit Gateway; IKEv2, AES256-GCM-16, SHA2-256, DH14; 7500 = VPN lifecycle, handoff, minimal appliance Libreswan/FRR and acceptance checks, 7708 = Direct Connect, hardening, FIPS validation and qualification; the AWS canary is outside 7500 |
+| 21 | WireGuard code path after the IPsec transport | Jaime Caamaño (CORENET-7498) | [VPN plan](site-to-site-vpn-plan.md) question 7 | Closed 2026-11-18 by the 7498 owner: keep WireGuard, which carries the credential-free per-PR e2e lane (7508); reusing existing WireGuard keys stays a follow-up |
 
 ## Already settled
 
@@ -188,7 +190,8 @@ item for decisions 7, 8 and 13 to `@knobunc`.
   artifact (`build-vm-image` 0.3.2 accepts `anaconda-iso`, `bootc-installer`, `iso` and
   `pxe-tar-xz`). RHEL kernels refuse WireGuard and TCP-MD5 in FIPS mode. Options include
   WireGuard tests in non-FIPS development environments, IPsec-only labs or a separate FIPS
-  variant; a separately shipped variant needs approval.
+  variant; a separately shipped variant needs approval. Decision 21 keeps WireGuard for the per-PR
+  emulated lane, in non-FIPS development environments.
   Settle supported FIPS-mode BGP authentication ([contract](containerfile-refactor-spec.md#required-outcomes)). *Owner: PM /
   Architecture.*
 - **AMI channel.** *Owner: PM / cloud publishing / releng.*
@@ -237,6 +240,17 @@ item for decisions 7, 8 and 13 to `@knobunc`.
   runtime in 7504/7505 and decision 10; endpoint privilege/access and its tests in CORENET-7704;
   CloudWatch, scrape integration, dashboards and qualification in 7504. A different source
   needs amended Jira criteria. Selecting this source does not complete those requirements.
+
+- **AWS Site-to-Site VPN.** Decision 20 closed 2026-11-17. Accountable owner: **Daniel Farrell**
+  (CORENET-7500). Evidence: this record, made by the accountable owner in
+  [#42](https://github.com/openshift/evpn-gateway-appliance/pull/42); the CORENET-7500 description
+  sets the 7500/7708 split, and [#52](https://github.com/openshift/evpn-gateway-appliance/pull/52)
+  implements the decision. See [plan](site-to-site-vpn-plan.md) questions 1, 6 and 13. The 7708 owner
+  may revisit the tunnel profile and PSK authentication without reopening the 7500/7708 split.
+
+- **WireGuard path.** Decision 21 closed 2026-11-18. Accountable owner: **Jaime Caamaño**
+  (CORENET-7498). Evidence: his [owner answer](https://github.com/openshift/evpn-gateway-appliance/pull/42#discussion_r4616321422) on
+  [#42](https://github.com/openshift/evpn-gateway-appliance/pull/42). See [plan](site-to-site-vpn-plan.md) question 7.
 
 ### Gate C-prod — supported release
 
