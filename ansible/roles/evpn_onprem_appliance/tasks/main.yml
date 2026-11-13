@@ -49,6 +49,60 @@
 # ── On-prem networking (nmstate) ────────────────────────────────
 - name: Configure on-prem networking
   ansible.builtin.include_tasks: nm_networking.yml
+  when: not (multihoming.enabled | default(false) | bool)
+
+# The current nmstate path owns the normal per-VNI layout. Multihoming instead uses the
+# shared VLAN-aware trunk bridge and a single external VXLAN device.
+- name: Set up physical multihoming trunk
+  ansible.builtin.include_tasks: physical.yml
+  when: multihoming.enabled | default(false) | bool
+
+- name: Create the multihoming shared external VXLAN device
+  ansible.builtin.command: >-
+    ip link add vxlan0 type vxlan dstport 4789 local {{ tunnel.onprem_ip }}
+    nolearning external vnifilter
+  register: _mh_vxlan_create
+  failed_when: _mh_vxlan_create.rc != 0 and 'File exists' not in _mh_vxlan_create.stderr
+  changed_when: _mh_vxlan_create.rc == 0
+  when: multihoming.enabled | default(false) | bool
+
+- name: Configure the multihoming shared VXLAN device
+  ansible.builtin.shell: |
+    set -e
+    ip link set vxlan0 master trunk-br
+    bridge link set dev vxlan0 vlan_tunnel on neigh_suppress on learning off
+    ip link set vxlan0 up
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: multihoming.enabled | default(false) | bool
+
+- name: Map multihoming VLANs to VNIs on the shared VXLAN device
+  ansible.builtin.shell: |
+    set -e
+    bridge vlan add vid {{ item.vlan }} dev trunk-br self
+    bridge vlan add vid {{ item.vlan }} dev vxlan0
+    bridge vni add dev vxlan0 vni {{ 10000 + item.vlan }}
+    bridge vlan add vid {{ item.vlan }} dev vxlan0 tunnel_info id {{ 10000 + item.vlan }}
+  args:
+    executable: /bin/bash
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "VLAN {{ item.vlan }} ↔ VNI {{ 10000 + item.vlan }}"
+  changed_when: true
+  when: multihoming.enabled | default(false) | bool
+
+- name: Assign multihoming SVIs to the shared VLAN-aware bridge
+  ansible.builtin.command: >-
+    ip addr add {{ item.onprem_gateway }}/{{ item.subnet | ansible.utils.ipaddr('prefix') }}
+    dev trunk.{{ item.vlan }}
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "{{ item.onprem_gateway }} on trunk.{{ item.vlan }}"
+  register: _mh_ip_add
+  failed_when: _mh_ip_add.rc != 0 and 'already' not in _mh_ip_add.stderr and 'File exists' not in _mh_ip_add.stderr
+  changed_when: _mh_ip_add.rc == 0
+  when: multihoming.enabled | default(false) | bool
 
 - name: Render FRR configuration
   ansible.builtin.include_tasks: frr_config.yml

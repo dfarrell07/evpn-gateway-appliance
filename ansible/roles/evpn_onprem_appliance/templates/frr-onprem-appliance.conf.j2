@@ -12,7 +12,9 @@ no ipv6 forwarding
 {% if multihoming.enabled | default(false) | bool %}
 interface {{ trunk_interface }}
  evpn mh es-id {{ multihoming.es_id }}
+{% if multihoming.es_id is number %}
  evpn mh es-sys-mac {{ multihoming.es_sys_mac }}
+{% endif %}
  evpn mh es-df-pref {{ multihoming.df_pref | default(32767) }}
 exit
 !
@@ -28,6 +30,12 @@ bfd
 exit
 !
 {% endif %}
+{% endif %}
+{% if multihoming.enabled | default(false) | bool and tunnel.underlay_interface | default('') | length > 0 %}
+interface {{ tunnel.underlay_interface }}
+ evpn mh uplink
+exit
+!
 {% endif %}
 router bgp {{ bgp.onprem_asn }}
  bgp router-id {{ tunnel.onprem_ip }}

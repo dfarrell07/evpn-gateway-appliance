@@ -28,7 +28,8 @@
 #   REGISTRY_AUTH_FILE   pull secret for the export (default: local docker config; used only if present)
 #   ARTIFACTS    local dir the lane's artifacts are collected into (default /tmp/ega/artifact; Prow
 #                sets it). For a remote target they are copied back here off the target.
-#   EGA_TOPOLOGY, EGA_SCENARIO  topology and scenario passed through to the target lane.
+#   EGA_TOPOLOGY, EGA_SCENARIO, EGA_STAGE  topology, scenario and lifecycle stage passed
+#       through to the target lane.
 set -euo pipefail
 
 # Image exports are several GiB in aggregate; prefer disk-backed staging over
@@ -204,7 +205,29 @@ cat > "${WORK}/lane.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd /tmp/ega/build
-EGA_ARTIFACT_DIR="${lane_artifacts}" EGA_ENTRYPOINT="${EGA_ENTRYPOINT}" bash test/e2e/run.sh
+scenarios="${EGA_SCENARIOS:-}"
+if [ -z "\$scenarios" ]; then
+    scenarios="${EGA_SCENARIO:-base}:${EGA_TOPOLOGY:-evpn.clab.yml}"
+fi
+rc=0
+old_ifs="\$IFS"
+IFS=,
+read -ra entries <<< "\$scenarios"
+IFS="\$old_ifs"
+for entry in "\${entries[@]}"; do
+    scenario="\${entry%%:*}"
+    topology="\${entry#*:}"
+    if [ "\$scenario" = "\$topology" ]; then topology="evpn.clab.yml"; fi
+    echo "========== e2e scenario: \$scenario (\$topology) =========="
+    EGA_ARTIFACT_DIR="${lane_artifacts}/\$scenario" \
+    EGA_WORK_DIR="/tmp/ega/work-\$scenario" \
+    EGA_ENTRYPOINT="${EGA_ENTRYPOINT}" \
+    EGA_TOPOLOGY="\$topology" \
+    EGA_SCENARIO="\$scenario" \
+    EGA_STAGE="${EGA_STAGE:-full}" \
+    bash test/e2e/run.sh || rc=1
+done
+exit "\$rc"
 EOF
 
 chmod +x "${WORK}"/*.sh

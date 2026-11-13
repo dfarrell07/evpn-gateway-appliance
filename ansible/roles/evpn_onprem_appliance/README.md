@@ -57,14 +57,16 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
 ```
 
 For two physical appliances, set `trunk_interface: bond0` and use the same
-multihoming identity on both hosts, while keeping each host's transport/VTEP
-address and `peer_addresses` unique:
+multihoming identity on both hosts. The CE-facing LACP bundle spans both
+appliances, so each appliance may contribute one local bond member. Keep each
+host's transport/VTEP address and `peer_addresses` unique:
 
 ```yaml
 multihoming:
   enabled: true
-  bond_interfaces: [eno1, eno2]
-  es_id: "00:aa:bb:cc:dd:ee:ff:00:00:01"
+  bond_interfaces: [eno1]
+  # Numeric discriminator + shared system MAC selects FRR's Type-3 ESI form.
+  es_id: 1
   es_sys_mac: "02:aa:bb:cc:dd:ee"
   peer_addresses: [10.44.44.2]
   bfd:

@@ -17,6 +17,7 @@
     dest: /etc/frr/daemons
     mode: "0644"
     content: |
+      zebra=yes
       bgpd=yes
       ospfd=no
       ospf6d=no

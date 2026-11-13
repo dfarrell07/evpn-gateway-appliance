@@ -25,22 +25,29 @@ Segment identity, checks the requested 802.3ad bond members, and verifies VLAN t
 survives one appliance bond being disabled. The same test playbook is intended for later
 qualification runs; only the topology and inventory change.
 
-### CORENET-7502 coverage boundary
+## CORENET-7502 coverage boundary
 
-The CI topology emulates the upstream DVS/edge segment with a VLAN-aware Linux bridge.
-Each appliance has a two-member 802.3ad bond toward the shared bridge, and VLANs 100,
-200, and 300 are trunked across it.
+The CI topology emulates the upstream DVS/edge segment with a dual-attached Linux host
+and a VLAN trunk. The edge side has one two-member 802.3ad bond spanning the two
+appliances; each appliance contributes one link through a single-member 802.3ad bond.
+Both appliances run FRR EVPN-MH with the same numeric discriminator and system MAC,
+which produces the shared Type-3 ESI. The multihoming path uses one external VXLAN
+device with explicit VLAN-to-VNI mappings, matching FRR's VLAN-aware bridge model;
+VLANs 100, 200, and 300 are trunked across it.
 
 The lane validates:
 
-- LACP negotiation on both appliance bonds;
+- LACP negotiation on both single-member appliance bonds against the shared edge bond;
 - shared EVPN Ethernet Segment configuration;
+- EVPN BGP session establishment through the relay;
+- Type-1 EAD and Type-4 ESR route generation for the shared Ethernet Segment;
 - VLAN reachability through the shared edge;
 - traffic continuity after one appliance is taken out of the data path.
 
-This is CI emulation, not physical NSX DVS/MLAG qualification. Physical switch behavior,
-cabling failure, and full EVPN Type-1/Type-4 designated-forwarder election against a
-remote VTEP require a separate qualification environment.
+This is CI emulation, not physical NSX DVS/MLAG qualification. It validates the EVPN-MH
+control-plane contract and a Linux LACP edge, but cannot prove NSX/DVS behavior, physical
+switch cabling failure, or vendor-specific RARP handling. Those require a separate
+qualification environment.
 
 All are runner-agnostic — the same scripts work under a Prow test step or a GitHub Actions
 VM; the runner only provides env and collects artifacts.
