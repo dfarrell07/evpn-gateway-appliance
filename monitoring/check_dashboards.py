@@ -6,11 +6,11 @@ import re
 import subprocess
 import sys
 
-# Every frrk8s_* or up selector must start with the dashboard's job/instance filter. Mark that filter, then
+# Every frrk8s_*, node_* or up selector must start with the dashboard's job/instance filter. Mark that filter, then
 # blank all quoted strings so label values cannot look like metric names.
 SCOPE = '{job=~"$job", instance=~"$instance"'
 STRING = re.compile(r"""("|')(?:\\.|(?!\1)[^\\])*\1|`[^`]*`""")
-UNSCOPED = re.compile(r"\b(frrk8s_\w+|up)\b(?!\{SCOPED)")
+UNSCOPED = re.compile(r"\b(frrk8s_\w+|node_\w+|up)\b(?!\{SCOPED)")
 
 
 def panels(items):
