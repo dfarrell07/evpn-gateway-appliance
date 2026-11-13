@@ -8,10 +8,10 @@ SHELL := /bin/bash
 verify: check
 
 # Static source checks aggregating the planning-docs corpus integrity, the
-# public-safety scan, the repo-wide yaml, Markdown, python, shell and container-file lint, and the
-# Ansible collection and monitoring checks.
+# public-safety scan, the repo-wide yaml, Markdown, python, shell and container-file lint, the
+# Ansible collection and monitoring checks, and the shell unit tests.
 .PHONY: check
-check: check-corpus check-public check-yaml check-markdown check-python check-shell check-dockerfiles check-ansible check-monitoring
+check: check-corpus check-public check-yaml check-markdown check-python check-shell check-dockerfiles check-ansible check-monitoring check-unit
 
 # Planning-docs corpus integrity: link + anchor + pin resolution and public-safe
 # over the plans/ docs (check-all.sh bundles them).
@@ -93,6 +93,12 @@ check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/tests/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules --
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/dashboards/*.json' 'monitoring/grafana/*.yaml' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
 	env PROMTOOL="$(PROMTOOL)" PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring/tests -p 'test_*.py'
+
+# Shell unit tests under test/unit/ (each *_test.sh runs from the repository root); promtool
+# validates the metrics they produce.
+.PHONY: check-unit
+check-unit:
+	git ls-files -z -c -o --exclude-standard -- 'test/unit/*_test.sh' | xargs -0 -r -n1 env PROMTOOL="$(PROMTOOL)" sh
 
 # ── Ansible collection source checks ─────────────────────────────────────────
 # Lint, playbook syntax, collection build + tarball allowlist, and a clean-env
