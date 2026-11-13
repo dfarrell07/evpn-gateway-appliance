@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Check Grafana dashboards: required variables, datasource, job/instance scope, unique panel IDs, PromQL."""
+"""Check Grafana dashboards (variables, datasource, job/instance scope, unique panel IDs, PromQL) and that
+Grafana alert files link to existing dashboard panels."""
 import json
 import os
 import re
 import subprocess
 import sys
+
+import yaml
 
 # Every frrk8s_* or up selector must start with the dashboard's job/instance filter. Mark that filter, then
 # blank all quoted strings so label values cannot look like metric names.
@@ -29,9 +32,11 @@ def check(path):
         dashboard = json.load(f)
     variables = {v["name"]: v for v in dashboard.get("templating", {}).get("list", [])}
     source = variables.get("datasource", {})
-    if (source.get("type"), source.get("query")) != ("datasource", "prometheus") or not all(
+    kind = source.get("query") if source.get("type") == "datasource" else None
+    if kind not in ("prometheus", "cloudwatch") or kind == "prometheus" and not all(
             name in variables and datasource_ok(variables[name]) for name in ("job", "instance")):
-        raise ValueError("needs a Prometheus datasource variable and job and instance variables that query it")
+        raise ValueError("needs a CloudWatch datasource variable, or a Prometheus one with job and instance "
+                         "variables that query it")
     ids, rules = set(), []
     for panel in panels(dashboard["panels"]):
         pid = panel["id"]
@@ -42,7 +47,7 @@ def check(path):
         # Targets inherit the panel's datasource; an explicit target datasource must also be the variable.
         if targets and not all(map(datasource_ok, [panel, *(t for t in targets if "datasource" in t)])):
             raise ValueError(f"panel {pid}: datasource must be ${{datasource}}")
-        for target in targets:
+        for target in targets if kind == "prometheus" else ():
             expr = target["expr"]
             if m := UNSCOPED.search(STRING.sub('""', expr.replace(SCOPE, "{SCOPED"))):
                 raise ValueError(f'panel {pid}: {m[1]} lacks {{job=~"$job", instance=~"$instance"}}')
@@ -54,11 +59,28 @@ def check(path):
                             input=json.dumps({"groups": [{"name": "dashboard", "rules": rules}]}))
     if result.returncode:
         raise ValueError(f"invalid PromQL:\n{result.stdout}{result.stderr}")
-    print(f"{path}: {len(rules)} queries OK")
+    print(f"{path}: {len(ids)} panels, {len(rules)} PromQL queries OK")
+    return dashboard["uid"], ids
 
 
-for path in sys.argv[1:]:
+def check_alerts(path, dashboards):
+    with open(path) as f:
+        rules = [rule for group in yaml.safe_load(f)["groups"] for rule in group["rules"]]
+    for rule in rules:
+        if rule.get("panelId") not in dashboards.get(rule.get("dashboardUid"), ()):
+            raise ValueError(f"{rule['title']}: no panel {rule.get('panelId')} in dashboard {rule.get('dashboardUid')}")
+        if rule["condition"] not in {query["refId"] for query in rule["data"]}:
+            raise ValueError(f"{rule['title']}: condition {rule['condition']} is not a query refId")
+    print(f"{path}: {len(rules)} alert panel links OK")
+
+
+dashboards = {}
+for path in sorted(sys.argv[1:], key=lambda name: name.endswith(".yaml")):  # dashboards before alert files
     try:
-        check(path)
+        if path.endswith(".yaml"):
+            check_alerts(path, dashboards)
+        else:
+            uid, ids = check(path)
+            dashboards[uid] = ids
     except (OSError, ValueError, KeyError) as error:
         sys.exit(f"{path}: {error}")

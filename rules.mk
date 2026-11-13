@@ -90,7 +90,7 @@ PROMTOOL ?= promtool
 check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' ':(exclude)monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) check rules --lint=all --lint-fatal
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules
-	git ls-files -z -c -o --exclude-standard -- 'monitoring/dashboards/*.json' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
+	git ls-files -z -c -o --exclude-standard -- 'monitoring/dashboards/*.json' 'monitoring/grafana/*.yaml' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
 
 # ── Ansible collection source checks ─────────────────────────────────────────
 # Lint, playbook syntax, collection build + tarball allowlist, and a clean-env
