@@ -24,13 +24,13 @@ roles/
 ├── evpn_cloud_infra/               Infra VPC: WireGuard server, FRR relay
 ├── evpn_cloud_workload/            Workload VPC: standalone FRR VTEP (dev/test — see role README)
 ├── evpn_aws_infra/                 AWS provisioning (VPCs, TGW, EC2, security groups)
-├── evpn_monitoring/                frr_exporter + node_exporter
+├── evpn_monitoring/                frr_exporter + node_exporter + optional overlay path probe
 └── evpn_health_check/              Read-only validation suite
 playbooks/
 ├── deploy.yml                      Full deploy, idempotent
 ├── health-check.yml                Validation only
 ├── provision-aws.yml               Provision AWS infra, update inventory
-├── teardown.yml                    Remove appliance/relay/VTEP configuration
+├── teardown.yml                    Remove appliance/relay/VTEP configuration and the path probe
 └── teardown-aws.yml                Destroy AWS infrastructure (irreversible)
 inventory/
 └── hosts.yml.j2                    Sample inventory template (real hosts.yml is generated, gitignored)

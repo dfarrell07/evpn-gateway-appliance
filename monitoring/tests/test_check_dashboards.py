@@ -57,6 +57,10 @@ class CheckDashboardsTest(unittest.TestCase):
     def test_unscoped_node_selector_fails(self):
         self.assertIn("node_network_info lacks", self.broken(f"frrk8s_bgp_session_up{SCOPED} and on() node_network_info"))
 
+    def test_unscoped_probe_selector_fails(self):
+        self.assertIn("ega_path_probe_success lacks",
+                      self.broken(f"frrk8s_bgp_session_up{SCOPED} and on() ega_path_probe_success"))
+
     def test_name_matcher_fails(self):
         self.assertIn("__name__", self.broken('{__name__=~"frrk8s_.*", job=~"$job", instance=~"$instance"}'))
 

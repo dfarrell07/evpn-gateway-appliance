@@ -15,6 +15,7 @@ Where to run the commands:
   [metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)); read its log with
   `journalctl -u frr-metrics.service`. In frr-k8s it is the pod's `frr-metrics` container:
   `oc -n NAMESPACE logs POD -c frr-metrics`.
+- **Probe and node checks**: on the appliance as root.
 - **AWS**: the `aws` CLI with `--region` set to the alert rule's region.
 
 ## EGAFrrCollectorFailed
@@ -92,7 +93,7 @@ traffic and learns no remote MACs.
   `WORKLOAD_ASN:VNI`.
 - On the cloud workload, check that the VNI's VXLAN device and bridge exist and are up.
 
-A known VTEP does not prove that VXLAN traffic reaches it.
+A known VTEP does not prove reachability; see EGAEvpnPathProbeFailed for forwarding.
 
 ## EGABfdSessionDown
 
@@ -106,6 +107,55 @@ appliance's FRR configuration has no BFD peers, so this alert comes from other f
 - If BGP stays up while BFD is down, compare the BFD timers and profile on both ends.
 
 Peer and VRF can be the same for distinct sessions; confirm which session from the output.
+
+## EGAEvpnPathProbeFailed
+
+The overlay path probe got fewer than 3 echo replies within 5s for 5m, while BGP and EVPN
+may still look healthy. It tests one stretch's path through the cloud workload.
+
+- `systemctl status ega-path-probe.service` and
+  `cat /var/lib/node_exporter/textfile/ega-path-probe.prom` for the target and result.
+- Find the stretch whose `br-vniN` SVI routes to the target (`ip route get TARGET`) and
+  check its devices: `ip -d link show vxlanN` and `bridge fdb show dev vxlanN`.
+- Watch encapsulated traffic: `tcpdump -ni wg0 udp port 4789` while pinging the target.
+  Requests with no replies point to the cloud side: its VXLAN device, security groups and
+  routing for UDP 4789.
+- Check MTU: `ping -M do -s SIZE TARGET` with SIZE near the SVI MTU minus 28.
+
+Repair the failing hop; the alert clears after a successful fresh probe.
+
+## EGAEvpnPathProbeUnavailable
+
+No fresh probe result for 5m. The value says why: 1 means node-exporter could not read a
+textfile, a number above 60 is the probe file's age in seconds, and -1 means the probe's
+series stopped while node-exporter still runs.
+
+- `systemctl status ega-path-probe.timer ega-path-probe.service` and
+  `journalctl -u ega-path-probe.service -n 20`.
+- `ls -lZ /var/lib/node_exporter/textfile/`: the file must exist and node-exporter must be
+  able to read it.
+- Check node-exporter runs with `--collector.textfile.directory=/var/lib/node_exporter/textfile`
+  and that the directory is mounted, for example after an image rollback.
+
+Removing the probe through the role or `teardown.yml` writes
+`/var/lib/node_exporter/textfile/ega-path-probe-disabled.prom` (`ega_path_probe_disabled 1`),
+which keeps this alert quiet. To remove the probe by hand, rerun the role with
+`evpn_monitoring_path_probe_target: ""`, or do what the role does:
+
+```sh
+systemctl disable --now ega-path-probe.timer
+systemctl stop ega-path-probe.service
+rm -f /etc/systemd/system/ega-path-probe.timer /etc/systemd/system/ega-path-probe.service \
+  /etc/ega/ega-path-probe.sh /var/lib/node_exporter/textfile/ega-path-probe.prom
+rmdir --ignore-fail-on-non-empty /etc/ega
+systemctl daemon-reload
+systemctl reset-failed ega-path-probe.service
+marker=/var/lib/node_exporter/textfile/ega-path-probe-disabled.prom
+printf '%s\n' '# HELP ega_path_probe_disabled 1 when the overlay path probe was removed on purpose.' \
+  '# TYPE ega_path_probe_disabled gauge' 'ega_path_probe_disabled 1' > "$marker"
+chmod 0644 "$marker"
+chcon -t container_file_t "$marker"  # node-exporter's container cannot read var_lib_t
+```
 
 ## EGADxConnectionDown
 

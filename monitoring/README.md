@@ -52,16 +52,18 @@ These alerts do not detect:
 - sessions that flap faster than an alert's `for:` time; the dashboard's OPEN and BFD
   down-event panels show them;
 - a target that is down, which is left to the platform's TargetDown or `up` alerting;
-- Ethernet-segment designated-forwarder state or path latency; AWS transport has its own
-  section.
+- Ethernet-segment designated-forwarder state;
+- path latency: the appliance dashboard shows probe RTT, but no alert reads it. AWS transport has
+  its own section.
 
 These signals do not establish forwarding health.
 
 ## Appliance, VLANs and tunnels
 
 `dashboards/appliance.json` shows node-exporter scrape status; the operstate, carrier and
-carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; and the
-traffic, drops and errors of the non-bridge ones (import tested with Grafana 11.6.0).
+carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; the
+traffic, drops and errors of the non-bridge ones; and overlay path probe RTT (import tested with
+Grafana 11.6.0).
 
 The data comes from node-exporter. The bootc image runs it on `127.0.0.1:9100`, so scraping it
 from another host needs the access path from CORENET-7704. On other hosts `evpn_monitoring`
@@ -135,6 +137,27 @@ refuses to pause or delete file-provisioned rules from its UI or API.
 Grafana sends these alerts through its own notification policies. To route them with the
 Prometheus alerts, add the Alertmanager as a data source with Receive Grafana Alerts on and
 enable it under Alerting > Settings.
+
+## Overlay path probe
+
+BGP and EVPN membership can stay up while VXLAN forwarding fails. When
+`evpn_monitoring_path_probe_target` is set, `evpn_monitoring` installs a timer that pings that
+overlay address every 30s and writes the result through node-exporter's textfile collector. A
+probe fails unless 3 echo replies arrive within 5s (up to 5 requests). It samples one overlay
+path and does not identify the failed component. The appliance dashboard's RTT panel shows fresh
+samples.
+
+- `rules/path-probe-alerts.yaml`: two alerts, tested by `tests/path-probe-alerts_test.yaml`. Add
+  it to `rule_files` with the FRR rules.
+
+| Alert | Severity | Fires when | Silent when |
+| --- | --- | --- | --- |
+| EGAEvpnPathProbeFailed | warning | Probe success is 0 in a file no older than 60s, for 5m | Success is 1, or the result is not fresh |
+| EGAEvpnPathProbeUnavailable | warning | For 5m, on a host that reported the probe in the last day: the probe file is older than 60s, node-exporter cannot read a textfile, or, while node-exporter is scraped, the probe series is gone | A fresh, readable probe file; node-exporter not scraped; the probe removed by the role; or no probe series in the last day |
+
+Whenever the role runs on an on-prem appliance without a probe target, and when `teardown.yml`
+runs, it removes any probe and writes `ega_path_probe_disabled 1` to the textfile directory,
+which keeps `EGAEvpnPathProbeUnavailable` quiet on that host.
 
 ## Runbooks
 
