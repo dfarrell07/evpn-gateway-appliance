@@ -6,6 +6,34 @@
   hosts: onprem_appliances
   become: true
   tasks:
+    - name: Stop overlay path probe timer and any running probe
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: "{{ false if item.endswith('.timer') else omit }}"
+      loop: [ega-path-probe.timer, ega-path-probe.service]
+      register: _path_probe_stop
+      failed_when: _path_probe_stop.failed and 'Could not find' not in (_path_probe_stop.msg | default(''))
+
+    - name: Remove overlay path probe files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/ega-path-probe.timer
+        - /etc/systemd/system/ega-path-probe.service
+        - /etc/ega
+        - /var/lib/node_exporter/textfile/ega-path-probe.prom
+
+    - name: Reload systemd after removing overlay path probe units
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Clear a failed state left by stopping an in-flight probe
+      ansible.builtin.command: systemctl reset-failed ega-path-probe.service
+      changed_when: false
+      failed_when: false
+
     - name: Tear down the on-prem appliance
       ansible.builtin.include_role:
         name: evpn_onprem_appliance

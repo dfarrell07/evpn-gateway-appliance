@@ -1,0 +1,54 @@
+---
+- name: Overlay path probe detects forwarding failure
+  hosts: onprem_appliances
+  become: true
+  gather_facts: false
+  vars:
+    _path_probe_success: 'ega_path_probe_success{target="{{ evpn_monitoring_path_probe_target }}"} 1'
+    _path_probe_failure: 'ega_path_probe_success{target="{{ evpn_monitoring_path_probe_target }}"} 0'
+    _path_probe_rtt: '(?m)^ega_path_probe_rtt_seconds\{target="{{ evpn_monitoring_path_probe_target }}"\} ([0-9.eE+-]+)$'
+    _path_probe_mtime: '(?m)^node_textfile_mtime_seconds\{file="/var/lib/node_exporter/textfile/ega-path-probe[.]prom"\} ([0-9.eE+-]+)$'
+  tasks:
+    - name: Wait for a successful overlay probe and RTT sample
+      ansible.builtin.uri: &metrics
+        url: http://127.0.0.1:9100/metrics
+        return_content: true
+      register: _path_probe_metrics
+      until:
+        - _path_probe_success in _path_probe_metrics.content
+        - (_path_probe_metrics.content | regex_findall(_path_probe_rtt) | first | default(0) | float) > 0
+        - _path_probe_metrics.content is search(_path_probe_mtime)
+      retries: 12
+      delay: 5
+
+    - name: Check forwarding failure with BGP still Established
+      block:
+        - name: Lower the first stretch VXLAN link
+          ansible.builtin.command: ip link set vxlan{{ 10000 + stretches[0].vlan }} down
+          changed_when: true
+
+        - name: Wait for the overlay probe to fail
+          ansible.builtin.uri: *metrics
+          register: _path_probe_metrics
+          until: _path_probe_failure in _path_probe_metrics.content
+          retries: 12
+          delay: 5
+
+        - name: Confirm BGP to the relay remains Established
+          ansible.builtin.command: podman exec frr vtysh -c "show bgp summary json"
+          register: _path_probe_bgp
+          changed_when: false
+          failed_when: >-
+            _path_probe_bgp.rc != 0 or
+            (_path_probe_bgp.stdout | from_json)['ipv4Unicast']['peers'][tunnel.cloud_ip]['state'] != 'Established'
+      always:
+        - name: Restore the first stretch VXLAN link
+          ansible.builtin.command: ip link set vxlan{{ 10000 + stretches[0].vlan }} up
+          changed_when: true
+
+    - name: Wait for overlay probe recovery
+      ansible.builtin.uri: *metrics
+      register: _path_probe_metrics
+      until: _path_probe_success in _path_probe_metrics.content
+      retries: 12
+      delay: 5

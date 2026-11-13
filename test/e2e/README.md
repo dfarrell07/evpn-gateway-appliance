@@ -32,7 +32,7 @@ test/
     run_remote.sh         shared core: against a remote target (or locally): export, ship, build, run
     run_e2e.sh            wrapper: select the e2e lane (entrypoint_e2e.sh)
     run_molecule.sh       wrapper: select the molecule lane (entrypoint_molecule.sh; skips the EE build)
-    entrypoint_e2e.sh     e2e in-container steps: clab deploy -> simulate -> deploy.yml -> health checks
+    entrypoint_e2e.sh     e2e in-container steps: clab deploy -> simulate -> deploy.yml -> health checks -> path probe
     entrypoint_molecule.sh  molecule in-container steps: molecule test against the rootful socket
     topology/
       evpn.clab.yml       the emulated fabric

@@ -22,4 +22,5 @@ lives here instead.
 | --- | --- | --- |
 | `network.evpn_gateway_test.simulate` | before `network.evpn_gateway.deploy` | build the simulated on-prem environment |
 | `network.evpn_gateway_test.healthcheck` | after the deploy | run the simulated-host data-plane checks |
+| `network.evpn_gateway_test.path_probe` | after `healthcheck` | take the first stretch's VXLAN down with BGP up and check probe failure and recovery |
 | `network.evpn_gateway_test.teardown` | on cleanup (non-clab runs) | remove the simulated on-prem environment |
