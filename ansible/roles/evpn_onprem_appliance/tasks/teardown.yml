@@ -1,0 +1,78 @@
+---
+# Tear down everything main.yml deploys, in reverse: the FRR / exporter containers, the WireGuard
+# tunnel, the on-prem networking and the FRR config. The container/service stops ignore errors so a
+# partial deploy still tears down cleanly.
+- name: Stop and remove FRR container
+  containers.podman.podman_container:
+    name: frr
+    state: absent
+
+- name: Stop and remove frr_exporter container
+  containers.podman.podman_container:
+    name: frr_exporter
+    state: absent
+
+- name: Stop and remove node_exporter container
+  containers.podman.podman_container:
+    name: node_exporter
+    state: absent
+
+- name: Stop WireGuard
+  ansible.builtin.systemd:
+    name: wg-quick@wg0
+    state: stopped
+    enabled: false
+  register: _wg_stop
+  failed_when: _wg_stop.failed and 'Could not find' not in (_wg_stop.msg | default(''))
+
+# Tear down the on-prem networking declaratively, mirroring deploy: render the template with no stretches
+# and apply it. _ega_absent is every ega-* interface we own (marked absent); _ega_detach is every
+# interface enslaved to trunk-br (teardown has no desired trunk, so all), detached with controller: "" to
+# clear the controller from the trunk's foreign profile.
+- name: Read the current network state
+  ansible.builtin.command: nmstatectl show
+  register: _ega_state
+  changed_when: false
+
+- name: Build the list of appliance-owned interfaces to remove
+  ansible.builtin.set_fact:
+    _ega_absent: >-
+      {{ (_ega_state.stdout | from_yaml).interfaces
+         | selectattr('profile-name', 'defined')
+         | selectattr('profile-name', 'match', '^ega-')
+         | map(attribute='name') | list }}
+
+- name: Build the detach list (every interface enslaved to trunk-br)
+  ansible.builtin.set_fact:
+    _ega_detach: >-
+      {{ (_ega_state.stdout | from_yaml).interfaces
+         | selectattr('controller', 'defined')
+         | selectattr('controller', 'equalto', 'trunk-br')
+         | map(attribute='name') | list }}
+
+- name: Render the teardown nmstate desired state (no stretches, everything owned absent + trunk detached)
+  ansible.builtin.template:
+    src: nmstate.yml.j2
+    dest: /var/lib/ega/nmstate-teardown.yaml
+    mode: "0600"
+  vars:
+    stretches: []
+  when: _ega_absent | length > 0 or _ega_detach | length > 0
+
+- name: Apply the teardown nmstate desired state
+  ansible.builtin.command: nmstatectl apply /var/lib/ega/nmstate-teardown.yaml
+  when: _ega_absent | length > 0 or _ega_detach | length > 0
+  changed_when: true
+
+- name: Remove NetworkManager dispatchers
+  ansible.builtin.file:
+    path: "/etc/NetworkManager/dispatcher.d/{{ item }}"
+    state: absent
+  loop:
+    - 90-ega-neigh-suppress
+    - 90-ega-trunk-vlans
+
+- name: Remove FRR config
+  ansible.builtin.file:
+    path: /etc/frr
+    state: absent

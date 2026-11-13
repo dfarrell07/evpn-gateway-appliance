@@ -1,0 +1,76 @@
+---
+# Managed by the evpn_onprem_appliance role (CORENET-7499). Rendered and applied with
+# nmstatectl. nmstate reconciles current -> desired (create/modify/recreate) and verifies.
+# Interface names stay conventional; the profiles we create carry ownership via their NM
+# profile name (ega-*). The trunk itself is NOT owned: we attach it to the vlan-aware trunk
+# bridge as a trunk port, which nmstate does by editing the trunk's existing profile in place
+# (a partial merge) — so any pre-existing config (e.g. an LACP bond) is preserved and we do not
+# restate it. Each stretch gets a VNI bridge (holding the SVI) with a VXLAN port and a VLAN
+# sub-interface port.
+#
+# Two things nmstate cannot express, handled by dispatchers: trunk-br's own VLAN membership
+# and the VXLAN neigh_suppress flag.
+#
+# The desired state is a pure function of `stretches`: with none, the present body is suppressed and only
+# the two companion lists render. _ega_detach lists interfaces enslaved to trunk-br other than the desired
+# trunk; each is detached with controller: "" so nmstate clears the controller from its (foreign, non-ega)
+# profile and persists it. This handles swapping the trunk (detach the old one) and teardown (no desired
+# trunk, so detach all). _ega_absent lists ega-* interfaces no longer desired, marked absent.
+interfaces:
+{% if stretches | length > 0 %}
+  - name: trunk-br
+    type: linux-bridge
+    state: up
+    profile-name: ega-bridge-trunk
+    ipv4: {enabled: false}
+    ipv6: {enabled: false}
+    bridge:
+      options:
+        stp: {enabled: false}
+      port:
+        - name: {{ trunk_interface }}
+          vlan:
+            mode: trunk
+            trunk-tags:
+{% for s in stretches %}
+              - id: {{ s.vlan }}
+{% endfor %}
+{% for s in stretches %}
+{% set vni = 10000 + s.vlan %}
+  - name: trunk.{{ s.vlan }}
+    type: vlan
+    state: up
+    profile-name: ega-vlan-{{ s.vlan }}
+    vlan: {base-iface: trunk-br, id: {{ s.vlan }}}
+  - name: vxlan{{ vni }}
+    type: vxlan
+    state: up
+    profile-name: ega-vxlan-{{ vni }}
+    vxlan: {id: {{ vni }}, local: {{ tunnel.onprem_ip }}, destination-port: 4789, learning: false}
+  - name: br-vni{{ vni }}
+    type: linux-bridge
+    state: up
+    profile-name: ega-bridge-vni{{ vni }}
+    ipv4:
+      enabled: true
+      dhcp: false
+      address:
+        - ip: {{ s.onprem_gateway }}
+          prefix-length: {{ s.subnet | ansible.utils.ipaddr('prefix') }}
+    ipv6: {enabled: false}
+    bridge:
+      options:
+        stp: {enabled: false}
+      port:
+        - name: vxlan{{ vni }}
+        - name: trunk.{{ s.vlan }}
+{% endfor %}
+{% endif %}
+{% for iface in _ega_detach | default([]) %}
+  - name: {{ iface }}
+    controller: ""
+{% endfor %}
+{% for iface in _ega_absent | default([]) %}
+  - name: {{ iface }}
+    state: absent
+{% endfor %}

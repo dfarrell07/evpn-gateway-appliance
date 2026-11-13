@@ -1,0 +1,15 @@
+---
+# Apply config B over the already-converged baseline — the reconcile's MODIFY path. Runs the same
+# networking reconcile the product uses (tasks_from: nm_networking), just with the modified stretches
+# (config B); verify then asserts it converged to B (added/removed/changed), including the trunk-br
+# self-VLANs.
+- name: Side effect — re-converge with the modified config (config B)
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../resources/modify_vars.yml
+  tasks:
+    - name: Apply the on-prem networking reconcile with the modified config
+      ansible.builtin.include_role:
+        name: network.evpn_gateway.evpn_onprem_appliance
+        tasks_from: nm_networking

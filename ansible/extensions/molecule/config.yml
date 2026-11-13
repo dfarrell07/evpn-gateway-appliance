@@ -1,0 +1,62 @@
+---
+# Shared Molecule config for the collection-mode scenarios under extensions/molecule/<role>/<scenario>.
+# Scenarios inherit everything here; their molecule.yml adds only scenario-specific bits (e.g. the
+# default scenario's test_sequence override). Playbook paths are relative to the scenario directory, so
+# ../resources resolves to the group's own resources dir (e.g. evpn_onprem_appliance/nm_networking/resources).
+#
+# prerun is disabled: collection resolution is provided via ANSIBLE_COLLECTIONS_PATH in
+# test/e2e/entrypoint_molecule.sh (the collection under test + the baked deps in
+# /usr/share/ansible/collections), so molecule must not run its own prerun install — which would need
+# network (the lane runs disconnected) and would duplicate the collection.
+prerun: false
+dependency:
+  name: galaxy
+  enabled: false
+# The podman driver manages the instance lifecycle (no create/destroy playbooks). It drives the mounted
+# ROOTFUL socket via podman-remote (MOLECULE_PODMAN_EXECUTABLE in entrypoint_molecule.sh) + CONTAINER_HOST,
+# so the instance is a sibling on the host runtime with the host kernel.
+driver:
+  name: podman
+platforms:
+  # One shared platform for all scenarios (they run sequentially, each created+destroyed in turn).
+  # pre_build_image: use EGA_NODE_IMAGE as-is (don't build). privileged: the single knob the
+  # capabilities work (CORENET-7704) will later swap for an explicit `capabilities:` list.
+  - name: ega-molecule
+    image: ${EGA_NODE_IMAGE}
+    pre_build_image: true
+    privileged: true
+    # systemd: always -> podman --systemd=always (boots the image's init). override_command: false is
+    # required: molecule-podman otherwise replaces the container command with a keep-alive sleep loop, so
+    # /sbin/init never runs and systemd isn't PID 1; false keeps the image's own init CMD.
+    systemd: always
+    override_command: false
+    extra_opts:
+      - "--cgroupns=host"
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: ${ANSIBLE_COLLECTIONS_PATH}
+    CONTAINER_HOST: ${CONTAINER_HOST}
+    EGA_NODE_IMAGE: ${EGA_NODE_IMAGE}
+  inventory:
+    group_vars:
+      all:
+        # The instance is reached over the podman connection plugin; use podman-remote (the CI image's
+        # binary), which targets the mounted rootful socket via CONTAINER_HOST.
+        ansible_podman_executable: podman-remote
+  playbooks:
+    prepare: ../resources/prepare.yml
+    converge: ../resources/converge.yml
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - destroy
+verifier:
+  name: ansible

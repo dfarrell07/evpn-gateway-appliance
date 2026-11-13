@@ -1,0 +1,77 @@
+---
+# Verify teardown reached the empty state: no ega-* profiles, no per-stretch VNI bridges, no trunk
+# bridge, and the trunk NIC survives but is detached — released at runtime and with no lingering
+# controller reference in its keyfile. Each check captures state (failed_when:false) then asserts with a
+# readable message.
+- name: Verify teardown
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../resources/deploy_vars.yml
+  tasks:
+    - name: List remaining NetworkManager connections
+      ansible.builtin.command: nmcli -t -f NAME connection show
+      register: _conns
+      changed_when: false
+      failed_when: false
+
+    - name: No ega-* NetworkManager profiles remain
+      ansible.builtin.assert:
+        that: "_conns.stdout_lines | select('match', '^ega-') | list | length == 0"
+        fail_msg: "ega-* profiles still present: {{ _conns.stdout_lines | select('match', '^ega-') | list }}"
+
+    - name: Query each per-stretch VNI bridge
+      ansible.builtin.command: ip link show br-vni{{ 10000 + item.vlan }}
+      loop: "{{ stretches }}"
+      loop_control:
+        label: "br-vni{{ 10000 + item.vlan }}"
+      register: _vni
+      changed_when: false
+      failed_when: false
+
+    - name: No per-stretch VNI bridge remains
+      ansible.builtin.assert:
+        that: item.rc != 0
+        fail_msg: "br-vni{{ 10000 + item.item.vlan }} is still present"
+      loop: "{{ _vni.results }}"
+      loop_control:
+        label: "br-vni{{ 10000 + item.item.vlan }}"
+
+    - name: Query the trunk bridge
+      ansible.builtin.command: ip link show trunk-br
+      register: _tb
+      changed_when: false
+      failed_when: false
+
+    - name: Trunk bridge removed
+      ansible.builtin.assert:
+        that: _tb.rc != 0
+        fail_msg: "trunk-br is still present"
+
+    - name: Query the trunk NIC
+      ansible.builtin.command: ip -o link show {{ trunk_interface }}
+      register: _trunk
+      changed_when: false
+      failed_when: false
+
+    - name: Trunk NIC survives but is released (no bridge master)
+      ansible.builtin.assert:
+        that:
+          - _trunk.rc == 0
+          - "'master' not in _trunk.stdout"
+        fail_msg: "{{ trunk_interface }} missing or still enslaved: rc={{ _trunk.rc }} '{{ _trunk.stdout }}'"
+
+    # Runtime release (above) is not enough on its own: the trunk is owned by a foreign profile that
+    # nmstate edited in place to add the controller, so its keyfile could keep a dangling controller
+    # reference and re-enslave to the missing bridge on the next boot. Assert no keyfile still references
+    # trunk-br (name-agnostic: the trunk profile keeps its non-ega name, so match on the bridge). rc=1 = no match.
+    - name: Search NetworkManager keyfiles for a lingering trunk-br reference
+      ansible.builtin.command: grep -rl trunk-br /etc/NetworkManager/system-connections
+      register: _kf
+      changed_when: false
+      failed_when: false
+
+    - name: No keyfile references trunk-br (detach persisted, survives reboot)
+      ansible.builtin.assert:
+        that: _kf.rc != 0
+        fail_msg: "keyfiles still reference trunk-br (dangling master): {{ _kf.stdout_lines }}"

@@ -1,0 +1,38 @@
+---
+# Reboot proxy: restart the instance. /etc persists across a restart (only /run and /tmp are tmpfs),
+# so on boot the ega-molecule-trunk unit (ordered before NetworkManager) recreates the trunk veth +
+# tunnel address, then NetworkManager starts, finds the trunk present and managed (the conf.d drop-in),
+# and autoconnects the persisted ega-* profiles — rebuilding the whole fabric from keyfiles exactly as a
+# real reboot would, with no reactive re-presentation or forced activation. We only WAIT for that
+# boot-autoconnect to finish; verify then asserts the contract still holds (persistence).
+- name: Side effect — restart the instance (reboot proxy)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Restart the instance(s)
+      ansible.builtin.command: podman-remote restart {{ item.name }}
+      loop: "{{ molecule_yml.platforms }}"
+      changed_when: true
+
+- name: Wait for the fabric to reconverge on boot
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../resources/deploy_vars.yml
+  tasks:
+    - name: Wait for NetworkManager to be active again
+      ansible.builtin.command: systemctl is-active NetworkManager
+      register: _nm
+      until: _nm.stdout == "active"
+      retries: 30
+      delay: 2
+      changed_when: false
+
+    - name: Wait for NetworkManager to autoconnect and enslave the trunk port (boot, no force)
+      ansible.builtin.command: ip -o link show {{ trunk_interface }}
+      register: _trunk
+      until: "'master trunk-br' in _trunk.stdout"
+      retries: 30
+      delay: 2
+      changed_when: false

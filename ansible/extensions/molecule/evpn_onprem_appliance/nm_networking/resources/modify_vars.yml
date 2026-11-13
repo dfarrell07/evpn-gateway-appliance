@@ -1,0 +1,22 @@
+---
+# Config B for the modify scenario: applied over the baseline (deploy_vars.yml / config A, stretches
+# 100/200/300) to exercise the reconcile's MODIFY path — remove a stretch (300), add one (400), and
+# change an existing SVI (stretch 100: .1 -> .254). trunk_interface and tunnel are unchanged from A.
+trunk_interface: trunk0
+tunnel:
+  type: wireguard
+  onprem_ip: 10.44.44.1
+stretches:
+  - vlan: 100
+    name: production
+    subnet: 10.42.1.0/24
+    onprem_gateway: 10.42.1.254   # changed from 10.42.1.1
+  - vlan: 200
+    name: staging
+    subnet: 10.42.2.0/24
+    onprem_gateway: 10.42.2.1
+  # stretch 300 (management) removed
+  - vlan: 400
+    name: qa
+    subnet: 10.42.4.0/24
+    onprem_gateway: 10.42.4.1      # added
