@@ -4,8 +4,8 @@
 tests them. Import `dashboards/frr-evpn.json` and `dashboards/appliance.json` into Grafana
 (rendered with 11.6.0) and select a Prometheus data source, jobs and instances.
 
-`appliance.json` shows scrape status, the operstate and carrier of the `vxlanN`, `br-vniN`,
-`trunk-br`, `trunk.N` and `wg0` devices, and the traffic of the non-bridge ones from node-exporter, scraped
+`appliance.json` shows scrape status, overlay path probe RTT, the operstate and carrier of
+the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices, and the traffic of the non-bridge ones from node-exporter, scraped
 in its own job with the target identity rules below. The image's node-exporter listens on
 127.0.0.1:9100; scraping it from another host needs the access path from CORENET-7704.
 A separate job is outside the node-exporter mixin's `nodeExporterSelector` (`job="node"`
@@ -39,8 +39,18 @@ The VNI table shows L2 and L3 counts in separate columns, keeping missing counts
 
 Absent or vanished objects and collectors go undetected: that needs an expected
 inventory, which this package does not have. Target down is left
-to the platform's TargetDown/`up` alerting. DF/ES, transport and latency have no
-source in this package. These signals do not establish forwarding health.
+to the platform's TargetDown/`up` alerting. DF/ES and transport have no
+source in this package. These FRR signals do not establish forwarding health.
+
+`rules/path-probe-alerts.yaml` (tested by `rules/path-probe-alerts_test.yaml`; add it to
+`rule_files` too) alerts on the overlay path probe, which
+`evpn_monitoring_path_probe_target` enables; the appliance dashboard's RTT panel shows
+fresh samples. A probe fails unless 3 echo replies arrive within 5s (up to 5 requests).
+It samples one overlay path and does not identify the failed component.
+
+| Alert | Reads | Silent when |
+| --- | --- | --- |
+| EGAEvpnPathProbeFailed | Probe success = 0, a textfile read error on a host that reported the probe in the last day, or a probe file older than 60s, for 5m | Success = 1 with a fresh file and no textfile read error, or no probe file in the last day (probe unset, or node-exporter without `--collector.textfile.directory`) |
 
 Run `make check-monitoring` from the repository root.
 Host runs (`USE_IMAGE=0`) need promtool (tested with 3.5.0) on PATH.

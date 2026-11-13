@@ -1,0 +1,142 @@
+rule_files:
+  - path-probe-alerts.yaml
+evaluation_interval: 30s
+tests:
+  - name: Healthy probe with a fresh textfile stays silent
+    interval: 30s
+    input_series:
+      - series: node_time_seconds{job="node",instance="edge-a"}
+        values: 0+30x20
+      - series: node_textfile_scrape_error{job="node",instance="edge-a"}
+        values: 0+0x20
+      - series: node_textfile_mtime_seconds{job="node",instance="edge-a",file="/var/lib/node_exporter/textfile/other.prom"}
+        values: 0+0x20
+      - series: ega_path_probe_success{job="node",instance="edge-a",target="10.42.1.2"}
+        values: 1+0x20
+      - series: node_textfile_mtime_seconds{job="node",instance="edge-a",file="/var/lib/node_exporter/textfile/ega-path-probe.prom"}
+        values: 0+30x20
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts: []
+  - name: Failed probe stays silent before 5m, fires at 5m and recovers
+    interval: 30s
+    input_series:
+      - series: node_time_seconds{job="node",instance="edge-a"}
+        values: 0+30x20
+      - series: ega_path_probe_success{job="node",instance="edge-a",target="10.42.1.2"}
+        values: 0+0x10 1+0x9
+      - series: node_textfile_mtime_seconds{job="node",instance="edge-a",file="/var/lib/node_exporter/textfile/ega-path-probe.prom"}
+        values: 0+30x20
+    alert_rule_test:
+      - eval_time: 4m30s
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts:
+          - exp_labels:
+              job: node
+              instance: edge-a
+              severity: warning
+            exp_annotations:
+              summary: Overlay path probe failed on edge-a
+              description: 'node/edge-a: for 5m the configured overlay probe failed (value 0),
+                node-exporter could not read a textfile (1, which can hide a failure), or the probe
+                textfile was older than 60s (its age in seconds; check ega-path-probe.timer). Value 0.
+                It samples one overlay path and does not identify the failed component.'
+      - eval_time: 5m30s
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts: []
+  - name: Stale textfile fires even with last success 1 then recovers when refreshed
+    interval: 30s
+    input_series:
+      - series: node_time_seconds{job="node",instance="edge-a"}
+        values: 0+30x20
+      - series: ega_path_probe_success{job="node",instance="edge-a",target="10.42.1.2"}
+        values: 1+0x20
+      - series: node_textfile_mtime_seconds{job="node",instance="edge-a",file="/var/lib/node_exporter/textfile/ega-path-probe.prom"}
+        values: 0+0x13 420+30x6
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts: []
+      - eval_time: 6m30s
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts:
+          - exp_labels:
+              job: node
+              instance: edge-a
+              severity: warning
+            exp_annotations:
+              summary: Overlay path probe failed on edge-a
+              description: 'node/edge-a: for 5m the configured overlay probe failed (value 0),
+                node-exporter could not read a textfile (1, which can hide a failure), or the probe
+                textfile was older than 60s (its age in seconds; check ega-path-probe.timer). Value 390.
+                It samples one overlay path and does not identify the failed component.'
+      - eval_time: 7m
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts: []
+  - name: Failed and stale probe gives one alert
+    interval: 30s
+    input_series:
+      - series: node_time_seconds{job="node",instance="edge-a"}
+        values: 0+30x20
+      - series: ega_path_probe_success{job="node",instance="edge-a",target="10.42.1.2"}
+        values: 0+0x20
+      - series: node_textfile_mtime_seconds{job="node",instance="edge-a",file="/var/lib/node_exporter/textfile/ega-path-probe.prom"}
+        values: 0+0x20
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts:
+          - exp_labels:
+              job: node
+              instance: edge-a
+              severity: warning
+            exp_annotations:
+              summary: Overlay path probe failed on edge-a
+              description: 'node/edge-a: for 5m the configured overlay probe failed (value 0),
+                node-exporter could not read a textfile (1, which can hide a failure), or the probe
+                textfile was older than 60s (its age in seconds; check ega-path-probe.timer). Value 420.
+                It samples one overlay path and does not identify the failed component.'
+  - name: Unreadable textfile fires only on a host that reported the probe
+    interval: 30s
+    input_series:
+      - series: node_time_seconds{job="node",instance="edge-a"}
+        values: 0+30x40
+      - series: ega_path_probe_success{job="node",instance="edge-a",target="10.42.1.2"}
+        values: 1
+      - series: node_textfile_scrape_error{job="node",instance="edge-a"}
+        values: 0 1+0x40
+      - series: node_time_seconds{job="node",instance="other-host"}
+        values: 0+30x40
+      - series: node_textfile_scrape_error{job="node",instance="other-host"}
+        values: 1+0x40
+    alert_rule_test:
+      - eval_time: 5m30s
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts:
+          - exp_labels:
+              job: node
+              instance: edge-a
+              severity: warning
+            exp_annotations:
+              summary: Overlay path probe failed on edge-a
+              description: 'node/edge-a: for 5m the configured overlay probe failed (value 0),
+                node-exporter could not read a textfile (1, which can hide a failure), or the probe
+                textfile was older than 60s (its age in seconds; check ega-path-probe.timer). Value 1.
+                It samples one overlay path and does not identify the failed component.'
+      - eval_time: 20m
+        alertname: EGAEvpnPathProbeFailed
+        exp_alerts:
+          - exp_labels:
+              job: node
+              instance: edge-a
+              severity: warning
+            exp_annotations:
+              summary: Overlay path probe failed on edge-a
+              description: 'node/edge-a: for 5m the configured overlay probe failed (value 0),
+                node-exporter could not read a textfile (1, which can hide a failure), or the probe
+                textfile was older than 60s (its age in seconds; check ega-path-probe.timer). Value 1.
+                It samples one overlay path and does not identify the failed component.'
