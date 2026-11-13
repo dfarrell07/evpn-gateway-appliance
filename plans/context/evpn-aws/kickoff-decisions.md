@@ -15,7 +15,7 @@ and publication needs its destination. Resolve the remaining choices alongside r
 
 | # | Decision | Owner | Needed for | Status |
 | --- | --- | --- | --- | --- |
-| 1 | Reconcile Jira criteria: 7501's VIF wording, 7504's metric meanings, 7505's "approved upstream" images | PM / Networking | [Start now](#start-now-without-waiting-for-engineering) | Review direction 2026-10-01; accountable owner and remaining corrections/clarifications pending |
+| 1 | Reconcile Jira criteria: 7501's VIF wording, 7505's "approved upstream" images | PM / Networking | [Start now](#start-now-without-waiting-for-engineering) | Review direction 2026-10-01; accountable owner and remaining corrections/clarifications pending |
 | 2 | Official product name, the long-lead approvals, and the supported architectures the Engineering ID request asks for | PM / Product Security / releng | [Start now](#start-now-without-waiting-for-engineering); Engineering ID | Open |
 | 3 | What to import publicly, and owners for the source defects | Source owners / releng | [Gate A](#gate-a--source-ci) | Open |
 | 4 | Source CI: Prow contexts, tide, GitHub Actions, Konflux GitHub App | Engineering / Networking | [Gate A](#gate-a--source-ci) | Review direction 2026-10-02; Prow merged, with `ci/prow/images` and `ci/prow/verify` required since release#86670 (2026-10-13); hosted lanes and Konflux contexts/App remain open |
@@ -66,9 +66,8 @@ item for decisions 7, 8 and 13 to `@knobunc`.
   2026-11-04: 7501 still names a private VIF with a TGW, which needs a transit VIF;
   7505's "approved upstream" images still need reconciliation with decision 10's Red Hat
   payload direction. 7504 now explicitly requires EVPN metrics in the frr-k8s binary;
-  its remaining [metric clarification](frr-metrics-plan.md#requirements) concerns occupancy
-  versus learning events and UPDATE activity versus route-event churn. Remaining Jira
-  corrections and semantic agreement need an owner. *Owner: PM / Networking.*
+  the [plan](frr-metrics-plan.md#requirements) defines churn and learning (2026-11-16). The remaining CORENET-7501 and
+  CORENET-7505 Jira corrections need an owner. *Owner: PM / Networking.*
 - **Product name.** "EVPN Gateway Appliance (EGA)" is a working name. The prototype's
   [L2-stretch plan](https://gitlab.cee.redhat.com/datucker/evpn-on-cloud/-/blob/1c8e88873af8/docs/evpn-l2-stretch-plan.md)
   weighed "Connectivity", "Gateway", "Bridge" and "Edge", noted that "Gateway" suggests L3 routing,
@@ -229,12 +228,13 @@ item for decisions 7, 8 and 13 to `@knobunc`.
   observations, with standalone operation. Evidence: the [2026-10-01 Networking direction](https://github.com/openshift/evpn-gateway-appliance/pull/2#issuecomment-5936707328),
   live 7504/7505 criteria (rechecked 2026-11-10), and [Jaime's 2026-11-10 review asking to close 16](https://github.com/openshift/evpn-gateway-appliance/pull/24#issuecomment-6768033317).
   This closes source selection independently of implementation and qualification.
-  [#519/#528](frr-metrics-plan.md#status-and-next-steps) propose standalone serving and basic
-  EVPN additions; they are unmerged. Upstream shared use is conditional on nondivergent behavior
+  [#519](https://github.com/metallb/frr-k8s/pull/519) (merged 2026-11-10) adds standalone serving
+  and [#528](frr-metrics-plan.md#status-and-next-steps) (open) basic EVPN additions.
+  Upstream shared use is conditional on nondivergent behavior
   and metrics ([maintainer reply](https://github.com/metallb/frr-k8s/pull/519#issuecomment-6612226284)).
-  Remaining work stays separate: learning/churn meanings in decision 1; DF/ES coverage and
-  alert policy in 7504/7502; implementation/downstream ownership, selected image and interim
-  runtime in 7504/7505 and decision 10; endpoint privilege/access and its tests in CORENET-7704;
+  Remaining work stays separate: learning/churn meanings defined in the 7504 plan; DF/ES coverage and
+  alert policy in 7502 (moved from 7504 on 2026-11-16); implementation/downstream ownership,
+  #51's RPM FRR and in-image frr-metrics (CORENET-7506) under decision 10; endpoint privilege/access and its tests in CORENET-7704;
   CloudWatch, scrape integration, dashboards and qualification in 7504. A different source
   needs amended Jira criteria. Selecting this source does not complete those requirements.
 
