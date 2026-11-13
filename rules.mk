@@ -11,7 +11,7 @@ verify: check
 # public-safety scan, the repo-wide yaml, Markdown, python, shell and container-file lint, and the
 # Ansible collection and monitoring checks.
 .PHONY: check
-check: check-corpus check-public check-yaml check-markdown check-python check-shell check-dockerfiles check-ansible check-monitoring
+check: check-corpus check-public check-yaml check-markdown check-python check-shell check-dockerfiles check-ansible check-monitoring check-scripts
 
 # Planning-docs corpus integrity: link + anchor + pin resolution and public-safe
 # over the plans/ docs (check-all.sh bundles them).
@@ -91,6 +91,11 @@ check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' ':(exclude)monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) check rules --lint=all --lint-fatal
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/dashboards/*.json' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
+
+# Unit tests for scripts the collection installs; promtool validates their metrics output.
+.PHONY: check-scripts
+check-scripts:
+	git ls-files -z -c -o --exclude-standard -- 'test/unit/*_test.sh' | xargs -0 -r -n1 env PROMTOOL="$(PROMTOOL)" sh
 
 # ── Ansible collection source checks ─────────────────────────────────────────
 # Lint, playbook syntax, collection build + tarball allowlist, and a clean-env
