@@ -1,11 +1,19 @@
 # FRR and EVPN monitoring
 
 `rules/frr-alerts.yaml` contains six Prometheus alerts; `rules/frr-alerts_test.yaml`
-tests them. Import `dashboards/frr-evpn.json` into Grafana (rendered with 11.6.0) and
-select a Prometheus data source, jobs and instances.
+tests them. Import `dashboards/frr-evpn.json` and `dashboards/appliance.json` into Grafana
+(rendered with 11.6.0) and select a Prometheus data source, jobs and instances.
 
-Any Prometheus scraping frr-k8s `frr-metrics` can supply the data. This package
-requires the per-family BGP, EVPN and per-collector `frrk8s_scrape_success`
+`appliance.json` shows scrape status, the operstate and carrier of the `vxlanN`, `br-vniN`,
+`trunk-br`, `trunk.N` and `wg0` devices, and the traffic of the non-bridge ones from node-exporter, scraped
+in its own job with the target identity rules below. The image's node-exporter listens on
+127.0.0.1:9100; scraping it from another host needs the access path from CORENET-7704.
+A separate job is outside the node-exporter mixin's `nodeExporterSelector` (`job="node"`
+upstream, `job="node-exporter"` in kube-prometheus); add it there when rendering the mixin
+for its host alerts and dashboards. OpenShift's cluster monitoring ships that selector fixed.
+
+Any Prometheus scraping frr-k8s `frr-metrics` can supply the data. The FRR rules and
+dashboard require the per-family BGP, EVPN and per-collector `frrk8s_scrape_success`
 (`bgp`, `bfd`, `evpn`) metrics from frr-k8s #528. Older exporters
 do not supply the full contract. Configure scraping separately; preserve the
 scrape-added `job` and `instance` labels as target identity, unique within the
