@@ -265,6 +265,19 @@ Checked: 2.15.1 source at `2eece559`; behavior rechecked with the `hadolint-py` 
   lint does not replace an image build. Earlier #6 Containerfiles reported DL3006, DL3041 and
   DL3059; #6 has since been rewritten.
 
+### promtool
+
+Checked: 3.5.0, [`8be3a956`](https://github.com/prometheus/prometheus/tree/8be3a9560fbdd18a94dedec4b747c35178177202), 2026-11-14;
+`Dockerfile.ci` verifies the release tarball against the release's `sha256sums.txt`.
+
+- `check rules` reads a rule file from stdin when given no file
+  ([`main.go`](https://github.com/prometheus/prometheus/blob/8be3a9560fbdd18a94dedec4b747c35178177202/cmd/promtool/main.go)), which lets
+  `check_dashboards.py` compile every panel query in one call as recording rules.
+- `test rules` resolves `rule_files` relative to the test file, and `exp_annotations` must match the whole
+  rendered annotation set
+  ([`unittest.go`](https://github.com/prometheus/prometheus/blob/8be3a9560fbdd18a94dedec4b747c35178177202/cmd/promtool/unittest.go)), so a new
+  annotation changes every expected alert.
+
 ### markdownlint-cli2
 
 Checked: 0.23.3, [`916ad0aa`](https://github.com/DavidAnson/markdownlint-cli2/blob/916ad0aaa108c64d294101002066f530ea170b10/README.md).
@@ -353,5 +366,6 @@ Custom CI code needs a requirement that no maintained tool covers. Current code:
 | `plans/context/evpn-aws/tools/check-links.py`, `check-pins.py` | 111 + 45 | Relative links and anchors in the plans; online, external URLs including fragments (rate-limited hosts are reported as unreachable rather than broken, but still fail the run; rerun later) and GitHub blob/tree paths at a hexadecimal revision through authenticated `gh`. A resolving pin proves the path exists, not the claim made about it | A native link checker handles literal filenames and authenticated revision paths |
 | `plans/context/evpn-aws/tools/check-all.sh` | 15 | Runs the helpers above and accumulates failures; `--offline` skips URLs and pins | The helpers above are retired |
 | `ansible/tools/check-collection-tarball.sh` | 26 | Tarball root paths against an allowlist, required `meta/runtime.yml` and `README.md`; prints the `MANIFEST.json` digest | The native `manifest` directive plus required-path checks replace it |
+| `monitoring/check_dashboards.py` (tests in `monitoring/tests/test_check_dashboards.py`) | 101 + 164 | Each Grafana dashboard's data-source and job/instance variables, that every `frrk8s_*` and `up` selector starts with the job/instance filter, unique panel IDs, panel PromQL compiled through promtool, and `frrk8s_*` names in rules and dashboards against `monitoring/frrk8s-metrics.txt` | A maintained dashboard linter covers selector scoping and a metric catalog |
 
 Add a row here when a PR adds custom glue, with the reason.
