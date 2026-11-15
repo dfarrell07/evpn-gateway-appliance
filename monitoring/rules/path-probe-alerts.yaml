@@ -7,6 +7,10 @@ groups:
             (ega_path_probe_success == 0)
             or (node_time_seconds - on(job, instance) node_textfile_mtime_seconds{file=~".*/ega-path-probe[.]prom"} > 60)
             or (node_textfile_scrape_error == 1 and on(job, instance) present_over_time(ega_path_probe_success[1d]))
+            or (
+              (-1 * present_over_time(ega_path_probe_success[1d]) unless on(job, instance) ega_path_probe_success)
+              and on(job, instance) node_time_seconds
+            )
           )
         for: 5m
         labels:
@@ -15,6 +19,8 @@ groups:
           summary: 'Overlay path probe failed on {{ $labels.instance }}'
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: for 5m the configured overlay probe failed (value 0),
-            node-exporter could not read a textfile (1, which can hide a failure), or the probe
-            textfile was older than 60s (its age in seconds; check ega-path-probe.timer). Value {{ $value }}.
+            node-exporter could not read a textfile (1, which can hide a failure), the probe
+            textfile was older than 60s (its age in seconds; check ega-path-probe.timer), or the
+            probe stopped reporting while node-exporter runs (-1; check ega-path-probe.timer and
+            node-exporter's --collector.textfile.directory). Value {{ $value }}.
             It samples one overlay path and does not identify the failed component.

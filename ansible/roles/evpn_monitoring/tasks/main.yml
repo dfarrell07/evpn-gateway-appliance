@@ -90,6 +90,12 @@
     - monitoring.node_exporter | default(false)
     - evpn_monitoring_path_probe_target | length > 0
   block:
+    - name: Check the overlay path probe target is an IP address
+      ansible.builtin.assert:
+        that: evpn_monitoring_path_probe_target is ansible.utils.ip_address
+        fail_msg: evpn_monitoring_path_probe_target must be an IPv4 or IPv6 address.
+        quiet: true
+
     # /usr is read-only on bootc; keep the script in /etc and run it through sh.
     - name: Ensure overlay path probe directory exists
       ansible.builtin.file:
@@ -116,7 +122,13 @@
 
             [Service]
             Type=oneshot
-            ExecStart=/bin/sh /etc/ega/ega-path-probe.sh {{ evpn_monitoring_path_probe_target | replace('%', '%%') | quote }}
+            ExecStart=/bin/sh /etc/ega/ega-path-probe.sh {{ evpn_monitoring_path_probe_target | replace('%', '%%') }}
+            CapabilityBoundingSet=CAP_NET_RAW
+            NoNewPrivileges=yes
+            PrivateTmp=yes
+            ProtectHome=yes
+            ProtectSystem=strict
+            ReadWritePaths=/var/lib/node_exporter/textfile
         - name: ega-path-probe.timer
           content: |
             [Unit]
@@ -131,11 +143,17 @@
             WantedBy=timers.target
       loop_control:
         label: "{{ item.name }}"
-      register: _evpn_monitoring_path_probe_units
 
+    # Always reload: a rerun after a failed run must not keep stale units.
     - name: Enable overlay path probe timer
       ansible.builtin.systemd:
         name: ega-path-probe.timer
-        daemon_reload: "{{ _evpn_monitoring_path_probe_units.changed }}"
+        daemon_reload: true
         state: started
         enabled: true
+
+- name: Remove the overlay path probe when it is not configured
+  ansible.builtin.include_tasks: path_probe_absent.yml
+  when:
+    - "'onprem_appliances' in group_names"
+    - not (monitoring.node_exporter | default(false)) or evpn_monitoring_path_probe_target | length == 0

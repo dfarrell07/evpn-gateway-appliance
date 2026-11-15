@@ -33,9 +33,6 @@ argument_specs:
         type: str
         default: ""
         description: >-
-          Overlay address to ping every 30s, routed only through the overlay, such as the first
+          Overlay IP address to ping every 30s, routed only through the overlay, such as the first
           stretch's cloud_gateway. Set on onprem_appliances hosts with monitoring.node_exporter;
-          clearing it does not remove an installed probe. To remove one, run systemctl disable
-          --now ega-path-probe.timer, then systemctl stop ega-path-probe.service, and delete
-          /var/lib/node_exporter/textfile/ega-path-probe.prom; teardown.yml does this while
-          removing all EGA components.
+          when it is empty or node_exporter is off, the role removes an installed probe.
