@@ -238,9 +238,7 @@
             "IpAddressFamily": [
               "*"
             ],
-            "ConnectionId": [
-              "*"
-            ]
+            "ConnectionId": "$connection_id"
           },
           "statistic": "Minimum",
           "period": "300",

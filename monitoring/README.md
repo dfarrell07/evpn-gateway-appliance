@@ -39,8 +39,8 @@ Host runs (`USE_IMAGE=0`) need promtool (tested with 3.5.0) on PATH and PyYAML.
 
 ## AWS transport
 
-Import `dashboards/aws-transport.json` and select a CloudWatch data source, region and
-resource IDs in its variables.
+Import `dashboards/aws-transport.json` (tested with Grafana 11.6.0) and select a CloudWatch
+data source, region and resource IDs in its variables.
 Set each `datasourceUid: cloudwatch` in `grafana/aws-transport-alerts.yaml` to that
 data source's UID, or provision the data source with `uid: cloudwatch`, and change
 `region: default` if needed. The alerts cover every connection, virtual interface and VPN
@@ -58,7 +58,9 @@ The alerts read 5-minute periods every 5 minutes and wait `for: 10m`, so one fir
 15-20 minutes after the failure. A VPN that uses one of its two tunnels keeps EGAVpnTunnelDown firing; change its
 `statistic: Minimum` to `Maximum` and `$B < 1` to `$B == 0` to alert only when every tunnel
 is down. The alerts link to the dashboard's panels, so keep its UID when importing. With no CloudWatch data an
-alert keeps its last state, so a region without these resources stays quiet. Grafana 11.6 also
+alert keeps its last state, so a region without these resources stays quiet. The same rule keeps an
+alert firing when its data stops, for example a VPN deleted while down; resolve it by
+pausing the rule. Grafana 11.6 also
 treats a failed read, such as expired credentials, as no data, so the failure is not reported;
 watch the data source separately. Grafana sends these alerts
 through its own notification policies; to route them with the Prometheus alerts, add the

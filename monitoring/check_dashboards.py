@@ -37,6 +37,9 @@ def check(path):
             name in variables and datasource_ok(variables[name]) for name in ("job", "instance")):
         raise ValueError("needs a CloudWatch datasource variable, or a Prometheus one with job and instance "
                          "variables that query it")
+    stray = [name for name, v in variables.items() if v.get("type") == "query" and not datasource_ok(v)]
+    if stray:
+        raise ValueError(f"query variables must use ${{datasource}}: {', '.join(stray)}")
     ids, rules = set(), []
     for panel in panels(dashboard["panels"]):
         pid = panel["id"]
