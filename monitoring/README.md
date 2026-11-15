@@ -43,16 +43,17 @@ to the platform's TargetDown/`up` alerting. DF/ES and transport have no
 source in this package. These FRR signals do not establish forwarding health.
 
 `rules/path-probe-alerts.yaml` (tested by `rules/path-probe-alerts_test.yaml`; add it to
-`rule_files` too) alerts on the overlay path probe, which
+`rule_files` too) has two alerts for the overlay path probe, which
 `evpn_monitoring_path_probe_target` enables; the appliance dashboard's RTT panel shows
 fresh samples. A probe fails unless 3 echo replies arrive within 5s (up to 5 requests).
 It samples one overlay path and does not identify the failed component.
-Removing the probe, by teardown or by clearing its target, makes the alert fire for up to a day while
-node-exporter keeps running; silence it for that host.
+Removing the probe, by teardown or by clearing its target, makes `EGAEvpnPathProbeUnavailable` fire for up
+to a day while node-exporter keeps running; silence it for that host.
 
 | Alert | Reads | Silent when |
 | --- | --- | --- |
-| EGAEvpnPathProbeFailed | Probe success = 0, a probe file older than 60s, a textfile read error on a host that reported the probe in the last day, or, while node-exporter is scraped, no probe series on a host that reported one in the last day, for 5m | Success = 1 with a fresh file and no textfile read error, node-exporter not scraped, or no probe series in the last day |
+| EGAEvpnPathProbeFailed | Probe success = 0 in a file no older than 60s, for 5m | Success = 1, or the result is not fresh |
+| EGAEvpnPathProbeUnavailable | A probe file older than 60s, a textfile read error on a host that reported the probe in the last day, or, while node-exporter is scraped, no probe series on a host that reported one in the last day, for 5m | A fresh, readable probe file; node-exporter not scraped; or no probe series in the last day |
 
 Run `make check-monitoring` from the repository root.
 Host runs (`USE_IMAGE=0`) need promtool (tested with 3.5.0) on PATH.
