@@ -354,6 +354,58 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Device drops and errors",
+      "description": "Packets per second the kernel dropped or counted as errors on VLAN (trunk.N), VXLAN and WireGuard devices; only nonzero rates are drawn. WireGuard counts a packet with no matching peer or peer endpoint as a transmit error.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "min": 0,
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_receive_drop_total{job=~\"$job\", instance=~\"$instance\", device=~\"vxlan[0-9]+|trunk[.][0-9]+|wg0\"}[$__rate_interval]) > 0",
+          "legendFormat": "{{job}}/{{instance}} {{device}} rx drop"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_network_transmit_drop_total{job=~\"$job\", instance=~\"$instance\", device=~\"vxlan[0-9]+|trunk[.][0-9]+|wg0\"}[$__rate_interval]) > 0",
+          "legendFormat": "{{job}}/{{instance}} {{device}} tx drop"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(node_network_receive_errs_total{job=~\"$job\", instance=~\"$instance\", device=~\"vxlan[0-9]+|trunk[.][0-9]+|wg0\"}[$__rate_interval]) > 0",
+          "legendFormat": "{{job}}/{{instance}} {{device}} rx error"
+        },
+        {
+          "refId": "D",
+          "expr": "rate(node_network_transmit_errs_total{job=~\"$job\", instance=~\"$instance\", device=~\"vxlan[0-9]+|trunk[.][0-9]+|wg0\"}[$__rate_interval]) > 0",
+          "legendFormat": "{{job}}/{{instance}} {{device}} tx error"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }

@@ -5,7 +5,7 @@ tests them. Import `dashboards/frr-evpn.json` and `dashboards/appliance.json` in
 (rendered with 11.6.0) and select a Prometheus data source, jobs and instances.
 
 `appliance.json` shows scrape status, the operstate and carrier of the `vxlanN`, `br-vniN`,
-`trunk-br`, `trunk.N` and `wg0` devices, and the traffic of the non-bridge ones from node-exporter, scraped
+`trunk-br`, `trunk.N` and `wg0` devices, and the traffic, drops and errors of the non-bridge ones from node-exporter, scraped
 in its own job with the target identity rules below. The image's node-exporter listens on
 127.0.0.1:9100; scraping it from another host needs the access path from CORENET-7704.
 A separate job is outside the node-exporter mixin's `nodeExporterSelector` (`job="node"`
