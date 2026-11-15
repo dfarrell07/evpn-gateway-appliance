@@ -44,6 +44,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: Overlay path probe failed on edge-a
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobefailed
               description: 'node/edge-a: for 5m the configured overlay probe got
                 fewer than 3 echo replies within 5s. It samples one overlay path and does not
                 identify the failed component.'
@@ -75,6 +76,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: Overlay path probe result unavailable on edge-a
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobeunavailable
               description: 'node/edge-a: for 5m there was no fresh probe result:
                 node-exporter could not read a textfile (value 1, which can hide a failure), the
                 probe textfile was older than 60s (value: its age in seconds), or the probe stopped
@@ -105,6 +107,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: Overlay path probe result unavailable on edge-a
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobeunavailable
               description: 'node/edge-a: for 5m there was no fresh probe result:
                 node-exporter could not read a textfile (value 1, which can hide a failure), the
                 probe textfile was older than 60s (value: its age in seconds), or the probe stopped
@@ -136,6 +139,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: Overlay path probe result unavailable on edge-a
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobeunavailable
               description: 'node/edge-a: for 5m there was no fresh probe result:
                 node-exporter could not read a textfile (value 1, which can hide a failure), the
                 probe textfile was older than 60s (value: its age in seconds), or the probe stopped
@@ -150,6 +154,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: Overlay path probe result unavailable on edge-a
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobeunavailable
               description: 'node/edge-a: for 5m there was no fresh probe result:
                 node-exporter could not read a textfile (value 1, which can hide a failure), the
                 probe textfile was older than 60s (value: its age in seconds), or the probe stopped
@@ -186,6 +191,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: Overlay path probe result unavailable on edge-a
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobeunavailable
               description: 'node/edge-a: for 5m there was no fresh probe result:
                 node-exporter could not read a textfile (value 1, which can hide a failure), the
                 probe textfile was older than 60s (value: its age in seconds), or the probe stopped

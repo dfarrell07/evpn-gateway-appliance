@@ -44,6 +44,7 @@ groups:
           severity: warning
         annotations:
           summary: 'DX connection {{ $labels.ConnectionId }} down'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egadxconnectiondown
           description: >-
             The minimum CloudWatch ConnectionState for {{ $labels.ConnectionId }} has been 0 in each
             5-minute period for 10m, so the connection is down or flapping. EVPN BGP can stay up over a
@@ -90,6 +91,7 @@ groups:
           severity: warning
         annotations:
           summary: 'DX VIF {{ $labels.VirtualInterfaceId }} {{ $labels.IpAddressFamily }} on {{ $labels.ConnectionId }} BGP down'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egadxvirtualinterfacebgpdown
           description: >-
             The minimum CloudWatch VirtualInterfaceBgpStatus for {{ $labels.VirtualInterfaceId }}
             ({{ $labels.IpAddressFamily }}) has been 0 in each 5-minute period for 10m, so its BGP session
@@ -134,6 +136,7 @@ groups:
           severity: warning
         annotations:
           summary: 'VPN {{ $labels.VpnId }} has a tunnel down'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egavpntunneldown
           description: >-
             The minimum CloudWatch TunnelState for {{ $labels.VpnId }} has been below 1 in each 5-minute
             period for 10m, so at least one of its tunnels is down or flapping. A VPN that uses only one

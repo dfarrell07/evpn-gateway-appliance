@@ -93,6 +93,7 @@ check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/tests/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules --
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/dashboards/*.json' 'monitoring/grafana/*.yaml' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
 	env PROMTOOL="$(PROMTOOL)" PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring/tests -p 'test_*.py'
+	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/grafana/*.yaml' | xargs -0 -r python3 monitoring/check_runbooks.py
 
 # Shell unit tests under test/unit/ (each *_test.sh runs from the repository root); promtool
 # validates the metrics they produce.

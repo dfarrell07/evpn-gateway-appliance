@@ -13,6 +13,7 @@ groups:
           severity: warning
         annotations:
           summary: 'Overlay path probe failed on {{ $labels.instance }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobefailed
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: for 5m the configured overlay probe got
             fewer than 3 echo replies within 5s. It samples one overlay path and does not
@@ -36,6 +37,7 @@ groups:
           severity: warning
         annotations:
           summary: 'Overlay path probe result unavailable on {{ $labels.instance }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnpathprobeunavailable
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: for 5m there was no fresh probe result:
             node-exporter could not read a textfile (value 1, which can hide a failure), the
