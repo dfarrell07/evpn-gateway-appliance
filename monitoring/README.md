@@ -6,12 +6,14 @@ The dashboards were import-tested, and the Grafana alerts provisioning-tested, w
 
 ## FRR and EVPN
 
-- `rules/frr-alerts.yaml`: six alerts, tested by `tests/frr-alerts_test.yaml`.
+- `rules/frr-alerts.yaml`: seven alerts, tested by `tests/frr-alerts_test.yaml`.
 - `dashboards/frr-evpn.json`: health, BGP, EVPN and BFD rows.
 
 The data comes from frr-k8s `frr-metrics`, the FRR metrics exporter, with the per-family BGP,
 EVPN and per-collector `frrk8s_scrape_success` (`bgp`, `bfd`, `evpn`) series that
-metallb/frr-k8s#528 adds. `frrk8s-metrics.txt` lists the series as of #528 at `8e2875f`;
+metallb/frr-k8s#528 adds. `EGAEvpnEsDfNotUnique` also needs the proposed `es` collector, not
+yet upstream. `frrk8s-metrics.txt` lists the series as of #528 at `8e2875f`, and the `es`
+series with their source;
 `make check-monitoring` fails if a rule or panel names any other `frrk8s_*` series. EGA
 appliances still run the legacy FRR exporter, whose `frr_*` series these files do not read, so
 these alerts and the FRR dashboard stay inactive on appliances until `frr-metrics` replaces it
@@ -58,6 +60,7 @@ To use them:
 | EGABgpEvpnNoPrefixesAccepted | warning | An Established peer accepts zero l2vpn/evpn prefixes for 5m | Nonzero, absent, or session not up |
 | EGAEvpnVniNoRemoteVteps | warning | An L2 VNI has zero remote VTEPs for 15m | Nonzero, or absent |
 | EGABfdSessionDown | critical | A BFD session is down for 30s | Up, or absent |
+| EGAEvpnEsDfNotUnique | warning | For 5m, an Ethernet segment with a member whose access interface is up has no designated forwarder (DF) or more than one, counting a VTEP that reports no role as non-DF | Exactly one DF, no member up, or zero DFs while a failing `es` collector on a VTEP that reported the segment in the last day hides its role |
 
 The appliance configures no BFD peers yet, so its BFD panels stay empty and
 `EGABfdSessionDown` stays quiet until it does. Absent collector status does not establish
@@ -65,11 +68,27 @@ collection health. BFD reports sessions even when
 its counter read fails, so `EGABfdSessionDown` still fires for a down session after 30s. BGP
 administrative shutdown also reads 0, and zero prefixes or VTEPs can be intentional. Two BFD
 sessions with the same peer and VRF, such as a single-hop and a multihop session, share one
-series identity. Prefix and MAC or ARP/ND counts are gauges of occupancy; known VTEPs do not
-prove reachability. UPDATE rates count messages, not individual route changes. The VNI table
-shows L2 and L3 counts in separate columns and leaves missing counts blank. Panels that count
-events per interval (`x - x offset $__interval`) count each event once only when the Grafana
-data source's scrape interval is a whole number of one unit, such as `15s` or `1m`.
+series identity.
+
+`EGAEvpnEsDfNotUnique` sums each VTEP's own DF role by `esi`, so the VTEPs of one segment must
+be scraped by the Prometheus that evaluates it, and each by one job only: with incomplete
+coverage, members split across Prometheus instances or one still on the legacy exporter can
+read as a false 0 or hide a second DF, and a VTEP scraped by two jobs counts twice. ESIs must also be unique across every deployment that Prometheus
+scrapes. A VTEP reports no role while
+its segment is down, in the initial DF delay at segment bring-up, in LACP bypass or not ready
+for BGP, and none while its exporter is not scraped: if the DF's exporter is down while the
+others report non-DF, Prometheus sees zero DFs. Its warning severity and 5m are proposed until
+CORENET-7502 agrees the DF policy; the rule's comment gives the timing. While a VTEP's `es`
+collector fails, a count of zero is silent for the segments that VTEP reported in the last day,
+because its role is unknown; two DFs reported by other members still alert. Without a segment observation in the last day there is no
+suppression, so the DF alert can fire after 5m; `EGAFrrCollectorFailed` fires after 10m of
+failure.
+
+Prefix and MAC or ARP/ND counts are gauges of occupancy; known VTEPs do not prove reachability.
+UPDATE rates count messages, not individual route changes. The VNI table shows L2 and L3 counts
+in separate columns and leaves missing counts blank. Panels that count events per interval
+(`x - x offset $__interval`) count each event once only when the Grafana data source's scrape
+interval is a whole number of one unit, such as `15s` or `1m`.
 
 These alerts do not detect:
 
@@ -80,7 +99,6 @@ These alerts do not detect:
   evaluation interval no longer than them: with 1m evaluation, `EGABfdSessionDown` fires at
   the first evaluation at least 30s after the first down sample;
 - a target that is down, which is left to the platform's TargetDown or `up` alerting;
-- Ethernet-segment designated-forwarder state;
 - path latency: the appliance dashboard shows probe RTT, but no alert reads it. AWS transport has
   its own section.
 

@@ -1,8 +1,9 @@
 # EGA alert runbooks
 
 [README.md](README.md) says what each alert reads and when it stays silent. For Prometheus
-alerts, `job` and `instance` say which host it is about; AWS alerts name the resource in their
-dimension labels, in the rule's region.
+alerts, `job` and `instance` say which host it is about (EGAEvpnEsDfNotUnique names a segment
+by `esi` instead); AWS alerts name the resource in their dimension labels, in the rule's
+region.
 
 Where to run the commands:
 
@@ -35,7 +36,8 @@ fails.
   - `bgp`: `show bgp vrf all json`, then `show bgp vrf VRF neighbors json` for each VRF;
   - `bfd`: `show bgp vrf all json` to list VRFs, then `show bfd vrf VRF peers json` and
     `show bfd vrf VRF peers counters json`;
-  - `evpn`: `show evpn vni json`.
+  - `evpn`: `show evpn vni json`;
+  - `es`: `show evpn es detail json`.
 - On an appliance, check the router: `systemctl status frr-container.service` (bootc) and
   `podman logs --tail 50 frr`.
 - Read the exporter's log for the read or parse error.
@@ -120,6 +122,34 @@ appliance's FRR configuration has no BFD peers, so this alert comes from other f
 - If BGP stays up while BFD is down, compare the BFD timers and profile on both ends.
 
 Peer and VRF can be the same for distinct sessions; confirm which session from the output.
+
+## EGAEvpnEsDfNotUnique
+
+An EVPN multihoming Ethernet segment (the `esi` label) with at least one member whose access
+interface is up (`frrk8s_evpn_es_oper_up == 1`; the exporter's own reachability is `up`) has had
+no designated forwarder (DF) or more than one for 5m. It is a warning until CORENET-7502 agrees
+the DF policy. With an active election and complete metrics, no DF means no VTEP of the segment
+forwards broadcast, unknown-unicast and multicast (BUM) traffic, such as ARP, from the overlay
+to the multihomed host, and two DFs duplicate it. The
+alert has no `instance`: find the segment's VTEPs, including one whose exporter has stopped,
+with `last_over_time(frrk8s_evpn_es_oper_up{esi="ESI"}[1d])`.
+
+- Check that every VTEP of the segment is scraped (`up`): a DF whose exporter is down counts as
+  zero.
+- On each VTEP, `show evpn es ESI` for its state, DF status, DF delay and the peer VTEPs it
+  knows with their DF preference. The exporter reports no role while the segment is down, in
+  its initial DF delay, not ready for BGP or in LACP bypass, even though this command still
+  prints a DF status; the members that are up must still elect one DF. Zebra still forwards BUM
+  traffic when not ready for BGP or in bypass.
+- If a VTEP lists no peer VTEPs or no DF preference for them, it has not imported their
+  type-4 routes: `show bgp l2vpn evpn route type es` on each VTEP, then the BGP sessions that
+  carry them.
+- If each VTEP lists the others: FRR elects the highest `evpn mh es-df-pref` on the access
+  interface, then the lowest originator IP, and goes non-DF when a peer advertises a DF
+  algorithm other than `preference`. Compare those on every VTEP.
+
+A DF change during failover is expected; the alert waits 5m for it, longer than the default
+180s BGP hold time, unless BGP graceful restart keeps the lost DF's routes.
 
 ## EGAEvpnPathProbeFailed
 

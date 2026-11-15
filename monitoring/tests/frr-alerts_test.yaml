@@ -296,3 +296,211 @@ tests:
       - eval_time: 20m
         alertname: EGABgpEvpnNoPrefixesAccepted
         exp_alerts: []
+  - name: 'DF count per Ethernet segment: handovers stay quiet, no DF or two DFs fire at 5m'
+    input_series:
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="es"}
+        values: 1+0x20
+      - series: frrk8s_scrape_success{job="frr",instance="edge-b",collector="es"}
+        values: 1+0x20
+      # Another collector failing on a member VTEP does not silence the DF alert.
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="bgp"}
+        values: 0+0x20
+      # Healthy: one DF.
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 0+0x20
+      # Quiet handover: one scrape with two DFs, then edge-a's observations for this segment
+      # go stale and the survivor reports non-DF for 4m before taking over.
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:02"}
+        values: 1+0x5 stale
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:02"}
+        values: 1+0x5 stale
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:02"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:02"}
+        values: 0 0 0 0 0 1 0 0 0 0 1+0x10
+      # Both members down: no oper-up member, so link and host alerting own it.
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:03"}
+        values: 0+0x20
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:03"}
+        values: 0+0x20
+      # ESI ending :04: both members up and no role until edge-a becomes DF at 2m; stays quiet.
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:04"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:04"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:04"}
+        values: _ _ 1+0x18
+      # ESI ending :05: both members up and neither reports a role; fires at 5m.
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:05"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:05"}
+        values: 1+0x20
+      # ESI ending :07: edge-a up, edge-b down, and no role; fires at 5m.
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:07"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:07"}
+        values: 0+0x20
+      # Two DFs, for example when the members do not see each other's type-4 routes.
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x20
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts:
+          - exp_labels:
+              esi: '03:00:00:00:00:01:00:00:00:05'
+              severity: warning
+              netobserv: 'true'
+            exp_annotations:
+              summary: Ethernet segment 03:00:00:00:00:01:00:00:00:05 has 0 designated forwarders
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnesdfnotunique
+              netobserv_io_network_health: '{}'
+              description: >-
+                Ethernet segment 03:00:00:00:00:01:00:00:00:05 has had no DF or more than one for 5m across the VTEPs that
+                report it up; it is now 0. A VTEP that is down, holds no election result or is not scraped
+                counts as non-DF; a failing es collector on a VTEP that reported the segment in the last day silences
+                a count of zero.
+          - &df_2_es6
+            exp_labels:
+              esi: '03:00:00:00:00:01:00:00:00:06'
+              severity: warning
+              netobserv: 'true'
+            exp_annotations:
+              summary: Ethernet segment 03:00:00:00:00:01:00:00:00:06 has 2 designated forwarders
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnesdfnotunique
+              netobserv_io_network_health: '{}'
+              description: >-
+                Ethernet segment 03:00:00:00:00:01:00:00:00:06 has had no DF or more than one for 5m across the VTEPs that
+                report it up; it is now 2. A VTEP that is down, holds no election result or is not scraped
+                counts as non-DF; a failing es collector on a VTEP that reported the segment in the last day silences
+                a count of zero.
+          - exp_labels:
+              esi: '03:00:00:00:00:01:00:00:00:07'
+              severity: warning
+              netobserv: 'true'
+            exp_annotations:
+              summary: Ethernet segment 03:00:00:00:00:01:00:00:00:07 has 0 designated forwarders
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnesdfnotunique
+              netobserv_io_network_health: '{}'
+              description: >-
+                Ethernet segment 03:00:00:00:00:01:00:00:00:07 has had no DF or more than one for 5m across the VTEPs that
+                report it up; it is now 0. A VTEP that is down, holds no election result or is not scraped
+                counts as non-DF; a failing es collector on a VTEP that reported the segment in the last day silences
+                a count of zero.
+    promql_expr_test:
+      # The healthy segment, the handover, both members down and the 2m election never fire.
+      - expr: max_over_time(ALERTS{alertname="EGAEvpnEsDfNotUnique",alertstate="firing",esi=~".*:0[1234]"}[20m])
+        eval_time: 20m
+        exp_samples: []
+  - name: A failing es collector silences the DF alert for its segments until it recovers
+    input_series:
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="es"}
+        values: 1+0x20
+      - series: frrk8s_scrape_success{job="frr",instance="edge-b",collector="es"}
+        values: 1 0+0x8 1+0x10
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1 stale
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1+0x20
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 0+0x20
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts:
+          - &df_0_es1
+            exp_labels:
+              esi: '03:00:00:00:00:01:00:00:00:01'
+              severity: warning
+              netobserv: 'true'
+            exp_annotations:
+              summary: Ethernet segment 03:00:00:00:00:01:00:00:00:01 has 0 designated forwarders
+              runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnesdfnotunique
+              netobserv_io_network_health: '{}'
+              description: >-
+                Ethernet segment 03:00:00:00:00:01:00:00:00:01 has had no DF or more than one for 5m across the VTEPs that
+                report it up; it is now 0. A VTEP that is down, holds no election result or is not scraped
+                counts as non-DF; a failing es collector on a VTEP that reported the segment in the last day silences
+                a count of zero.
+  - name: A failing es collector on one member does not hide two DFs reported by the others
+    input_series:
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="es"}
+        values: 1+0x10
+      - series: frrk8s_scrape_success{job="frr",instance="edge-b",collector="es"}
+        values: 1+0x10
+      - series: frrk8s_scrape_success{job="frr",instance="edge-c",collector="es"}
+        values: 1 0+0x9
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-c",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1 stale
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x10
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x10
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x10
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:06"}
+        values: 1+0x10
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts:
+          - *df_2_es6
+  - name: A failing es collector does not silence segments its VTEP never reported
+    input_series:
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="es"}
+        values: 1+0x10
+      - series: frrk8s_scrape_success{job="frr",instance="edge-c",collector="es"}
+        values: 1 0+0x9
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-c",esi="03:00:00:00:00:02:00:00:00:02"}
+        values: 1 stale
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1+0x10
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 0+0x10
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts:
+          - *df_0_es1
+  - name: A failing es collector silences its segments for a day, then the DF count alerts
+    interval: 4m
+    input_series:
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="es"}
+        values: 1+0x400
+      - series: frrk8s_scrape_success{job="frr",instance="edge-b",collector="es"}
+        values: 1 0+0x399
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-b",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1 stale
+      - series: frrk8s_evpn_es_oper_up{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 1+0x400
+      - series: frrk8s_evpn_es_df{job="frr",instance="edge-a",esi="03:00:00:00:00:01:00:00:00:01"}
+        values: 0+0x400
+    alert_rule_test:
+      - eval_time: 23h
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts: []
+      - eval_time: 25h
+        alertname: EGAEvpnEsDfNotUnique
+        exp_alerts:
+          - *df_0_es1
