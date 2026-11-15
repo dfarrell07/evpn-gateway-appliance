@@ -56,12 +56,42 @@ These alerts do not detect:
 
 These signals do not establish forwarding health.
 
+## Appliance, VLANs and tunnels
+
+`dashboards/appliance.json` shows node-exporter scrape status; the operstate, carrier and
+carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; and the
+traffic, drops and errors of the non-bridge ones (import tested with Grafana 11.6.0).
+
+The data comes from node-exporter. The bootc image runs it on `127.0.0.1:9100`, so scraping it
+from another host needs the access path from CORENET-7704. On other hosts `evpn_monitoring`
+runs it in a container without a listen address, so it listens on every interface (see the
+[collection's known limitations](../ansible/README.md#known-limitations-tracked-not-all-fixed-here)).
+
+To use it:
+
+1. Scrape node-exporter with any job name. The dashboard lists the jobs and instances that
+   report a `vxlanN` or `wg0` device, so it does not list an appliance with no stretch and no
+   tunnel, or a target that was down for the whole time range.
+2. If you also render the node-exporter mixin for host alerts, set its `nodeExporterSelector`
+   (`job="node"` upstream, `job="node-exporter"` in kube-prometheus) to match that job.
+   OpenShift's cluster monitoring fixes the selector, so appliances it scrapes in another job
+   get no mixin host alerts.
+3. Import `dashboards/appliance.json` and select the Prometheus data source, jobs and
+   instances.
+
+The carrier-changes panel counts per interval, as described under FRR and EVPN. VXLAN, WireGuard
+and `br-vniN` devices report carrier whenever they are administratively up, so
+their carrier does not show path loss; trunk loss shows on `trunk-br` and `trunk.N`. Traffic
+leaves out the bridges: `br-vniN` counters miss bridged frames, and `trunk.N` already counts
+the stretch traffic that `trunk-br` delivers.
+
 ## Checks
 
-Run `make check-monitoring` from the repository root. It lints and tests the rules, checks every
-dashboard's data source, job/instance scoping and PromQL, checks `frrk8s_*` names against
-`frrk8s-metrics.txt`, and runs the checker's unit tests. Host runs (`USE_IMAGE=0`) need
-`promtool` 3.5.0 on PATH.
+Run `make check-monitoring` from the repository root. It lints and tests the rules; checks each
+dashboard's data source, job/instance scoping and PromQL; checks `frrk8s_*` names against
+`frrk8s-metrics.txt`; and runs the checker's unit tests, which include matching the appliance
+dashboard's device filters to the devices the on-prem role creates. Host runs (`USE_IMAGE=0`)
+need `promtool` 3.5.0 on PATH.
 
 The `e2e` and `molecule` presubmits skip pull requests that change only `monitoring/`
 (openshift/release#88830), because nothing in the appliance image, the collection or those
