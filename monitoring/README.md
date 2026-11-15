@@ -42,7 +42,7 @@ The VNI table shows L2 and L3 counts in separate columns, keeping missing counts
 
 Absent or vanished objects and collectors go undetected: that needs an expected
 inventory, which this package does not have. Target down is left
-to the platform's TargetDown/`up` alerting. DF/ES and transport have no
+to the platform's TargetDown/`up` alerting. DF/ES has no
 source in this package. These FRR signals do not establish forwarding health.
 
 `rules/path-probe-alerts.yaml` (tested by `rules/path-probe-alerts_test.yaml`; add it to
@@ -59,4 +59,34 @@ textfile directory, which keeps `EGAEvpnPathProbeUnavailable` quiet on that host
 | EGAEvpnPathProbeUnavailable | A probe file older than 60s, a textfile read error on a host that reported the probe in the last day, or, while node-exporter is scraped, no probe series on a host that reported one in the last day and has no `ega_path_probe_disabled` marker, for 5m | A fresh, readable probe file; node-exporter not scraped; the probe removed by the role; or no probe series in the last day |
 
 Run `make check-monitoring` from the repository root.
-Host runs (`USE_IMAGE=0`) need promtool (tested with 3.5.0) on PATH.
+Host runs (`USE_IMAGE=0`) need promtool (tested with 3.5.0) on PATH and PyYAML.
+
+## AWS transport
+
+Import `dashboards/aws-transport.json` (tested with Grafana 11.6.0) and select a CloudWatch
+data source, region and resource IDs in its variables.
+Set each `datasourceUid: cloudwatch` in `grafana/aws-transport-alerts.yaml` to that
+data source's UID, or provision the data source with `uid: cloudwatch`, and change
+`region: default` if needed. The alerts cover every connection, virtual interface and VPN
+in that region; replace a `['*']` with a list of IDs to limit them. Copy the file to
+Grafana's `provisioning/alerting` directory and restart Grafana. The data source needs read
+access to CloudWatch metrics.
+
+| Alert | Reads | Silent when |
+| --- | --- | --- |
+| EGADxConnectionDown | Connection state below 1 for 10m | Up |
+| EGADxVirtualInterfaceBgpDown | Virtual interface BGP status below 1 for 10m | Up |
+| EGAVpnTunnelDown | VPN tunnel state below 1 (a tunnel down) for 10m | All tunnels up |
+
+The alerts read 5-minute periods every 5 minutes and wait `for: 10m`, so one fires about
+15-20 minutes after the failure. A VPN that uses one of its two tunnels keeps EGAVpnTunnelDown firing; change its
+`statistic: Minimum` to `Maximum` and `$B < 1` to `$B == 0` to alert only when every tunnel
+is down. The alerts link to the dashboard's panels, so keep its UID when importing. With no CloudWatch data an
+alert keeps its last state, so a region without these resources stays quiet. The same rule keeps an
+alert firing when its data stops, for example a VPN deleted while down; resolve it by
+pausing the rule. Grafana 11.6 also
+treats a failed read, such as expired credentials, as no data, so the failure is not reported;
+watch the data source separately. Grafana sends these alerts
+through its own notification policies; to route them with the Prometheus alerts, add the
+Alertmanager as a data source with Receive Grafana Alerts on, and enable it under
+Alerting > Settings.

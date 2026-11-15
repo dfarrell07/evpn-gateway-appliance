@@ -84,13 +84,13 @@ check-dockerfiles:
 	git ls-files -z -c -o --exclude-standard -- ':(glob)**/Dockerfile*' ':(glob)**/Containerfile*' ':(top,exclude,literal)Dockerfile.ci' | xargs -0 -r env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --
 
 # Monitoring rules and unit tests with pinned promtool (Dockerfile.ci), plus dashboard
-# datasource, target scope and PromQL checks.
+# datasource, target scope and PromQL checks and Grafana alert panel links.
 PROMTOOL ?= promtool
 .PHONY: check-monitoring
 check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' ':(exclude)monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) check rules --lint=all --lint-fatal
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules
-	git ls-files -z -c -o --exclude-standard -- 'monitoring/dashboards/*.json' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
+	git ls-files -z -c -o --exclude-standard -- 'monitoring/dashboards/*.json' 'monitoring/grafana/*.yaml' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
 
 # Unit tests for scripts the collection installs; promtool validates their metrics output.
 .PHONY: check-scripts
