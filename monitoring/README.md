@@ -136,14 +136,19 @@ Grafana sends these alerts through its own notification policies. To route them 
 Prometheus alerts, add the Alertmanager as a data source with Receive Grafana Alerts on and
 enable it under Alerting > Settings.
 
+## Runbooks
+
+Every alert's `runbook_url` links to its section of [runbooks.md](runbooks.md), which says what the
+alert means, what to check on the appliance or in AWS, and what to do.
+
 ## Checks
 
 Run `make check-monitoring` from the repository root. It lints and tests the rules; checks each
 dashboard's data source, job/instance scoping and PromQL or CloudWatch query fields; checks
-each Grafana alert rule against the panel it links to; checks `frrk8s_*` names against
-`frrk8s-metrics.txt`; and runs the checker's unit tests, which include matching the appliance
-dashboard's device filters to the devices the on-prem role creates. Host runs (`USE_IMAGE=0`)
-need `promtool` 3.5.0 on PATH and PyYAML.
+each Grafana alert rule against the panel it links to; checks that every alert has a runbook
+section; checks `frrk8s_*` names against `frrk8s-metrics.txt`; and runs the checkers' unit
+tests, which include matching the appliance dashboard's device filters to the devices the
+on-prem role creates. Host runs (`USE_IMAGE=0`) need `promtool` 3.5.0 on PATH and PyYAML.
 
 Once openshift/release#88830 merges, the `e2e` and `molecule` presubmits skip pull requests
 that change only `monitoring/`, because nothing in the appliance image, the collection or those

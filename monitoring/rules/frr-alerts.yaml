@@ -8,6 +8,7 @@ groups:
           severity: warning
         annotations:
           summary: 'FRR {{ $labels.collector }} collector failed on {{ $labels.instance }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egafrrcollectorfailed
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: {{ $labels.collector }} reads or parses failed for 10m;
             successful collection alone does not prove expected-object coverage or forwarding health.
@@ -20,6 +21,7 @@ groups:
           severity: warning
         annotations:
           summary: 'FRR metrics gather errors on {{ $labels.instance }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egafrrmetricsgathererrors
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: the exporter failed to gather or encode some metrics
             (cause {{ $labels.cause }}), for example duplicate BFD series, so series can be missing while up and
@@ -32,6 +34,7 @@ groups:
           severity: critical
         annotations:
           summary: 'BGP session down on {{ $labels.instance }} for {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgpsessiondown
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
             has not been Established for 5m; administrative shutdown also reads 0.
@@ -44,6 +47,7 @@ groups:
           severity: warning
         annotations:
           summary: 'No accepted EVPN prefixes on {{ $labels.instance }} from {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgpevpnnoprefixesaccepted
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: Established peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
             reports zero accepted l2vpn/evpn prefixes for 15m (FRR's post-policy count); routes rejected by inbound
@@ -56,6 +60,7 @@ groups:
           severity: warning
         annotations:
           summary: 'No remote VTEPs on {{ $labels.instance }} for VNI {{ $labels.vni }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnvninoremotevteps
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: L2 VNI {{ $labels.vni }} in VRF {{ $labels.vrf }}
             has zero known remote VTEPs for 15m; zero may be intentional and this count is not reachability.
@@ -67,6 +72,7 @@ groups:
           severity: warning
         annotations:
           summary: 'BFD session down on {{ $labels.instance }} for {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabfdsessiondown
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
             reports BFD down for 2m; peer/VRF identity can collide across distinct BFD sessions.
