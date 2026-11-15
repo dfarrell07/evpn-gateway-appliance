@@ -76,3 +76,27 @@ groups:
           description: >-
             {{ $labels.job }}/{{ $labels.instance }}: peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
             reports BFD down for 2m; peer/VRF identity can collide across distinct BFD sessions.
+      # Severity is warning until CORENET-7502 agrees the DF policy, including this for:
+      # duration. 5m covers a takeover without BFD: FRR's default BGP hold time of 180s
+      # (`frr defaults traditional`; frr-k8s also defaults to 180s) before the survivor drops
+      # the dead DF's type-4 route and re-elects, plus up to 1m scrape and 1m evaluation
+      # interval. It assumes BGP graceful restart is off: with it, the dead DF's routes can be
+      # retained longer. A segment with no oper-up member is left to link and host alerting.
+      # Change the duration here, in the description and in the tests together.
+      - alert: EGAEvpnEsDfNotUnique
+        expr: >-
+          (
+            sum by (esi) (frrk8s_evpn_es_df)
+            or 0 * count by (esi) (frrk8s_evpn_es_oper_up == 1)
+          ) != 1
+          unless on() (frrk8s_scrape_success{collector="es"} == 0)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Ethernet segment {{ $labels.esi }} has {{ $value }} designated forwarders'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnesdfnotunique
+          description: >-
+            Ethernet segment {{ $labels.esi }} has had {{ $value }} designated forwarders, not exactly one,
+            for 5m across the VTEPs that report it up. A VTEP that is down, holds no election result or is not
+            scraped counts as zero; any failing es collector silences this alert.

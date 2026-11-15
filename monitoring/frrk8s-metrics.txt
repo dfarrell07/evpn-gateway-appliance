@@ -32,3 +32,9 @@ frrk8s_evpn_l3_nexthops
 frrk8s_evpn_l3_router_macs
 frrk8s_evpn_vni_info
 frrk8s_scrape_success
+# Not in #528: the Ethernet segment collector from frr-k8s branch evpn-es-metrics at 8ef4bea
+# (https://github.com/dfarrell07/frr-k8s/tree/evpn-es-metrics, cmd/metrics/collector/es.go), a
+# proposed follow-up to metallb/frr-k8s#528 that is not yet an upstream PR (the scope issue is
+# drafted). Read only by EGAEvpnEsDfNotUnique; update or remove these when it changes or merges.
+frrk8s_evpn_es_df
+frrk8s_evpn_es_oper_up

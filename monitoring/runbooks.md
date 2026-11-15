@@ -27,7 +27,8 @@ collector's series are missing or stale.
   - `bgp`: `show bgp vrf all json`, then `show bgp vrf VRF neighbors json` for each VRF;
   - `bfd`: `show bgp vrf all json` to list VRFs, then `show bfd vrf VRF peers json` and
     `show bfd vrf VRF peers counters json`;
-  - `evpn`: `show evpn vni json`.
+  - `evpn`: `show evpn vni json`;
+  - `es`: `show evpn es detail json`.
 - On an appliance, check the router: `systemctl status frr-container.service` (bootc) and
   `podman logs --tail 50 frr`.
 - Read the exporter's log for the read or parse error.
@@ -107,6 +108,31 @@ appliance's FRR configuration has no BFD peers, so this alert comes from other f
 - If BGP stays up while BFD is down, compare the BFD timers and profile on both ends.
 
 Peer and VRF can be the same for distinct sessions; confirm which session from the output.
+
+## EGAEvpnEsDfNotUnique
+
+An EVPN multihoming Ethernet segment (the `esi` label) with at least one oper-up member has had
+no designated forwarder (DF) or more than one for 5m. It is a warning until CORENET-7502 agrees
+the DF policy. With none, no VTEP of the segment forwards broadcast, unknown-unicast and
+multicast (BUM) traffic, such as ARP, to the multihomed host; with two, the host gets each BUM
+frame twice. The alert has no `instance`: find the segment's VTEPs with
+`frrk8s_evpn_es_oper_up{esi="ESI"}`.
+
+- Check that every VTEP of the segment is scraped (`up`): a DF whose exporter is down counts as
+  zero.
+- On each VTEP, `show evpn es ESI` for its state, DF status, DF delay and the peer VTEPs it
+  knows with their DF preference. A VTEP whose segment is down reports no role; the members
+  that are up must still elect one DF. "Ready for BGP: no" or "LACP bypass: on" also means no
+  role is reported, although zebra still forwards BUM traffic in those states.
+- If a VTEP lists no peer VTEPs or no DF preference for them, it has not imported their
+  type-4 routes: `show bgp l2vpn evpn route type es` on each VTEP, then the BGP sessions that
+  carry them.
+- If each VTEP lists the others: FRR elects the highest `evpn mh es-df-pref` on the access
+  interface, then the lowest originator IP, and goes non-DF when a peer advertises a DF
+  algorithm other than `preference`. Compare those on every VTEP.
+
+A DF change during failover is expected; the alert waits 5m for it, longer than the default
+180s BGP hold time, unless BGP graceful restart keeps the lost DF's routes.
 
 ## EGAEvpnPathProbeFailed
 
