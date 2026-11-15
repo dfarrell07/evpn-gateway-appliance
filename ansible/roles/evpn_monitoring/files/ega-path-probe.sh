@@ -9,7 +9,7 @@ if reply=$(ping -n -q -c 3 -w 5 "$target"); then
 	success=1
 	rtt=$(printf '%s\n' "$reply" | awk -F/ '/^rtt / {printf "%.9f", $5 / 1000}')
 fi
-output=/var/lib/node_exporter/textfile/ega-path-probe.prom
+output=${EGA_PATH_PROBE_OUTPUT:-/var/lib/node_exporter/textfile/ega-path-probe.prom}
 tmp=$(mktemp "${output}.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
