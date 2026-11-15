@@ -6,6 +6,11 @@
   hosts: onprem_appliances
   become: true
   tasks:
+    - name: Stop and mask frr-metrics
+      ansible.builtin.include_role:
+        name: evpn_monitoring
+        tasks_from: frr_metrics_absent
+
     - name: Remove the overlay path probe
       ansible.builtin.include_role:
         name: evpn_monitoring
@@ -20,6 +25,11 @@
   hosts: cloud_workload
   become: true
   tasks:
+    - name: Stop and mask frr-metrics
+      ansible.builtin.include_role:
+        name: evpn_monitoring
+        tasks_from: frr_metrics_absent
+
     - name: Stop and remove FRR container
       containers.podman.podman_container:
         name: frr
@@ -43,6 +53,11 @@
   hosts: cloud_infra
   become: true
   tasks:
+    - name: Stop and mask frr-metrics
+      ansible.builtin.include_role:
+        name: evpn_monitoring
+        tasks_from: frr_metrics_absent
+
     - name: Stop and remove FRR container
       containers.podman.podman_container:
         name: frr

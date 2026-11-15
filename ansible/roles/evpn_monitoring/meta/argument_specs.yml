@@ -1,10 +1,15 @@
 ---
 argument_specs:
   main:
-    short_description: Deploy frr_exporter, node_exporter and an optional overlay path probe for Prometheus scraping.
+    short_description: Run frr-metrics, node_exporter and an optional overlay path probe for Prometheus scraping.
     description:
-      - Starts the bootc image's baked-in systemd units if present, falling
-        back to running the exporters directly via Podman otherwise.
+      - Runs frr-metrics.service, which execs the router image's /frr-metrics in the frr
+        container and serves HTTPS with a self-signed certificate on 127.0.0.1:9141. The bootc
+        image ships the unit; other hosts get it from this role and need frr_image to be an
+        frr-rhel9 build whose frr-metrics has --disable-metrics-auth. Removes the legacy
+        frr_exporter container.
+      - Starts the bootc image's node-exporter unit if present, falling back to running
+        node_exporter directly via Podman otherwise.
       - Optionally installs ega-path-probe.timer, which writes ega_path_probe_* metrics to
         node_exporter's textfile directory (see evpn_monitoring_path_probe_target).
     options:
@@ -16,15 +21,12 @@ argument_specs:
           frr_exporter:
             type: bool
             default: false
-            description: Deploy the FRR exporter.
+            description: >-
+              Run frr-metrics.service. When false, the role stops and masks it.
           node_exporter:
             type: bool
             default: false
             description: Deploy the node exporter.
-      evpn_monitoring_frr_exporter_image:
-        type: str
-        default: docker.io/tynany/frr_exporter:v1.12.0
-        description: Container image for the FRR exporter. Pin by tag or digest.
       evpn_monitoring_node_exporter_image:
         type: str
         default: quay.io/prometheus/node-exporter:v1.9.1

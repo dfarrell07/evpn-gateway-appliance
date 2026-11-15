@@ -2,7 +2,8 @@
 
 Part of [openshift/evpn-gateway-appliance](https://github.com/openshift/evpn-gateway-appliance).
 
-The image embeds FRR and node-exporter. It does not install the frr RPM.
+The image embeds FRR and node-exporter. It does not install the frr RPM. `frr-metrics.service`
+runs the FRR image's `/frr-metrics` inside the router container.
 
 ## Local smoke build (optional)
 

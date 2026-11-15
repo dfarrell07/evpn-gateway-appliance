@@ -61,7 +61,10 @@ stretches:
 
 # ── Monitoring ────────────────────────────────────────────────
 monitoring:
-  frr_exporter: true
+  # frr-metrics from the router image. Off until the router images ship an frr-metrics with
+  # --disable-metrics-auth: the upstream frr_image below has none, and deploy fails on it. See
+  # the evpn_monitoring README.
+  frr_exporter: false
   node_exporter: true
 
 # ── FRR container image ──────────────────────────────────────

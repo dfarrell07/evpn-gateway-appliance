@@ -1,11 +1,21 @@
 [Unit]
-Description=FRR metrics
-After=frr.service
+Description=FRR metrics exporter in the FRR container
+# frr-metrics ships in the FRR image. Running it in the router container gives it the FRR
+# sockets and vtysh configuration without its own mounts or labels.
+BindsTo=frr-container.service
+After=frr-container.service
 
 [Service]
 Restart=always
 RestartSec=10
-ExecStart=/usr/bin/frr-metrics
+# The exporter lives in the router container's cgroup, so a client killed without ExecStop
+# (SIGKILL, OOM, stop timeout) leaves it holding port 9141. Stop any leftover first.
+ExecStartPre=-/usr/bin/podman exec frr pkill -x frr-metrics
+ExecStart=/usr/bin/podman exec frr /frr-metrics --disable-metrics-auth --metrics-bind-address=127.0.0.1
+# podman exec does not pass signals to the process it starts, so stop it in the container.
+ExecStop=-/usr/bin/podman exec frr pkill -x frr-metrics
+# podman exec reports the exporter's SIGTERM as exit status 143.
+SuccessExitStatus=143
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=frr-container.service

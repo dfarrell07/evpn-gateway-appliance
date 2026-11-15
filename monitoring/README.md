@@ -14,8 +14,9 @@ The data comes from frr-k8s `frr-metrics`, the FRR metrics exporter, with the pe
 EVPN and per-collector `frrk8s_scrape_success` (`bgp`, `bfd`, `evpn`) series that
 metallb/frr-k8s#528 adds. `frrk8s-metrics.txt` lists the series as of #528 at `9a69b64`;
 `make check-monitoring` fails if a rule or panel names any other `frrk8s_*` series. EGA
-appliances still run the legacy FRR exporter, whose `frr_*` series these files do not read,
-until `frr-metrics` replaces it ([metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)).
+appliances run it as `frr-metrics.service` inside the router container, serving HTTPS with a
+self-signed certificate on `127.0.0.1:9141`; scraping it from another host needs an access
+path, which CORENET-7704 owns.
 
 To use them:
 

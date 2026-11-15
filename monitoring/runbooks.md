@@ -10,9 +10,8 @@ Where to run the commands:
   container is named `frr` on bootc and other hosts. On an OpenShift node running frr-k8s,
   `oc -n NAMESPACE exec POD -c frr -- vtysh -c '...'`, where `POD` is the node's frr-k8s pod and
   `NAMESPACE` is frr-k8s's namespace (`openshift-frr-k8s` on OpenShift).
-- **The `frr-metrics` exporter**: the FRR alerts read its series. On an appliance the plan
-  proposes running it as `frr-metrics.service` once it replaces the legacy exporter (see the
-  [metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)); read its log with
+- **The `frr-metrics` exporter**: the FRR alerts read its series. On an appliance it runs as
+  `frr-metrics.service` inside the router container; read its log with
   `journalctl -u frr-metrics.service`. In frr-k8s it is the pod's `frr-metrics` container:
   `oc -n NAMESPACE logs POD -c frr-metrics`.
 - **Probe and node checks**: on the appliance as root.
