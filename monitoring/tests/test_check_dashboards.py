@@ -41,13 +41,13 @@ class CheckDashboardsTest(unittest.TestCase):
         return str(error.exception)
 
     def test_valid_dashboard_passes(self):
-        self.assertEqual(self.check(DASHBOARD), "1 queries OK")
+        self.assertEqual(self.check(DASHBOARD)[0], "1 panels, 1 PromQL queries OK")
 
     def test_label_value_that_looks_like_a_series_passes(self):
         dashboard = copy.deepcopy(DASHBOARD)
         dashboard["panels"][0]["targets"][0]["expr"] = (
             'frrk8s_bgp_session_up{job=~"$job", instance=~"$instance", peer="frrk8s_x up"}')
-        self.assertEqual(self.check(dashboard), "1 queries OK")
+        self.assertEqual(self.check(dashboard)[0], "1 panels, 1 PromQL queries OK")
 
     def test_unscoped_selector_fails(self):
         self.assertIn("lacks", self.broken("frrk8s_bgp_session_up"))
@@ -150,7 +150,7 @@ class CheckDashboardsTest(unittest.TestCase):
         dashboard = copy.deepcopy(DASHBOARD)
         dashboard["panels"][0]["targets"][0]["expr"] = (
             'frrk8s_bgp_session_up{job=~"$job", instance=~"$instance", peer=`up frrk8s_x`}')
-        self.assertEqual(self.check(dashboard), "1 queries OK")
+        self.assertEqual(self.check(dashboard)[0], "1 panels, 1 PromQL queries OK")
 
     def test_missing_expr_fails(self):
         self.assertIn("no expr", self.broken(""))
@@ -197,6 +197,102 @@ class ApplianceDashboardTest(unittest.TestCase):
         for regex in self.regexes:
             matched = {d for d in self.devices if re.fullmatch(regex, d)}
             self.assertIn(matched, expected.values(), f"{regex} matches {sorted(matched)}")
+
+
+class GrafanaAlertsTest(unittest.TestCase):
+    """Grafana alert rules must be consistent and match the dashboard panels they link to."""
+
+    def setUp(self):
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        _, uid, by_id = check_dashboards.check_dashboard(os.path.join(root, "dashboards", "aws-transport.json"))
+        self.dashboards = {uid: by_id}
+        with open(os.path.join(root, "grafana", "aws-transport-alerts.yaml")) as f:
+            self.rule = check_dashboards.yaml.safe_load(f)["groups"][0]["rules"][0]
+
+    def broken(self, change):
+        rule = copy.deepcopy(self.rule)
+        change(rule)
+        with self.assertRaises(ValueError) as error:
+            check_dashboards.check_alert_rule(rule, self.dashboards)
+        return str(error.exception)
+
+    def test_shipped_rule_passes(self):
+        check_dashboards.check_alert_rule(self.rule, self.dashboards)
+
+    def test_missing_panel_fails(self):
+        self.assertIn("no panel", self.broken(lambda r: r.update(panelId=99)))
+
+    def test_bad_state_fails(self):
+        self.assertIn("noDataState", self.broken(lambda r: r.update(noDataState="Bogus")))
+
+    def test_reference_to_missing_query_fails(self):
+        self.assertIn("not an earlier query", self.broken(lambda r: r["data"][1]["model"].update(expression="Z")))
+        self.assertIn("not an earlier query", self.broken(lambda r: r["data"][2]["model"].update(expression="$Z < 1")))
+
+    def test_query_that_differs_from_panel_fails(self):
+        self.assertIn("differs", self.broken(lambda r: r["data"][0]["model"].update(metricName="ConnectonState")))
+
+    def test_short_time_range_fails(self):
+        self.assertIn("two", self.broken(lambda r: r["data"][0]["relativeTimeRange"].update({"from": 300})))
+
+    def test_missing_key_fails(self):
+        self.assertIn("no dashboardUid", self.broken(lambda r: r.pop("dashboardUid")))
+
+    def test_bad_error_state_fails(self):
+        self.assertIn("execErrState", self.broken(lambda r: r.update(execErrState="Bogus")))
+
+    def test_statistic_period_or_dimension_mismatch_fails(self):
+        self.assertIn("differs", self.broken(lambda r: r["data"][0]["model"].update(statistic="Maximum")))
+        self.assertIn("differs", self.broken(lambda r: r["data"][0]["model"].update(period="60")))
+        self.assertIn("differs", self.broken(lambda r: r["data"][0]["model"]["dimensions"].update(VpnId=["*"])))
+        self.assertIn("differs", self.broken(lambda r: r["data"][0]["model"].update(matchExact=True)))
+
+    def test_non_cloudwatch_query_fails(self):
+        def change(rule):
+            rule["data"][0]["model"] = {"refId": "A", "expr": "up"}
+        self.assertIn("CloudWatch", self.broken(change))
+
+    def test_unknown_condition_fails(self):
+        self.assertIn("condition", self.broken(lambda r: r.update(condition="X")))
+
+    def test_condition_on_raw_query_fails(self):
+        self.assertIn("expression query", self.broken(lambda r: r.update(condition="A")))
+
+    def test_non_numeric_period_fails(self):
+        self.assertIn("period in seconds", self.broken(lambda r: r["data"][0]["model"].update(period="auto")))
+
+    def test_file_without_groups_passes(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml") as f:
+            f.write("apiVersion: 1\ncontactPoints: []\n")
+            f.flush()
+            self.assertEqual(check_dashboards.check_alerts(f.name, self.dashboards), "0 alert rules OK")
+
+
+class CloudWatchDashboardTest(unittest.TestCase):
+    def check_broken(self, change):
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        with open(os.path.join(root, "dashboards", "aws-transport.json")) as f:
+            dashboard = json.load(f)
+        change(dashboard)
+        with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
+            json.dump(dashboard, f)
+            f.flush()
+            with self.assertRaises(ValueError) as error:
+                check_dashboards.check_dashboard(f.name)
+        return str(error.exception)
+
+    def test_target_without_metric_fails(self):
+        self.assertIn("no metricName", self.check_broken(lambda d: d["panels"][0]["targets"][0].pop("metricName")))
+
+    def test_missing_datasource_variable_fails(self):
+        def change(d):
+            d["templating"]["list"] = [v for v in d["templating"]["list"] if v["name"] != "datasource"]
+        self.assertIn("datasource variable", self.check_broken(change))
+
+    def test_variable_on_other_datasource_fails(self):
+        def change(d):
+            d["templating"]["list"][-1]["datasource"] = {"type": "cloudwatch", "uid": "other"}
+        self.assertIn("query variables", self.check_broken(change))
 
 
 if __name__ == "__main__":

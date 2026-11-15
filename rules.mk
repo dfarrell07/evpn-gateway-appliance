@@ -84,14 +84,14 @@ check-dockerfiles:
 	git ls-files -z -c -o --exclude-standard -- ':(glob)**/Dockerfile*' ':(glob)**/Containerfile*' ':(top,exclude,literal)Dockerfile.ci' | xargs -0 -r env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --
 
 # Monitoring rules and their promtool tests (promtool pinned in Dockerfile.ci), dashboard
-# datasource, target scope and PromQL checks, the frr-k8s series-name contract, and the
-# checker's own unit tests.
+# datasource, target scope and PromQL checks, Grafana alert rules against their panels, the
+# frr-k8s series-name contract, and the checker's own unit tests.
 PROMTOOL ?= promtool
 .PHONY: check-monitoring
 check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' | xargs -0 -r $(PROMTOOL) check rules --lint=all --lint-fatal --
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/tests/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules --
-	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/dashboards/*.json' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
+	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/dashboards/*.json' 'monitoring/grafana/*.yaml' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
 	env PROMTOOL="$(PROMTOOL)" PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring/tests -p 'test_*.py'
 
 # ── Ansible collection source checks ─────────────────────────────────────────
