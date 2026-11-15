@@ -9,7 +9,7 @@ Merged EGA #6 embeds FRR and node-exporter; `frr-metrics.service` is not install
 ## Existing series
 
 #528's [metrics README](https://github.com/metallb/frr-k8s/blob/9a69b6467f0082ffc3ddc0c3d2623f06e11d5b38/cmd/metrics/README.md)
-defines the series it adds; EGA #44's `monitoring/README.md` states what its alerts read.
+defines the series it adds; `monitoring/README.md` in EGA #44, #47 and #48 states what their alerts read.
 
 Chunk E ports the ES parser from the [archived prototype](https://github.com/dfarrell07/frr-k8s/tree/87f63e17f5d234c03f1b9ddd721f0960b50d1f37/cmd/metrics).
 It always reports `frrk8s_evpn_es_oper_up` for a local segment, but `frrk8s_evpn_es_df` only for

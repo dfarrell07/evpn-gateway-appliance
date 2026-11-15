@@ -23,6 +23,9 @@ implementation contracts. “Ask N” refers to the numbered asks below.
 | frr-k8s [#519](https://github.com/metallb/frr-k8s/pull/519): standalone serving | Merged 2026-11-10 (`088e638`) |
 | frr-k8s [#528](https://github.com/metallb/frr-k8s/pull/528): per-family prefixes, VNI inventory, L2 and L3 VNI counts, per-collector `frrk8s_scrape_success` | Open; neither it nor #519 is in openshift/frr yet |
 | EGA [#44](https://github.com/openshift/evpn-gateway-appliance/pull/44): alerts and dashboard | Open; see [rules and dashboards](#rules-and-dashboards-buildable-now) |
+| EGA [#46](https://github.com/openshift/evpn-gateway-appliance/pull/46): chunk B | Open; stacked on #44 |
+| EGA [#47](https://github.com/openshift/evpn-gateway-appliance/pull/47): chunk C | Open; stacked on #44 |
+| EGA [#48](https://github.com/openshift/evpn-gateway-appliance/pull/48): chunk D | Open; stacked on #46 |
 
 ## Exporter options
 
@@ -42,7 +45,8 @@ EGA #44 adds `monitoring/`: six alerts with promtool tests, one Grafana dashboar
 
 ## Implementation slices
 
-Closing 7504 needs chunks A–E (S: days; M: one to three weeks).
+Closing 7504 needs chunks A–E (S: days; M: one to three weeks). B, C and D are in review as #46,
+#47 and #48; A and E remain.
 
 ### A. Run frr-metrics instead of the legacy exporter (M)
 
@@ -105,12 +109,13 @@ Closing 7504 needs chunks A–E (S: days; M: one to three weeks).
   directory read-only with `:z`, and set `--collector.textfile.directory`;
   do the same for `evpn_monitoring`'s non-bootc node-exporter container. Add an
   RTT panel to B that hides samples older than two probe intervals, using `node_textfile_mtime_seconds`.
-  Add `EGAEvpnPathProbeFailed` under `monitoring/rules/`: probe success 0, the textfile older
-  than two probe intervals, or a textfile read error on a host that reported the probe, for 5m. The probe address is a new `evpn_monitoring` input.
+  Under `monitoring/rules/`, add `EGAEvpnPathProbeFailed` for a fresh probe result of 0 and
+  `EGAEvpnPathProbeUnavailable` for a textfile older than two probe intervals, a textfile read
+  error, or a vanished probe on a host that reported one, each for 5m. The probe address is a new `evpn_monitoring` input.
 - Depends: B.
-- Test: promtool cases for the alert, including a stale or unreadable textfile; e2e
-  sees a positive RTT, takes the stretch's VXLAN device down with BGP up and sees success 0, then
-  recovery.
+- Test: promtool cases for both alerts, including a stale, unreadable or vanished textfile; a unit
+  test of the probe script; e2e sees a positive RTT, drops VXLAN packets with BGP and the remote VTEP
+  up and sees success 0, then recovery.
 
 ### E. Ethernet segment and DF (M)
 
@@ -126,7 +131,7 @@ Closing 7504 needs chunks A–E (S: days; M: one to three weeks).
   path: openshift/frr sync, ART build, then an EGA `FRR_IMAGE` update.
 - Test: Go tests on the prototype's captured ES states; registry tests that ES read or parse
   failure sets `es` to 0 while VNI series and `evpn` success survive, and that an empty ES list
-  succeeds; e2e through the authenticated endpoint on the agreed configuration; promtool,
+  succeeds; frr-k8s's own e2e on the agreed configuration; promtool,
   including a quiet DF handover and both members down or election-pending.
 
 ## Asks and upstream order
