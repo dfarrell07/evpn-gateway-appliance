@@ -7,7 +7,10 @@ select a Prometheus data source, jobs and instances.
 Any Prometheus scraping frr-k8s `frr-metrics` can supply the data. This package
 requires the per-family BGP, EVPN and per-collector `frrk8s_scrape_success`
 (`bgp`, `bfd`, `evpn`) metrics from frr-k8s #528. Older exporters
-do not supply the full contract. Configure scraping separately; preserve the
+do not supply the full contract. EGA appliances still run the legacy FRR exporter, whose
+`frr_*` series this package does not read, until `frr-metrics` replaces it
+([metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)).
+Configure scraping separately; preserve the
 scrape-added `job` and `instance` labels as target identity, unique within the
 query domain. There is no required job name. Load the rules through Prometheus's
 `rule_files` configuration.
