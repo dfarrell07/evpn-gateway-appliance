@@ -1,0 +1,109 @@
+---
+- name: Check frr-metrics reports the BGP and EVPN state FRR holds
+  hosts: onprem_appliances:cloud_infra:cloud_workload
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Wait for every frr-metrics collector to succeed
+      ansible.builtin.uri:
+        url: https://127.0.0.1:9141/metrics
+        validate_certs: false  # self-signed certificate on loopback
+        return_content: true
+      register: _monitoring_metrics
+      until:
+        - _monitoring_metrics.status == 200
+        - _scrape | map('first') | sort == ['bfd', 'bgp', 'evpn']
+        - _scrape | map('last') | unique == ['1']
+      retries: 12
+      delay: 5
+      vars:
+        _scrape_re: '(?m)^frrk8s_scrape_success\{collector="([^"]+)"\} (\S+)$'
+        _scrape: "{{ _monitoring_metrics.content | default('') | regex_findall(_scrape_re) }}"
+
+    # EVPN prefix and remote VTEP counts can change between reading frr-metrics and FRR (MAC
+    # ageing), so read both again until they agree.
+    - name: Compare frr-metrics with FRR
+      ansible.builtin.include_tasks: tasks/monitoring_compare.yml
+
+- name: Check frr-metrics follows the router and the monitoring switch
+  hosts: onprem_appliances
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop frr-metrics while the router runs
+      ansible.builtin.systemd:
+        name: frr-metrics.service
+        state: stopped
+
+    - name: Wait for port 9141 to close
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 9141
+        state: stopped
+        timeout: 30
+
+    - name: Check no frr-metrics process is left in the router container
+      ansible.builtin.command: podman exec frr pgrep -x frr-metrics
+      register: _monitoring_pgrep
+      changed_when: false
+      failed_when: _monitoring_pgrep.rc != 1
+
+    # The image links frr-metrics.service into frr-container.service.wants.
+    - name: Restart the router
+      ansible.builtin.systemd:
+        name: frr-container.service
+        state: restarted
+
+    - name: Wait for frr-metrics to serve again
+      ansible.builtin.uri:
+        url: https://127.0.0.1:9141/metrics
+        validate_certs: false
+      register: _monitoring_metrics
+      until: _monitoring_metrics.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Gather service facts for the monitoring role
+      ansible.builtin.service_facts:
+
+    - name: Turn frr-metrics off
+      ansible.builtin.include_role:
+        name: network.evpn_gateway.evpn_monitoring
+      vars:
+        monitoring:
+          frr_exporter: false
+          node_exporter: true
+
+    - name: Restart the router with frr-metrics off
+      ansible.builtin.systemd:
+        name: frr-container.service
+        state: restarted
+
+    # frr-metrics retries every 10s; give a wrongly started one time to bind.
+    - name: Wait past one frr-metrics retry
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Read the frr-metrics unit state
+      ansible.builtin.systemd:
+        name: frr-metrics.service
+      register: _monitoring_unit
+
+    - name: Check frr-metrics stays masked and stopped
+      ansible.builtin.assert:
+        that:
+          - _monitoring_unit.status.UnitFileState == 'masked'
+          - _monitoring_unit.status.ActiveState == 'inactive'
+        quiet: true
+
+    - name: Check port 9141 stays closed
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 9141
+        state: stopped
+        timeout: 1
+
+    # The role waits for frr-metrics to serve.
+    - name: Turn frr-metrics back on
+      ansible.builtin.include_role:
+        name: network.evpn_gateway.evpn_monitoring

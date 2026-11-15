@@ -268,6 +268,5 @@ first real assertion; add scenario files lazily as CORENET-7514 / the isolation 
   lane provides the internet-mode (WireGuard) topology hook.
 - VNI isolation: the appliance currently routes between tenant subnets; the isolation
   test will be authored as `xfail` pending an isolation-model decision.
-- `frr_exporter` + metrics: the image ships no `frr-exporter` Quadlet (would hit the podman
-  fallback), so it's off here and its metrics validation is deferred to CORENET-7504.
-  `node_exporter` is enabled (it has a matching Quadlet).
+- `frr-metrics` on hosts without the appliance image: every node here runs the image, so the
+  role's non-bootc unit and its `frr_image` check are not exercised.

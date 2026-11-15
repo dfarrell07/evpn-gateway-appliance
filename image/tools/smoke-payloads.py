@@ -25,7 +25,8 @@ class Probe(NamedTuple):
 PROBES = (
     Probe("frr", "/usr/lib/frr/bgpd", "--version", "bgpd version"),
     Probe("frr", "/usr/lib/frr/bfdd", "--version", "bfdd version"),
-    Probe("frr", "/frr-metrics", None, None),
+    # frr-metrics.service needs a standalone build (metallb/frr-k8s#519).
+    Probe("frr", "/frr-metrics", "-help", "-disable-metrics-auth"),
     Probe("node-exporter", "node_exporter", "--version", "node_exporter, version"),
 )
 

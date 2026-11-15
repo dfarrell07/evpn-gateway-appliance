@@ -24,7 +24,12 @@ REPORTS = (
     BinaryReport("node_exporter", "node_exporter", ("--version",)),
     BinaryReport("frr", "/frr-metrics", ()),
 )
-UNITS = ("payload-load.service", "frr-container.service", "node-exporter.service")
+UNITS = (
+    "payload-load.service",
+    "frr-container.service",
+    "frr-metrics.service",
+    "node-exporter.service",
+)
 
 FRR_CONF = """hostname ega-smoke
 frr defaults traditional
@@ -54,6 +59,12 @@ fi
 METRICS_PY = (
     'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:9100/metrics",'
     ' timeout=5).read().decode())'
+)
+
+# frr-metrics serves HTTPS with a self-signed certificate.
+FRR_METRICS_PY = (
+    'import ssl, urllib.request; print(urllib.request.urlopen("https://127.0.0.1:9141/metrics",'
+    " timeout=5, context=ssl._create_unverified_context()).read().decode())"
 )
 
 
@@ -131,6 +142,20 @@ def ready(container_id: str) -> int:
         line.startswith("node_exporter_build_info{") for line in body.splitlines()
     ):
         return 1
+    frr_metrics: list[str] = []
+    rc = exec_in(
+        container_id,
+        ["python3", "-c", FRR_METRICS_PY],
+        stdout_capture=frr_metrics,
+    )
+    if rc != 0:
+        return rc
+    body = frr_metrics[0] if frr_metrics else ""
+    scrape = [
+        line for line in body.splitlines() if line.startswith("frrk8s_scrape_success{")
+    ]
+    if not scrape or not all(line.endswith(" 1") for line in scrape):
+        return 1
     return 0
 
 
@@ -141,12 +166,12 @@ def wait_ready(container_id: str) -> int:
             return 0
         if rc == 2:
             print(
-                "container exited before FRR and node-exporter were ready",
+                "container exited before FRR, frr-metrics and node-exporter were ready",
                 file=sys.stderr,
             )
             return 1
         time.sleep(1)
-    print("FRR and node-exporter did not become ready", file=sys.stderr)
+    print("FRR, frr-metrics and node-exporter did not become ready", file=sys.stderr)
     return 1
 
 
@@ -199,6 +224,8 @@ def cleanup(
                     "payload-load.service",
                     "-u",
                     "frr-container.service",
+                    "-u",
+                    "frr-metrics.service",
                     "-u",
                     "node-exporter.service",
                 ],

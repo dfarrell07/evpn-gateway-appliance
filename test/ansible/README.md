@@ -23,4 +23,5 @@ lives here instead.
 | `network.evpn_gateway_test.simulate` | before `network.evpn_gateway.deploy` | build the simulated on-prem environment |
 | `network.evpn_gateway_test.healthcheck` | after the deploy | run the simulated-host data-plane checks |
 | `network.evpn_gateway_test.path_probe` | after `healthcheck` | drop VXLAN packets with BGP and the remote VTEP still up, check probe failure and recovery, then check that clearing the target removes the probe |
+| `network.evpn_gateway_test.monitoring` | after `path_probe` | check that `frr-metrics` on every router matches FRR's BGP sessions, accepted EVPN prefixes and VNIs, that stopping it frees port 9141, that it follows router restarts, and that turning it off masks it until it is turned back on |
 | `network.evpn_gateway_test.teardown` | on cleanup (non-clab runs) | remove the simulated on-prem environment |
