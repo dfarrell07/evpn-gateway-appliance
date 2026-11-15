@@ -20,15 +20,12 @@
     - /etc/systemd/system/ega-path-probe.service
     - /etc/ega/ega-path-probe.sh
     - /var/lib/node_exporter/textfile/ega-path-probe.prom
-  register: _evpn_monitoring_path_probe_files
 
 - name: Reload systemd after removing overlay path probe units
   ansible.builtin.systemd:
     daemon_reload: true
-  when: _evpn_monitoring_path_probe_files.changed
 
 - name: Clear a failed state left by stopping an in-flight probe
   ansible.builtin.command: systemctl reset-failed ega-path-probe.service
   changed_when: false
   failed_when: false
-  when: _evpn_monitoring_path_probe_files.changed
