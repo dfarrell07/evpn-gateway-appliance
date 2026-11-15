@@ -91,6 +91,7 @@ check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' ':(exclude)monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) check rules --lint=all --lint-fatal
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/dashboards/*.json' 'monitoring/grafana/*.yaml' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
+	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/grafana/*.yaml' ':(exclude)monitoring/rules/*_test.yaml' | xargs -0 -r python3 monitoring/check_runbooks.py
 
 # Unit tests for scripts the collection installs; promtool validates their metrics output.
 .PHONY: check-scripts

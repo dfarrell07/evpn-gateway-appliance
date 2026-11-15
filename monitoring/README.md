@@ -58,6 +58,9 @@ textfile directory, which keeps `EGAEvpnPathProbeUnavailable` quiet on that host
 | EGAEvpnPathProbeFailed | Probe success = 0 in a file no older than 60s, for 5m | Success = 1, or the result is not fresh |
 | EGAEvpnPathProbeUnavailable | A probe file older than 60s, a textfile read error on a host that reported the probe in the last day, or, while node-exporter is scraped, no probe series on a host that reported one in the last day and has no `ega_path_probe_disabled` marker, for 5m | A fresh, readable probe file; node-exporter not scraped; the probe removed by the role; or no probe series in the last day |
 
+Every alert's `runbook_url` links to its section of [runbooks.md](runbooks.md);
+`check_runbooks.py` keeps the two in step.
+
 Run `make check-monitoring` from the repository root.
 Host runs (`USE_IMAGE=0`) need promtool (tested with 3.5.0) on PATH and PyYAML.
 

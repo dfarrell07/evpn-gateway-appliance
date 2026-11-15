@@ -44,6 +44,7 @@ groups:
           severity: warning
         annotations:
           summary: 'DX connection {{ $labels.ConnectionId }} down'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egadxconnectiondown
           description: >-
             CloudWatch ConnectionState for {{ $labels.ConnectionId }} has read 0 for 10m. EVPN BGP can
             stay up over a VPN backup, so this can be the only sign of lost redundancy.
@@ -89,6 +90,7 @@ groups:
           severity: warning
         annotations:
           summary: 'DX VIF {{ $labels.VirtualInterfaceId }} {{ $labels.IpAddressFamily }} on {{ $labels.ConnectionId }} BGP down'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egadxvirtualinterfacebgpdown
           description: >-
             CloudWatch VirtualInterfaceBgpStatus for {{ $labels.VirtualInterfaceId }}
             ({{ $labels.IpAddressFamily }}) has read 0 for 10m. EVPN BGP can stay up over a VPN backup.
@@ -132,6 +134,7 @@ groups:
           severity: warning
         annotations:
           summary: 'VPN {{ $labels.VpnId }} has a tunnel down'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egavpntunneldown
           description: >-
             CloudWatch TunnelState for {{ $labels.VpnId }} has been below 1 for 10m, so at least one
             of its tunnels is down. A VPN that uses only one tunnel reads 0.5 and keeps this firing.
