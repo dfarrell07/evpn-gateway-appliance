@@ -1,7 +1,7 @@
 # EGA monitoring
 
-Prometheus alert rules, their tests and Grafana dashboards for EVPN gateway appliances. EGA
-ships these files for the deployment's own Prometheus and Grafana; it does not deploy either.
+Prometheus alert rules, their tests, Grafana dashboards and Grafana-managed alerts for EVPN gateway
+appliances. EGA ships these files for the deployment's own Prometheus and Grafana; it does not deploy either.
 Each section below says what a set of files reads and how to load it.
 
 ## FRR and EVPN
@@ -52,7 +52,8 @@ These alerts do not detect:
 - sessions that flap faster than an alert's `for:` time; the dashboard's OPEN and BFD
   down-event panels show them;
 - a target that is down, which is left to the platform's TargetDown or `up` alerting;
-- Ethernet-segment designated-forwarder state, transport or latency.
+- Ethernet-segment designated-forwarder state or path latency; AWS transport has its own
+  section.
 
 These signals do not establish forwarding health.
 
@@ -85,13 +86,64 @@ their carrier does not show path loss; trunk loss shows on `trunk-br` and `trunk
 leaves out the bridges: `br-vniN` counters miss bridged frames, and `trunk.N` already counts
 the stretch traffic that `trunk-br` delivers.
 
+## AWS transport
+
+- `dashboards/aws-transport.json`: Direct Connect connection state, virtual-interface BGP
+  status and VPN tunnel state from CloudWatch (import tested with Grafana 11.6.0).
+- `grafana/aws-transport-alerts.yaml`: three Grafana-managed alerts, one per panel (provisioning
+  tested with Grafana 11.6.0).
+
+A Direct Connect connection can end on a customer router and a VPN backup can keep EVPN BGP up,
+so FRR metrics cannot see these failures.
+
+To use them:
+
+1. Add a CloudWatch data source whose credentials allow `cloudwatch:GetMetricData`,
+   `cloudwatch:ListMetrics` and `ec2:DescribeRegions`.
+2. Import `dashboards/aws-transport.json` and select the data source, region and resource IDs.
+   Keep its UID: the alerts link to its panels.
+3. In `grafana/aws-transport-alerts.yaml`, set each `datasourceUid: cloudwatch` to the data
+   source's UID, or provision the data source with `uid: cloudwatch`. Set each rule's
+   `region: default` to the region where CloudWatch publishes that metric: Direct Connect
+   metrics go to the connection's home region and VPN metrics to the VPN's region, which can
+   differ. Each rule covers every connection, virtual interface or VPN in its region; replace a
+   `['*']` with a list of IDs to limit it.
+4. Copy the file to Grafana's `provisioning/alerting` directory and restart Grafana.
+
+| Alert | Severity | Fires when | Silent when |
+| --- | --- | --- | --- |
+| EGADxConnectionDown | warning | A connection's minimum state is 0 in each 5-minute period for 10m | Up |
+| EGADxVirtualInterfaceBgpDown | warning | A virtual interface's minimum BGP status is 0 in each 5-minute period for 10m | Up |
+| EGAVpnTunnelDown | warning | A VPN's minimum tunnel state is below 1 (a tunnel down) in each 5-minute period for 10m | All tunnels up |
+
+The rules read 5-minute periods every 5 minutes and wait `for: 10m`, so an alert fires about
+15 to 20 minutes after a failure. A VPN that uses only one of its two tunnels keeps
+`EGAVpnTunnelDown` firing; to alert only when every tunnel is down, change that rule's
+`statistic: Minimum` to `Maximum` and `$B < 1` to `$B == 0` in the deployed copy (in this
+repository, change panel 3's statistic too, or `make check-monitoring` rejects the mismatch).
+
+The rules keep their last state when the whole query returns no data, because Grafana 11.6
+reports a failed CloudWatch read, such as expired credentials, as no data; watch the data source
+separately. So a region without these resources stays quiet. When one resource stops reporting
+while others still do, for example a VPN deleted while down, Grafana resolves its alert after two
+evaluations. When no resource in the region reports any more, an alert stays as it was. To clear
+it, set `isPaused: true` on that rule in the file, or delete the rule by moving it to a
+`deleteRules` list (`- orgId: 1` and `uid: <rule uid>`); only removing it from `groups` leaves it
+in Grafana. Then restart Grafana or call `POST /api/admin/provisioning/alerting/reload`. Grafana
+refuses to pause or delete file-provisioned rules from its UI or API.
+
+Grafana sends these alerts through its own notification policies. To route them with the
+Prometheus alerts, add the Alertmanager as a data source with Receive Grafana Alerts on and
+enable it under Alerting > Settings.
+
 ## Checks
 
 Run `make check-monitoring` from the repository root. It lints and tests the rules; checks each
-dashboard's data source, job/instance scoping and PromQL; checks `frrk8s_*` names against
+dashboard's data source, job/instance scoping and PromQL or CloudWatch query fields; checks
+each Grafana alert rule against the panel it links to; checks `frrk8s_*` names against
 `frrk8s-metrics.txt`; and runs the checker's unit tests, which include matching the appliance
 dashboard's device filters to the devices the on-prem role creates. Host runs (`USE_IMAGE=0`)
-need `promtool` 3.5.0 on PATH.
+need `promtool` 3.5.0 on PATH and PyYAML.
 
 The `e2e` and `molecule` presubmits skip pull requests that change only `monitoring/`
 (openshift/release#88830), because nothing in the appliance image, the collection or those
