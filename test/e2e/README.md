@@ -27,12 +27,13 @@ VM; the runner only provides env and collects artifacts.
 ```text
 test/
   ansible/                test-only collection (network.evpn_gateway_test): on-prem sim role + playbooks; installed into the EE
+  unit/                   shell unit tests for scripts the collection installs (`make check-monitoring`)
   e2e/
     run.sh                run a lane locally (rootful): podman run the toolchain image, run ${EGA_ENTRYPOINT}
     run_remote.sh         shared core: against a remote target (or locally): export, ship, build, run
     run_e2e.sh            wrapper: select the e2e lane (entrypoint_e2e.sh)
     run_molecule.sh       wrapper: select the molecule lane (entrypoint_molecule.sh; skips the EE build)
-    entrypoint_e2e.sh     e2e in-container steps: clab deploy -> simulate -> deploy.yml -> health checks
+    entrypoint_e2e.sh     e2e in-container steps: clab deploy -> simulate -> deploy.yml -> health checks -> path probe
     entrypoint_molecule.sh  molecule in-container steps: molecule test against the rootful socket
     topology/
       evpn.clab.yml       the emulated fabric
@@ -217,8 +218,12 @@ a single scenario instead of all — the name is the nested path, e.g. `EGA_STAG
 ## Status
 
 Deploy + the collection's health check pass end to end: three-AS eBGP, Type-2/3 exchange,
-and bidirectional L2 reachability across the fabric. Still to add: explicit pytest
-assertions (Type-2/3, BUM, isolation) and the Prow/CI job wiring (cross-repo).
+and bidirectional L2 reachability across the fabric. The `path_probe` playbook, which has not yet
+completed an appliance run, checks the overlay path probe: it drops VXLAN packets with nft while
+BGP and the remote VTEP stay up, checks that `ega_path_probe_success` goes from 1 to 0 and back
+(it runs no Prometheus, so alert timing is left to the promtool tests), and that clearing the
+target removes the probe. It is an Ansible playbook in the test collection until the pytest layer below
+exists. Still to add: explicit pytest assertions (Type-2/3, BUM, isolation).
 
 ## Testing plan (not yet built)
 

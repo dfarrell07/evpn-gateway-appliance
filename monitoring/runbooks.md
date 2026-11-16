@@ -12,6 +12,7 @@ Where to run the commands:
   `frr-metrics.service` once it replaces the legacy exporter (see the
   [metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)); read its log with
   `journalctl -u frr-metrics.service`.
+- **Probe and node checks**: on the appliance as root.
 - **AWS**: the `aws` CLI with `--region` set to the alert rule's region. An AWS alert clears at
   the first evaluation after a whole healthy 5-minute period, about 5 to 15 minutes after
   recovery plus CloudWatch's publishing delay.
@@ -133,7 +134,7 @@ traffic and learns no remote MACs.
   VTEP or network that is not ready advertises no type-3 route. In the emulated lab, check that
   the cloud workload's VXLAN device and bridge for the VNI exist and are up.
 
-A known VTEP does not prove that VXLAN traffic reaches it.
+A known VTEP does not prove reachability; see EGAEvpnPathProbeFailed for forwarding.
 
 ## EGABfdSessionDown
 
@@ -155,6 +156,44 @@ More than 3 BFD down events for a peer in 10m, so the session keeps failing and 
 - `show bfd vrf VRF peers counters` for the down events and packet counts.
 - Check loss and jitter on the path to the peer, as for EGABfdSessionDown, and compare the BFD
   timers on both ends; intervals too short for the path cause repeated drops.
+
+## EGAEvpnPathProbeFailed
+
+The overlay path probe got fewer than 3 echo replies within 5s for 5m, while BGP and EVPN
+may still look healthy. It tests reachability from the appliance to the configured target;
+with a stretch's `cloud_gateway` as the target, the path ends at the cloud VTEP's bridge and
+does not cover the on-prem trunk or tenant workloads.
+
+- `systemctl status ega-path-probe.service` and
+  `cat /var/lib/node_exporter/textfile/ega-path-probe.prom` for the target and result.
+- Find the stretch whose `br-vniN` SVI routes to the target (`ip route get TARGET`) and
+  check its devices: `ip -d link show vxlanN` and `bridge fdb show dev vxlanN`.
+- Watch encapsulated traffic on the interface that reaches the remote VTEP (`ip route get
+  VTEP_IP`; `wg0` with WireGuard): `tcpdump -ni IFACE udp port 4789` while pinging the target.
+  Outgoing VXLAN without replies does not locate the loss: capture at the remote VTEP too, and
+  check forwarding and filtering for UDP 4789 in both directions.
+- Check MTU: `ping -M do -s SIZE TARGET` with SIZE near the SVI MTU minus 28 for IPv4, or
+  minus 48 for IPv6.
+
+Repair the failing hop; the alert clears after a successful fresh probe.
+
+## EGAEvpnPathProbeUnavailable
+
+No fresh probe result for 5m. The value says why: a number above 60 is the probe file's age in
+seconds, and -1 means the probe's series stopped while node-exporter still runs. A probe that stops reporting is remembered for one
+day, so after a day without results this alert clears even though nothing recovered.
+
+- `systemctl status ega-path-probe.timer ega-path-probe.service` and
+  `journalctl -u ega-path-probe.service -n 20`.
+- `ls -lZ /var/lib/node_exporter/textfile/`: the file must exist and node-exporter must be
+  able to read it.
+- Check node-exporter runs with `--collector.textfile.directory=/var/lib/node_exporter/textfile`
+  and, for the non-bootc container, that the directory is mounted.
+
+Removing the probe through the role or `teardown.yml` writes
+`/var/lib/node_exporter/textfile/ega-path-probe-disabled.prom` (`ega_path_probe_disabled 1`),
+which keeps this alert quiet. To remove the probe, rerun the role with
+`evpn_monitoring_path_probe_target: ""` or run `teardown.yml`.
 
 ## EGADxConnectionDown
 

@@ -7,7 +7,9 @@ Type=simple
 User=nobody
 Restart=always
 RestartSec=10
+ExecStartPre=+/usr/bin/mkdir -p -m 0755 /var/lib/node_exporter/textfile
 ExecStart=/usr/bin/node_exporter \
+    --collector.textfile.directory=/var/lib/node_exporter/textfile \
     --web.listen-address=127.0.0.1:9100 \
     --no-collector.accelerator
 

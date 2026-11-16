@@ -8,7 +8,7 @@ SHELL := /bin/bash
 verify: check
 
 # Static source checks aggregating the planning-docs corpus integrity, the
-# public-safety scan, the repo-wide yaml, Markdown, python, shell and container-file lint, and the
+# public-safety scan, the repo-wide yaml, Markdown, python, shell and container-file lint, the
 # Ansible collection and monitoring checks.
 .PHONY: check
 check: check-corpus check-public check-yaml check-markdown check-python check-shell check-dockerfiles check-ansible check-monitoring
@@ -84,7 +84,8 @@ check-dockerfiles:
 	git ls-files -z -c -o --exclude-standard -- ':(glob)**/Dockerfile*' ':(glob)**/Containerfile*' ':(top,exclude,literal)Dockerfile.ci' | xargs -0 -r env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --
 
 # Monitoring rules and their promtool tests (promtool pinned in Dockerfile.ci), dashboard
-# PromQL compilation, the frr-k8s series-name contract, and the checker's unit tests.
+# PromQL compilation, the frr-k8s series-name contract, and unit tests for the checker and the
+# overlay probe script.
 PROMTOOL ?= promtool
 .PHONY: check-monitoring
 check-monitoring:
@@ -92,6 +93,7 @@ check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/tests/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules --
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/dashboards/*.json' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
 	env PROMTOOL="$(PROMTOOL)" PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring/tests -p 'test_*.py'
+	env PROMTOOL="$(PROMTOOL)" sh test/unit/ega-path-probe_test.sh
 
 # ── Ansible collection source checks ─────────────────────────────────────────
 # Lint, playbook syntax, collection build + tarball allowlist, and a clean-env

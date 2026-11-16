@@ -363,5 +363,6 @@ Custom CI code needs a requirement that no maintained tool covers. Current code:
 | `plans/context/evpn-aws/tools/check-all.sh` | 15 | Runs the helpers above and accumulates failures; `--offline` skips URLs and pins | The helpers above are retired |
 | `ansible/tools/check-collection-tarball.sh` | 26 | Tarball root paths against an allowlist, required `meta/runtime.yml` and `README.md`; prints the `MANIFEST.json` digest | The native `manifest` directive plus required-path checks replace it |
 | `monitoring/check_dashboards.py` (tests in `monitoring/tests/test_check_dashboards.py`) | 80 + 68 | Panel and variable PromQL compiled through promtool after Grafana variable substitution; `frrk8s_*` names in `monitoring/rules/*.yaml` and dashboard expressions against `monitoring/frrk8s-metrics.txt` | A maintained dashboard linter covers template PromQL compilation and a metric catalog |
+| `test/unit/ega-path-probe_test.sh` (run by `check-monitoring`) | 60 | The overlay probe script's output with a fake `ping`: success, failure, a local `ping` error, a missing RTT and leftover temporary files, with `promtool check metrics` on each result | The collection adopts a shell test framework or moves the probe into a tested binary |
 
 Add a row here when a PR adds custom glue, with the reason.

@@ -92,8 +92,9 @@ These alerts do not detect:
 - a target that is down, which is left to the platform's TargetDown or `up` alerting;
 - Ethernet-segment designated-forwarder state;
 - WireGuard peer liveness: node-exporter has no WireGuard collector, and `wg0` carrier does
-  not show it; BGP to the relay gives indirect evidence;
-- path latency; AWS publishes no DX or VPN latency metric.
+  not show it; BGP to the relay and the opt-in probe give indirect evidence;
+- path latency beyond the opt-in probe's RTT to one overlay target, which no alert reads; AWS
+  publishes no DX or VPN latency metric.
 
 These signals do not establish forwarding health.
 
@@ -104,8 +105,8 @@ after 1m with 1m evaluation. Scrape timing adds detection delay.
 ## Appliance, VLANs and tunnels
 
 `dashboards/appliance.json` shows node-exporter scrape status; the operstate, carrier and
-carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; and the
-traffic, drops and errors of the non-bridge ones.
+carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; the
+traffic, drops and errors of the non-bridge ones; and overlay path probe RTT.
 
 The data comes from node-exporter. The bootc image runs it on `127.0.0.1:9100`, so scraping it
 from another host needs the access path from CORENET-7704. On other hosts `evpn_monitoring`
@@ -169,6 +170,35 @@ while others still do, Grafana resolves its alert after two evaluations; when no
 more, an alert keeps its last state until the rule is paused or deleted in the provisioning file
 and Grafana reloads it.
 
+## Overlay path probe
+
+BGP and EVPN membership can stay up while VXLAN forwarding fails. On an
+`onprem_appliances` host with `monitoring.node_exporter` on, setting
+`evpn_monitoring_path_probe_target` to an address reachable only through the overlay makes
+`evpn_monitoring` install a timer that pings it every 30s and writes the result through node-exporter's textfile collector. A
+probe fails unless 3 echo replies arrive within 5s (up to 5 requests). It samples one overlay
+path and does not identify the failed component: with a stretch's `cloud_gateway` as the target
+it tests the path from the appliance to the cloud VTEP's bridge, not the on-prem trunk, tenant
+workloads or other stretches. The appliance dashboard's RTT panel shows fresh
+samples.
+
+The probe is opt-in. It complements OVN-Kubernetes's cluster conditions and NetObserv's drop
+and latency rules and replaces none of them, so one incident can fire several alerts. Both
+alerts carry the FRR alerts' `netobserv: "true"` label; EGAEvpnPathProbeUnavailable's annotation
+adds the unit, threshold and upper bound of its value, the result's age in seconds.
+
+- `rules/path-probe-alerts.yaml`: two alerts, tested by `tests/path-probe-alerts_test.yaml`. Add
+  it to `rule_files` with the FRR rules.
+
+| Alert | Severity | Fires when | Silent when |
+| --- | --- | --- | --- |
+| EGAEvpnPathProbeFailed | warning | Probe success is 0 in a file no older than 60s, for 5m | Success is 1, or the result is not fresh |
+| EGAEvpnPathProbeUnavailable | warning | For 5m: the probe file is older than 60s; or, on a host that reported the probe in the last day and was not disabled by the role, the probe series is gone while node-exporter is scraped | A fresh probe file; node-exporter not scraped; the probe removed by the role; or no probe series in the last day |
+
+Whenever the role runs on an on-prem appliance without a probe target, and when `teardown.yml`
+runs, it removes any probe and writes `ega_path_probe_disabled 1` to the textfile directory,
+which keeps `EGAEvpnPathProbeUnavailable` quiet on that host.
+
 ## Runbooks
 
 Every alert's `runbook_url` links to its section of [runbooks.md](runbooks.md), which says what the
@@ -177,5 +207,6 @@ alert means, what to check on the appliance or in AWS, and what to do.
 ## Checks
 
 Run `make check-monitoring` from the repository root for promtool rule lint and tests,
-dashboard panel and variable PromQL compilation, frr-k8s metric-name checks, and unit tests. Host runs
-(`USE_IMAGE=0`) need `promtool` 3.5.0 on PATH.
+dashboard panel and variable PromQL compilation, frr-k8s metric-name checks, and unit tests for
+the checker and the overlay probe script. Host runs (`USE_IMAGE=0`) need `promtool` 3.5.0 on
+PATH.
