@@ -1,0 +1,31 @@
+CORENET-7504: Probe one overlay path and alert on forwarding loss
+
+BGP and EVPN membership can stay up while VXLAN forwarding fails, so an
+optional evpn_monitoring timer pings a configured overlay IP across one
+stretch every 30s and writes success and RTT through node-exporter's
+textfile collector, now enabled in the image and the non-bootc
+container. A local ping error leaves the result stale instead of
+reporting loss. EGAEvpnPathProbeFailed fires after 5m of failed fresh
+probes and EGAEvpnPathProbeUnavailable after 5m of stale, unreadable or
+vanished results; the appliance dashboard shows fresh RTT.
+
+The target must be an IP address, the probe unit is sandboxed, and the
+role waits until node-exporter exports a result for the configured
+target, so it fails on an image whose node-exporter does not read the
+textfile directory or when the probe cannot run against that target.
+Clearing the target, turning off node_exporter or running teardown.yml
+removes the probe and leaves a marker, labelled for node-exporter's
+container, that keeps the unavailable alert quiet. check_dashboards.py
+scopes the ega_path_probe_* selectors, and a new check-unit target runs
+a unit test of the probe script, recorded in ci-source.md.
+
+The e2e probes the first stretch, drops VXLAN packets with nft while BGP
+and the remote VTEP stay up, checks failure and recovery, then clears
+the target and checks that the probe is removed. Both alerts get
+runbook_url links and sections in monitoring/runbooks.md.
+
+Assisted-by: Codex
+Claude-Session: https://claude.ai/code/session_01JTZrM4bbdaZKSMYva2meRV
+Claude-Session: https://claude.ai/code/session_01JTZrM55uDvEkyT2xQZCRZd
+Signed-off-by: Daniel Farrell <dfarrell@redhat.com>
+

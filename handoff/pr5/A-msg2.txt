@@ -1,0 +1,16 @@
+CORENET-7504: Check frr-metrics in the image smokes and e2e
+
+The nested smoke requires frr-metrics.service and every
+frrk8s_scrape_success at 1, also after a router restart. The payload smoke
+requires --disable-metrics-auth in the FRR image's frr-metrics.
+
+e2e turns frr_exporter on. network.evpn_gateway_test.monitoring checks on
+every router that frr-metrics reports FRR's BGP sessions, accepted EVPN
+prefixes and VNIs with their remote VTEP counts, reading both again on a
+mismatch because those counts can change between the reads. On the
+appliance it checks that stopping the unit frees port 9141, that it
+follows router restarts, and that turning it off masks it until it is
+turned back on.
+
+Assisted-by: Claude
+Signed-off-by: Daniel Farrell <dfarrell@redhat.com>

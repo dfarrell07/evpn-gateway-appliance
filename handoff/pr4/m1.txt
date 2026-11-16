@@ -1,0 +1,24 @@
+CORENET-7504: Add FRR and EVPN alerts and a Grafana dashboard
+
+Add monitoring/ for the frr-k8s exporter series from
+metallb/frr-k8s#528: six Prometheus alerts with promtool tests, and a
+Grafana dashboard with health, BGP, EVPN and BFD rows. Alerts read only
+emitted series; vanished peers, VNIs or collectors need an expected
+inventory, and target down is left to the platform's up alerting. The
+README says how to load the rules and dashboard, and that EGA
+appliances still run the legacy FRR exporter until frr-metrics
+replaces it.
+
+make check gains check-monitoring: rule lint, the promtool tests,
+dashboard data-source, scope and PromQL checks, a check of frrk8s_*
+names against the series metallb/frr-k8s#528 exports, and unit tests
+for that checker. Dockerfile.ci installs a checksum-verified promtool
+3.5.0, and ci-source.md records the new check and tool. The README
+notes that openshift/release#88830, once merged, skips e2e and molecule
+for monitoring-only changes.
+
+Assisted-by: Codex
+Claude-Session: https://claude.ai/code/session_01JTZrM4bbdaZKSMYva2meRV
+Claude-Session: https://claude.ai/code/session_01JTZrM55uDvEkyT2xQZCRZd
+Signed-off-by: Daniel Farrell <dfarrell@redhat.com>
+

@@ -1,0 +1,28 @@
+CORENET-7504: Plan the remaining work to close the story
+
+Rewrite the metrics plan around 7504's acceptance criteria and the
+chunks that deliver them beyond metallb/frr-k8s#528 and EGA's FRR
+alerts:
+
+- A: run frr-metrics in the router container and retire
+  tynany/frr_exporter (M)
+- B: appliance, VLAN and tunnel views from node-exporter (S)
+- C: Direct Connect and VPN views and alerts from CloudWatch (S)
+- D: an overlay path probe for latency and VTEP forwarding loss (S)
+- E: an Ethernet-segment collector in frr-k8s and a DF alert (M)
+
+B and C are in review in EGA #44, and D in #48.
+
+The plan proposes, without deciding, that EGA ship rules and dashboards
+for the deployment's own Prometheus and Grafana, and asks OpenShift
+Monitoring about the alternatives. The details file keeps the contracts
+the chunks need and links its earlier version, pinned, for the evidence
+it no longer repeats. Plan files that cite either file now match it and
+the state of metallb/frr-k8s#519 and
+metallb/frr-k8s#528.
+
+Assisted-by: Codex
+Claude-Session: https://claude.ai/code/session_01JTZrM4bbdaZKSMYva2meRV
+Claude-Session: https://claude.ai/code/session_01JTZrM55uDvEkyT2xQZCRZd
+Signed-off-by: Daniel Farrell <dfarrell@redhat.com>
+

@@ -1,0 +1,27 @@
+metrics: bound vtysh reads and isolate daemon connections
+
+vtysh.Run had no deadline and connected to every FRR daemon, so one
+stalled daemon could block a collector and, with it, the shared
+Prometheus gather for every collector, including the EVPN collector
+this series adds.
+
+Bound each vtysh command to 8s and reap the process when the deadline
+passes. Send "show bgp" commands only to bgpd, "show bfd" commands only
+to bfdd and "show evpn" commands only to zebra (vtysh -d), so a stalled
+daemon fails only the collectors that read from it (BFD also lists VRFs
+through bgpd); those report frrk8s_scrape_success 0 while the others
+still report. All-daemon commands such as the liveness "show daemons"
+stay unqualified. The bound is per command, so a daemon that answers
+slowly but within 8s can still make a scrape with many VRFs exceed the
+scrape timeout.
+
+vtysh.Run is shared, so the status exporter's BGP session reads are
+bounded too and go only to bgpd: a stalled bgpd now fails its reconcile
+after 8s, which is requeued, instead of blocking it.
+
+Keep stderr out of the parsed stdout. On failure, the returned error
+names the command and carries vtysh's message, from stderr or, where
+vtysh prints it there, stdout. Add tests for daemon selection, output
+separation, both diagnostic sources and process cancellation.
+
+Assisted-by: Claude

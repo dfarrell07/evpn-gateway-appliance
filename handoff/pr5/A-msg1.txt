@@ -1,0 +1,25 @@
+CORENET-7504: Run frr-metrics instead of the legacy FRR exporter
+
+frr-metrics.service runs the FRR image's /frr-metrics inside the router
+container with podman exec, so it reuses the router's FRR sockets and
+vtysh configuration. It serves HTTPS with a self-signed certificate on
+127.0.0.1:9141 and passes --disable-metrics-auth (metallb/frr-k8s#519)
+because the appliance has no Kubernetes API. The bootc image installs it
+in /usr/lib, bound to frr-container.service and enabled through its wants
+directory. podman exec does not forward signals, so ExecStop kills the
+exporter in the container. The exporter lives in the router container,
+so ExecStartPre also kills one left behind by a client that died without
+ExecStop; otherwise it keeps the port and every restart fails.
+
+evpn_monitoring drives the unit from monitoring.frr_exporter. On every
+host it checks that the router container's frr-metrics supports
+--disable-metrics-auth, retrying while the router container starts.
+Only the unit install differs: hosts without the image get the same unit
+from the role, without the router binding. When the switch is off, and
+in teardown.yml for every router group, the role stops and then masks
+the unit. It removes the legacy tynany/frr_exporter container in both
+cases. The sample inventory turns the switch off because its upstream
+frr_image has no frr-metrics.
+
+Assisted-by: Claude
+Signed-off-by: Daniel Farrell <dfarrell@redhat.com>
