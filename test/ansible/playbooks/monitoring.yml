@@ -1,0 +1,74 @@
+---
+- name: Check frr-metrics and the monitoring switch
+  hosts: onprem_appliances:cloud_infra:cloud_workload
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check disabling frr-metrics stops the service
+      block:
+        - name: Turn frr-metrics off while it runs
+          ansible.builtin.include_role:
+            name: network.evpn_gateway.evpn_monitoring
+            tasks_from: frr_metrics
+          vars:
+            monitoring:
+              frr_exporter: false
+
+        - name: Read the disabled frr-metrics unit state
+          ansible.builtin.systemd:
+            name: frr-metrics.service
+          register: _monitoring_unit
+
+        - name: Check turning frr-metrics off stopped and disabled it
+          ansible.builtin.assert:
+            that:
+              - _monitoring_unit.status.UnitFileState == 'disabled'
+              - _monitoring_unit.status.ActiveState == 'inactive'
+            quiet: true
+      always:
+        # Unset, as in the sample inventory: a deploy after teardown restores the unit.
+        - name: Turn frr-metrics back on with the switch unset
+          ansible.builtin.include_role:
+            name: network.evpn_gateway.evpn_monitoring
+            tasks_from: frr_metrics
+          vars:
+            monitoring: {}
+
+    - name: Read the enabled frr-metrics unit state
+      ansible.builtin.systemd:
+        name: frr-metrics.service
+      register: _monitoring_unit
+
+    - name: Check the unset switch enabled and started it again
+      ansible.builtin.assert:
+        that:
+          - _monitoring_unit.status.UnitFileState == 'enabled'
+          - _monitoring_unit.status.ActiveState == 'active'
+        quiet: true
+
+    - name: Check frr-metrics listens on loopback only
+      ansible.builtin.command: ss -Hltn 'sport = :7573'
+      register: _monitoring_listen
+      changed_when: false
+      failed_when: >-
+        _monitoring_listen.stdout_lines | length == 0 or
+        _monitoring_listen.stdout_lines | reject('search', ' 127[.]0[.]0[.]1:7573 ') | list | length > 0
+
+    - name: Wait for every frr-metrics collector to succeed
+      ansible.builtin.uri:
+        url: https://127.0.0.1:7573/metrics
+        validate_certs: false  # self-signed certificate on loopback
+        return_content: true
+      register: _monitoring_metrics
+      until:
+        - _monitoring_metrics.status == 200
+        - _scrape | map('first') is superset(['bfd', 'bgp', 'evpn'])
+        - _scrape | map('last') | unique == ['1']
+      retries: 12
+      delay: 5
+      vars:
+        _scrape_re: '(?m)^frrk8s_scrape_success\{collector="([^"]+)"\} (\S+)$'
+        _scrape: "{{ _monitoring_metrics.content | default('') | regex_findall(_scrape_re) }}"
+
+    - name: Compare frr-metrics with FRR
+      ansible.builtin.include_tasks: tasks/monitoring_compare.yml

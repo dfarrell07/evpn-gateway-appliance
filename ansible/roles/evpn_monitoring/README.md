@@ -1,8 +1,20 @@
 # evpn_monitoring
 
-Deploys `frr_exporter` and `node_exporter` for Prometheus scraping: uses the
-bootc image's baked-in systemd units when present, otherwise runs them
-directly via Podman.
+Controls the appliance image's `frr-metrics.service` with `monitoring.frr_exporter`.
+Unset or true enables and starts it and waits for `https://127.0.0.1:7573/metrics` (HTTPS with
+a self-signed certificate), so a deploy after `playbooks/teardown.yml` restores it; unset skips
+hosts without the unit, and true fails on them. False stops and disables it, as teardown does on
+all router groups.
+The role always removes the legacy `frr_exporter` container.
+
+True fails on a host without the unit, for example `provision-aws.yml`'s default CentOS
+`cloud_infra` and `cloud_workload` routers; leave it unset there.
+
+`frr-metrics` replaces the legacy exporter's `frr_*` series with `frrk8s_*` series;
+migrate scrape jobs, alerts and dashboards accordingly. The legacy
+`evpn_monitoring_frr_exporter_image` variable is removed.
+
+Deploys `node_exporter` via the image's systemd unit when present, otherwise via Podman.
 
 Optionally installs an overlay path probe (`evpn_monitoring_path_probe_target`) that
 exports `ega_path_probe_success` and `ega_path_probe_rtt_seconds`; `monitoring/README.md`
@@ -15,18 +27,14 @@ role does not change an older unit), or when the probe fails locally; missing ec
 `ega_path_probe_success 0` and do not fail the role.
 
 See [`meta/argument_specs.yml`](meta/argument_specs.yml) for the full input
-schema (`monitoring.frr_exporter`, `monitoring.node_exporter`, the pinned image
-variables and the probe target).
+schema (`monitoring.frr_exporter`, `monitoring.node_exporter`, the pinned node-exporter
+image variable and the probe target).
 
 ## Known limitations (tracked, not fixed by this role)
 
-- Both exporters run with `network: host` and neither sets a listen
-  address, so their metrics endpoints are reachable unauthenticated on
-  every interface, and no role in this collection configures a host
-  firewall to restrict inbound access (source-audit.md §1; see the comment
-  in `tasks/main.yml`). How this should be locked down in production is
-  not yet decided.
-- These remain community images (`tynany/frr_exporter`,
-  `prometheus/node-exporter`) pending the payload decision in
-  kickoff-decisions.md #10 on moving to Red Hat-built `frr-rhel9` /
-  `frr-metrics` content; this role only pins the tags it uses today.
+- The image's exporters bind loopback and are unauthenticated, so any local process can read
+  them; remote scraping needs the access path from CORENET-7704. `frr-metrics` runs with `--disable-metrics-auth` and needs no Kubernetes API.
+- The non-bootc node-exporter container uses `network: host` without a listen address or
+  host firewall, exposing unauthenticated metrics on every interface (source-audit.md §1).
+  It still uses a community image (`prometheus/node-exporter`); supportable payloads are
+  tracked in kickoff-decisions.md #10.

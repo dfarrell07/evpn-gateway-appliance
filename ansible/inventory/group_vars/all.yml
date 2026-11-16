@@ -61,7 +61,8 @@ stretches:
 
 # ── Monitoring ────────────────────────────────────────────────
 monitoring:
-  frr_exporter: true
+  # frr_exporter is unset: frr-metrics.service runs where the appliance image provides it
+  # and generic hosts are skipped. true requires that unit; false stops it.
   node_exporter: true
 
 # ── FRR container image ──────────────────────────────────────

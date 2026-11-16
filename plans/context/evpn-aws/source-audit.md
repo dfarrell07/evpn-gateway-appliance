@@ -98,7 +98,7 @@ packages installed from mutable RPM repositories; record their versions too.
 | [ ] | `quay.io/frrouting/frr` | `:10.5.3` | `image/Containerfile:82,90` |
 | [ ] | `quay.io/frrouting/frr` | `:10.5.3` | `ansible/inventory/group_vars/all.yml:51` |
 | [ ] | `docker.io/tynany/frr_exporter` | `:latest` | `image/Containerfile:111,118` |
-| [ ] | `docker.io/tynany/frr_exporter` | `:latest` | `ansible/roles/evpn_monitoring/tasks/main.yml:27` |
+| [x] | `docker.io/tynany/frr_exporter` | `:latest` | `ansible/roles/evpn_monitoring/tasks/main.yml:27`; removed in CORENET-7504, which uses the image's `frr-metrics.service` |
 | [ ] | `quay.io/prometheus/node-exporter` | `:latest` | `image/Containerfile:143,151` |
 | [ ] | `quay.io/prometheus/node-exporter` | `:latest` | `ansible/roles/evpn_monitoring/tasks/main.yml:58` |
 | [ ] | `quay.io/centos-bootc/bootc-image-builder` | `:latest` | `image/build-ami.sh:38` |

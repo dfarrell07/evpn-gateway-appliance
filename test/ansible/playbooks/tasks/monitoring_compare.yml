@@ -1,0 +1,95 @@
+---
+# Included by monitoring.yml. Includes itself again, up to six attempts in all, until
+# frr-metrics and FRR agree.
+- name: Read frr-metrics and FRR and compare them
+  block:
+    - name: Read frr-metrics
+      ansible.builtin.uri:
+        url: https://127.0.0.1:7573/metrics
+        validate_certs: false  # self-signed certificate on loopback
+        return_content: true
+      register: _monitoring_metrics
+
+    - name: Read BGP neighbors from FRR
+      ansible.builtin.command: "vtysh -c 'show bgp vrf default neighbors json'"
+      register: _monitoring_bgp
+      changed_when: false
+
+    - name: Read EVPN VNIs from FRR
+      ansible.builtin.command: "vtysh -c 'show evpn vni json'"
+      register: _monitoring_vni
+      changed_when: false
+
+    - name: Collect FRR state and metrics
+      ansible.builtin.set_fact:
+        _peers: "{{ _monitoring_bgp.stdout | from_json }}"
+        _vnis: "{{ _monitoring_vni.stdout | from_json }}"
+        _metrics: "{{ _monitoring_metrics.content }}"
+
+    - name: Check FRR has an Established BGP session
+      ansible.builtin.assert:
+        that: _peers.values() | selectattr('bgpState', 'equalto', 'Established') | list | length > 0
+        quiet: true
+
+    - name: Check FRR has VNIs on a VTEP
+      ansible.builtin.assert:
+        that: _vnis | length > 0
+        quiet: true
+      when: "'cloud_infra' not in group_names"
+
+    - name: Check each peer's session and accepted EVPN prefixes match FRR
+      ansible.builtin.assert:
+        that:
+          - _metrics is search(_session)
+          - _evpn == '' or _metrics is search(_evpn_prefixes)
+        fail_msg: "{{ item.key }}: FRR has state {{ item.value.bgpState }} and {{ _evpn }} accepted EVPN prefixes"
+        quiet: true
+      vars:
+        _evpn: "{{ item.value.get('addressFamilyInfo', {}).get('l2VpnEvpn', {}).get('acceptedPrefixCounter', '') }}"
+        _session: >-
+          (?m)^frrk8s_bgp_session_up\{peer="{{ item.key | regex_escape }}",vrf="default"\}
+          {{ 1 if item.value.bgpState == 'Established' else 0 }}$
+        _evpn_prefixes: >-
+          (?m)^frrk8s_bgp_family_received_prefixes\{afi="l2vpn",peer="{{ item.key | regex_escape }}",safi="evpn",vrf="default"\}
+          {{ _evpn }}$
+      loop: "{{ _peers | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Check frr-metrics reports each FRR VNI's identity and remote VTEP count
+      ansible.builtin.assert:
+        that:
+          - _metrics is search(_vni_info)
+          - item.value.type != 'L2' or _metrics is search(_remote_vteps)
+        fail_msg: >-
+          VNI {{ item.key }}: FRR has type {{ item.value.type }}, VRF {{ item.value.tenantVrf }},
+          interface {{ item.value.vxlanIf }} and {{ item.value.numRemoteVteps | default('no') }} remote VTEPs
+        quiet: true
+      vars:
+        _vni_info: >-
+          (?mx)^frrk8s_evpn_vni_info\{interface="{{ item.value.vxlanIf | regex_escape }}",
+          type="{{ item.value.type }}",vni="{{ item.key }}",vrf="{{ item.value.tenantVrf | regex_escape }}"\}[ ]1$
+        _remote_vteps: >-
+          (?m)^frrk8s_evpn_l2_remote_vteps\{vni="{{ item.key }}",vrf="{{ item.value.tenantVrf | regex_escape }}"\} {{ item.value.numRemoteVteps }}$
+      loop: "{{ _vnis | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+  rescue:
+    - name: Fail after the last attempt
+      ansible.builtin.fail:
+        msg: >-
+          {{ ansible_failed_task.name }}:
+          {{ ansible_failed_result.results | default([ansible_failed_result])
+             | selectattr('failed', 'defined') | selectattr('failed') | map(attribute='msg') | list }}
+      when: _monitoring_attempt | default(1) >= 6
+
+    - name: Count the attempt
+      ansible.builtin.set_fact:
+        _monitoring_attempt: "{{ _monitoring_attempt | default(1) + 1 }}"
+
+    - name: Wait before reading again
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Read and compare again
+      ansible.builtin.include_tasks: monitoring_compare.yml

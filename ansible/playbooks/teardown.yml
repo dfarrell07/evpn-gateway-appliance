@@ -2,6 +2,19 @@
 # Remove all EVPN appliance components. Does NOT destroy cloud infrastructure.
 # Usage: ansible-playbook playbooks/teardown.yml
 
+- name: Remove FRR monitoring
+  hosts: onprem_appliances:cloud_infra:cloud_workload
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop and disable frr-metrics and remove the legacy exporter
+      ansible.builtin.include_role:
+        name: evpn_monitoring
+        tasks_from: frr_metrics
+      vars:
+        monitoring:
+          frr_exporter: false
+
 - name: Teardown on-prem appliance
   hosts: onprem_appliances
   become: true

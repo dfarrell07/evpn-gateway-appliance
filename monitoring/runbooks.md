@@ -8,10 +8,10 @@ Where to run the commands:
 
 - **FRR (`vtysh`)**: on an appliance, `vtysh -c '...'` as root where FRR runs as `frr.service`,
   or `podman exec frr vtysh -c '...'` where it runs in the `frr` container.
-- **The `frr-metrics` exporter**: the FRR alerts read its series. On an appliance it runs as
-  `frr-metrics.service` once it replaces the legacy exporter (see the
-  [metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)); read its log with
-  `journalctl -u frr-metrics.service`.
+- **The `frr-metrics` exporter**: the FRR alerts read its series. On an appliance,
+  `monitoring.frr_exporter` controls `frr-metrics.service`; read it locally with
+  `curl -ksS --max-time 10 https://127.0.0.1:7573/metrics` (`-k` accepts its self-signed
+  certificate) and its log with `journalctl -u frr-metrics.service`.
 - **Probe and node checks**: on the appliance as root.
 - **AWS**: the `aws` CLI with `--region` set to the alert rule's region. An AWS alert clears at
   the first evaluation after a whole healthy 5-minute period, about 5 to 15 minutes after
@@ -34,16 +34,15 @@ fails.
   - `bfd`: `show bgp vrf all json` to list VRFs, then `show bfd vrf VRF peers json` and
     `show bfd vrf VRF peers counters json`;
   - `evpn`: `show evpn vni json`.
-- On an appliance, check the router: `systemctl status frr.service` where FRR runs natively, or
-  `systemctl status frr-container.service` and `podman logs --tail 50 frr` where it runs in a
-  container.
+- On an appliance, check the router: `systemctl status frr.service` and
+  `journalctl -u frr.service -n 50`.
 - Read the exporter's log for the read or parse error.
 
-If `vtysh` hangs or fails, restart the router: `systemctl restart frr.service` where FRR runs
-natively, `systemctl restart frr-container.service` on a bootc image with the FRR container, or
-`podman restart frr` elsewhere. That drops every BGP session on the host, and with
-it every stretch's EVPN routes, until they re-establish. A parse error that persists while FRR
-answers means the exporter does not match this FRR version; report it with the command output.
+If `vtysh` hangs or fails, restart the router: `systemctl restart frr.service` on
+the appliance, or `podman restart frr` on containerized cloud routers. That drops every BGP
+session on the host, and with it every stretch's EVPN routes, until they re-establish. A parse
+error that persists while FRR answers means the exporter does not match this FRR version;
+report it with the command output.
 
 ## EGAFrrMetricsGatherErrors
 

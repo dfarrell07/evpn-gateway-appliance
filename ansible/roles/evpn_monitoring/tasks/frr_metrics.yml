@@ -1,0 +1,50 @@
+---
+# monitoring.frr_exporter unset runs frr-metrics.service where the unit exists (the image's
+# default) and skips hosts without it; true requires the unit; false stops and disables it.
+# teardown.yml uses false.
+- name: Remove the legacy FRR exporter container
+  containers.podman.podman_container:
+    name: frr_exporter
+    state: absent
+
+- name: Gather service facts for frr-metrics
+  ansible.builtin.service_facts:
+
+- name: Require the image's frr-metrics service
+  ansible.builtin.assert:
+    that: "'frr-metrics.service' in ansible_facts.services"
+    fail_msg: >-
+      monitoring.frr_exporter requires the appliance image's frr-metrics.service.
+      This host has no such unit; use the appliance image or leave monitoring.frr_exporter unset.
+    quiet: true
+  when: monitoring.frr_exporter | default(false)
+
+- name: Stop and disable frr-metrics
+  ansible.builtin.systemd:
+    name: frr-metrics.service
+    enabled: false
+    state: stopped
+  when:
+    - not (monitoring.frr_exporter | default(true))
+    - "'frr-metrics.service' in ansible_facts.services"
+
+- name: Enable frr-metrics
+  when:
+    - monitoring.frr_exporter | default(true)
+    - "'frr-metrics.service' in ansible_facts.services"
+  block:
+    - name: Enable and start frr-metrics
+      ansible.builtin.systemd:
+        name: frr-metrics.service
+        enabled: true
+        state: started
+
+    - name: Wait for frr-metrics to serve
+      ansible.builtin.uri:
+        url: https://127.0.0.1:7573/metrics
+        validate_certs: false  # self-signed certificate on loopback
+      register: _evpn_monitoring_frr_metrics
+      until: _evpn_monitoring_frr_metrics.status == 200
+      retries: 12
+      delay: 5
+      when: not ansible_check_mode
