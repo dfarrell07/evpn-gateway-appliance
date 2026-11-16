@@ -22,7 +22,6 @@ meta/execution-environment.yml      Execution-environment dependency pointers
 roles/
 ├── evpn_onprem_appliance/          On-prem: VLAN trunk, VXLAN, FRR VTEP
 ├── evpn_cloud_infra/               Infra VPC: WireGuard server, FRR relay
-├── evpn_cloud_workload/            Workload VPC: standalone FRR VTEP (dev/test — see role README)
 ├── evpn_aws_infra/                 AWS provisioning (VPCs, TGW, EC2, security groups)
 ├── evpn_monitoring/                frr_exporter + node_exporter
 └── evpn_health_check/              Read-only validation suite

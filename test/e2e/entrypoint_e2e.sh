@@ -100,10 +100,12 @@ ee_playbook() {
 }
 
 # Build the simulated on-prem side (trunk + fake hosts) BEFORE the product deploy so
-# the appliance role finds the trunk to build its VTEP on; deploy the product; then run
-# the simulated-host data-plane checks.
+# the appliance role finds the trunk to build its VTEP on; deploy the standalone
+# workload VTEP, then the product; then run the simulated-host data-plane checks.
+# This lane has no API, so the cloud infra role keeps the inventory peers.
 ee_playbook network.evpn_gateway_test.simulate
-ee_playbook network.evpn_gateway.deploy
+ee_playbook network.evpn_gateway_test.deploy_workload
+ee_playbook network.evpn_gateway.deploy -e skip_frr_discovery=true
 ee_playbook network.evpn_gateway_test.healthcheck
 
 echo ">> deploy + simulated-host health checks complete"

@@ -19,6 +19,11 @@ Entry points, by how they are meant to be run:
   the e2e or molecule lane. A Prow status then reads `e2e` / `molecule`. The molecule wrapper also
   skips the EE build (molecule drives the role with the CI image's own ansible, not the shipped EE).
 
+`entrypoint_e2e.sh` deploys a standalone workload VTEP and passes
+`-e skip_frr_discovery=true`. That lane has no Kubernetes API, so the cloud
+infra role keeps the peers already listed in inventory. With the flag unset,
+the role discovers running frr-k8s pods.
+
 All are runner-agnostic — the same scripts work under a Prow test step or a GitHub Actions
 VM; the runner only provides env and collects artifacts.
 
@@ -26,7 +31,7 @@ VM; the runner only provides env and collects artifacts.
 
 ```text
 test/
-  ansible/                test-only collection (network.evpn_gateway_test): on-prem sim role + playbooks; installed into the EE
+  ansible/                test-only collection (network.evpn_gateway_test): on-prem sim, standalone VTEP, playbooks; installed into the EE
   e2e/
     run.sh                run a lane locally (rootful): podman run the toolchain image, run ${EGA_ENTRYPOINT}
     run_remote.sh         shared core: against a remote target (or locally): export, ship, build, run
