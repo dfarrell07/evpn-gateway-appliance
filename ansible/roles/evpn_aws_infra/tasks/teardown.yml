@@ -18,6 +18,11 @@
     wait: true
   when: _evpn_aws_infra_instances.instances | length > 0
 
+# Runs for every transport so a VPN left by an earlier ipsec run cannot leak
+# or block TGW deletion; it is a no-op when none exists.
+- name: Tear down AWS Site-to-Site VPN
+  ansible.builtin.include_tasks: teardown_vpn.yml
+
 - name: Find TGW attachments
   amazon.aws.ec2_transit_gateway_vpc_attachment_info:
     region: "{{ evpn_aws_infra_aws_region }}"

@@ -15,9 +15,11 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
 - The on-prem networking (nmstate, `tasks/nm_networking.yml`) is exercised by
   the Molecule lane against a veth stand-in trunk; it is not yet validated
   against actual hardware or a real tagged customer trunk (source-audit.md).
-- `tunnel.type: wireguard` is the only implemented transport. `ipsec` and
-  `direct-connect` are accepted values but have no implementation yet —
-  production requires Direct Connect or Site-to-Site VPN.
+- `tunnel.type: wireguard` is the only transport implemented on the host.
+  `ipsec` has an AWS-side Site-to-Site VPN lifecycle in `evpn_aws_infra`, but
+  host Libreswan/FRR configuration is not implemented yet (CORENET-7708).
+  `direct-connect` is accepted but has no implementation yet; production
+  requires Direct Connect or Site-to-Site VPN.
 - The FRR templates set no inbound/outbound route policy beyond a
   defensive `maximum-prefix`; see the comment at the top of
   `templates/frr-onprem-appliance.conf.j2`.

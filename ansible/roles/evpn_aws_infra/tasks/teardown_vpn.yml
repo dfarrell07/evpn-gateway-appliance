@@ -1,0 +1,64 @@
+---
+# CLI rather than amazon.aws.ec2_vpc_vpn*, which need amazon.aws 9.0.0 while
+# galaxy.yml allows >=7.0.0.
+- name: Find project VPN connections
+  ansible.builtin.command: >
+    aws ec2 describe-vpn-connections --region {{ evpn_aws_infra_aws_region }}
+    --filters "Name=tag:Project,Values={{ evpn_aws_infra_project_name }}"
+    --query "VpnConnections[?State!='deleted' && State!='deleting'].VpnConnectionId" --output json
+  register: _evpn_aws_infra_vpn_teardown_lookup
+  changed_when: false
+
+- name: Find project VPN connections still deleting
+  ansible.builtin.command: >
+    aws ec2 describe-vpn-connections --region {{ evpn_aws_infra_aws_region }}
+    --filters "Name=tag:Project,Values={{ evpn_aws_infra_project_name }}"
+    --query "VpnConnections[?State=='deleting'].VpnConnectionId" --output json
+  register: _evpn_aws_infra_vpn_teardown_deleting
+  changed_when: false
+
+- name: Select project VPN connection IDs
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_teardown_ids: "{{ _evpn_aws_infra_vpn_teardown_lookup.stdout | from_json }}"
+    _evpn_aws_infra_vpn_teardown_wait_ids: >-
+      {{ (_evpn_aws_infra_vpn_teardown_lookup.stdout | from_json) + (_evpn_aws_infra_vpn_teardown_deleting.stdout | from_json) }}
+
+- name: Delete project VPN connections
+  ansible.builtin.command: >
+    aws ec2 delete-vpn-connection --region {{ evpn_aws_infra_aws_region }}
+    --vpn-connection-id {{ item }}
+  changed_when: true
+  loop: "{{ _evpn_aws_infra_vpn_teardown_ids }}"
+
+# Also wait for connections that were already deleting when teardown started.
+- name: Wait for project VPN connections to be deleted
+  ansible.builtin.command: >
+    aws ec2 describe-vpn-connections --region {{ evpn_aws_infra_aws_region }}
+    --filters "Name=vpn-connection-id,Values={{ item }}"
+    --query "VpnConnections[?State!='deleted'].VpnConnectionId" --output json
+  register: _evpn_aws_infra_vpn_teardown_state
+  until: _evpn_aws_infra_vpn_teardown_state.stdout | from_json | length == 0
+  retries: 60
+  delay: 10
+  changed_when: false
+  loop: "{{ _evpn_aws_infra_vpn_teardown_wait_ids }}"
+
+# ec2_customer_gateway is only in community.aws; retain the declared dependencies.
+- name: Find project VPN customer gateways
+  ansible.builtin.command: >
+    aws ec2 describe-customer-gateways --region {{ evpn_aws_infra_aws_region }}
+    --filters "Name=tag:Project,Values={{ evpn_aws_infra_project_name }}"
+    --query "CustomerGateways[?State!='deleted'].CustomerGatewayId" --output json
+  register: _evpn_aws_infra_vpn_cgw_teardown_lookup
+  changed_when: false
+
+- name: Delete project VPN customer gateways
+  ansible.builtin.command: >
+    aws ec2 delete-customer-gateway --region {{ evpn_aws_infra_aws_region }}
+    --customer-gateway-id {{ item }}
+  register: _evpn_aws_infra_vpn_cgw_teardown
+  until: _evpn_aws_infra_vpn_cgw_teardown.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: true
+  loop: "{{ _evpn_aws_infra_vpn_cgw_teardown_lookup.stdout | from_json }}"

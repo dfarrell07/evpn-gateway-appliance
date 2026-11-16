@@ -1,0 +1,344 @@
+---
+# Included only for ipsec. AWS terminates the VPN; no router IKE/NAT-T ingress.
+- name: Set VPN gateway and pinned tunnel options
+  ansible.builtin.set_fact:
+    # Canonical form, so route lookups match what EC2 stores (10.44.44.1/24 -> 10.44.44.0/24).
+    _evpn_aws_infra_vpn_onprem_cidr: "{{ tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.ipv4('network/prefix') }}"
+    # TGW is assumed for this slice; VGW remains an open owner decision.
+    _evpn_aws_infra_vpn_gateway:
+      type: tgw
+      id: "{{ _evpn_aws_infra_tgw.stdout | trim }}"
+    # Names and values verified against VpnTunnelOptionsSpecification and
+    # https://docs.aws.amazon.com/cli/latest/reference/ec2/create-vpn-connection.html
+    _evpn_aws_infra_vpn_pinned_options:
+      IKEVersions: [{Value: ikev2}]
+      Phase1EncryptionAlgorithms: [{Value: AES256-GCM-16}]
+      Phase1IntegrityAlgorithms: [{Value: SHA2-256}]
+      Phase1DHGroupNumbers: [{Value: 14}]
+      Phase2EncryptionAlgorithms: [{Value: AES256-GCM-16}]
+      Phase2IntegrityAlgorithms: [{Value: SHA2-256}]
+      Phase2DHGroupNumbers: [{Value: 14}]
+      Phase1LifetimeSeconds: 28800
+      Phase2LifetimeSeconds: 3600
+      RekeyMarginTimeSeconds: 270
+      RekeyFuzzPercentage: 100
+      DPDTimeoutSeconds: 40
+      DPDTimeoutAction: clear
+      StartupAction: add
+    # DescribeVpnConnections returns botocore TunnelOption names, which differ
+    # from the request names for these three fields (checked against botocore's
+    # ec2 service model: TunnelOption vs VpnTunnelOptionsSpecification).
+    _evpn_aws_infra_vpn_readback_names:
+      IKEVersions: IkeVersions
+      DPDTimeoutAction: DpdTimeoutAction
+      DPDTimeoutSeconds: DpdTimeoutSeconds
+
+- name: Read VPN gateway Amazon BGP ASN
+  ansible.builtin.command: >
+    aws ec2 describe-transit-gateways --region {{ _evpn_aws_infra_region }}
+    --transit-gateway-ids {{ _evpn_aws_infra_vpn_gateway.id }}
+    --query "TransitGateways[0].Options.AmazonSideAsn" --output text
+  register: _evpn_aws_infra_vpn_aws_asn
+  changed_when: false
+
+- name: Validate distinct VPN BGP ASNs
+  ansible.builtin.assert:
+    that: _evpn_aws_infra_vpn_aws_asn.stdout | trim | int != evpn_aws_infra_vpn_customer_gateway_asn | int
+    fail_msg: The customer gateway ASN must differ from the gateway's Amazon-side ASN for eBGP.
+
+- name: Find VPN customer gateway by project and name
+  ansible.builtin.command: >
+    aws ec2 describe-customer-gateways --region {{ _evpn_aws_infra_region }}
+    --filters "Name=tag:Project,Values={{ evpn_aws_infra_project_name }}"
+              "Name=tag:Name,Values={{ evpn_aws_infra_project_name }}-vpn-cgw"
+    --query "CustomerGateways[?State=='available' || State=='pending']" --output json
+  register: _evpn_aws_infra_vpn_cgw_lookup
+  changed_when: false
+
+- name: Validate unique VPN customer gateway
+  ansible.builtin.assert:
+    that: _evpn_aws_infra_vpn_cgw_lookup.stdout | from_json | length <= 1
+    fail_msg: Multiple customer gateways have the VPN project and name tags; reconcile them before retrying.
+
+- name: Validate existing VPN customer gateway
+  ansible.builtin.assert:
+    that:
+      - item.Type == 'ipsec.1'
+      - item.IpAddress == evpn_aws_infra_vpn_customer_gateway_ip
+      # AWS reports ASNs above 2147483647 only in BgpAsnExtended.
+      - (item.BgpAsnExtended | default(item.BgpAsn, true)) | int == evpn_aws_infra_vpn_customer_gateway_asn | int
+    fail_msg: Existing VPN customer gateway differs from the requested configuration; reconcile it before retrying.
+  loop: "{{ _evpn_aws_infra_vpn_cgw_lookup.stdout | from_json }}"
+  loop_control:
+    label: "{{ item.CustomerGatewayId }}"
+
+- name: Create VPN customer gateway
+  ansible.builtin.command: >
+    aws ec2 create-customer-gateway --region {{ _evpn_aws_infra_region }}
+    --type ipsec.1
+    {{ '--bgp-asn-extended' if evpn_aws_infra_vpn_customer_gateway_asn | int > 2147483647 else '--bgp-asn' }}
+    {{ evpn_aws_infra_vpn_customer_gateway_asn }}
+    --ip-address {{ evpn_aws_infra_vpn_customer_gateway_ip }}
+    --device-name {{ evpn_aws_infra_project_name }}-vpn-cgw
+    --tag-specifications 'ResourceType=customer-gateway,Tags=[{Key=Name,Value={{
+      evpn_aws_infra_project_name }}-vpn-cgw},{Key=Project,Value={{ evpn_aws_infra_project_name }}}]'
+    --query CustomerGateway.CustomerGatewayId --output text
+  register: _evpn_aws_infra_vpn_cgw_create
+  changed_when: true
+  when: _evpn_aws_infra_vpn_cgw_lookup.stdout | from_json | length == 0
+
+- name: Set VPN customer gateway ID
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_cgw_id: >-
+      {{ (_evpn_aws_infra_vpn_cgw_lookup.stdout | from_json)[0].CustomerGatewayId
+         if _evpn_aws_infra_vpn_cgw_lookup.stdout | from_json | length > 0
+         else _evpn_aws_infra_vpn_cgw_create.stdout | trim }}
+
+- name: Wait for VPN customer gateway to be available
+  ansible.builtin.command: >
+    aws ec2 describe-customer-gateways --region {{ _evpn_aws_infra_region }}
+    --customer-gateway-ids {{ _evpn_aws_infra_vpn_cgw_id }}
+    --query "CustomerGateways[0].State" --output text
+  register: _evpn_aws_infra_vpn_cgw_state
+  until: _evpn_aws_infra_vpn_cgw_state.stdout | trim == 'available'
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Find VPN connection by project and name
+  ansible.builtin.command: >
+    aws ec2 describe-vpn-connections --region {{ _evpn_aws_infra_region }}
+    --filters "Name=tag:Project,Values={{ evpn_aws_infra_project_name }}"
+              "Name=tag:Name,Values={{ evpn_aws_infra_project_name }}-vpn"
+    --query "VpnConnections[?State=='available' || State=='pending'].VpnConnectionId" --output json
+  register: _evpn_aws_infra_vpn_lookup
+  changed_when: false
+  no_log: true
+
+- name: Validate unique VPN connection
+  ansible.builtin.assert:
+    that: _evpn_aws_infra_vpn_lookup.stdout | from_json | length <= 1
+    fail_msg: Multiple VPN connections have the project and name tags; reconcile them before retrying.
+
+- name: Initialize VPN creation keys
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_keys: "{{ evpn_aws_infra_vpn_preshared_keys }}"
+  no_log: true
+
+- name: Generate VPN creation keys
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_keys: >-
+      {{ _evpn_aws_infra_vpn_keys +
+         [lookup('ansible.builtin.password', '/dev/null', length=1, chars=['ascii_letters']) ~
+          lookup('ansible.builtin.password', '/dev/null', length=63, chars=['ascii_letters', 'digits', '._'])] }}
+  loop: "{{ range(2) | list }}"
+  when: evpn_aws_infra_vpn_preshared_keys | length == 0
+  no_log: true
+
+- name: Build VPN options JSON
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_options_json: >-
+      {{ {'StaticRoutesOnly': false, 'TunnelOptions': [
+           _evpn_aws_infra_vpn_pinned_options | combine({
+             'TunnelInsideCidr': evpn_aws_infra_vpn_tunnel_inside_cidrs[0], 'PreSharedKey': _evpn_aws_infra_vpn_keys[0]}),
+           _evpn_aws_infra_vpn_pinned_options | combine({
+             'TunnelInsideCidr': evpn_aws_infra_vpn_tunnel_inside_cidrs[1], 'PreSharedKey': _evpn_aws_infra_vpn_keys[1]})]} | to_json }}
+  no_log: true
+
+- name: Create VPN connection
+  ansible.builtin.command:
+    # Keys go through stdin, not argv, so other local users cannot read them from the process list.
+    stdin: "{{ _evpn_aws_infra_vpn_options_json }}"
+    stdin_add_newline: false
+    argv:
+      - aws
+      - ec2
+      - create-vpn-connection
+      - --region
+      - "{{ _evpn_aws_infra_region }}"
+      - --type
+      - ipsec.1
+      - --customer-gateway-id
+      - "{{ _evpn_aws_infra_vpn_cgw_id }}"
+      - --transit-gateway-id
+      - "{{ _evpn_aws_infra_vpn_gateway.id }}"
+      - --options
+      - file:///dev/stdin
+      - --tag-specifications
+      - >-
+        ResourceType=vpn-connection,Tags=[{Key=Name,Value={{ evpn_aws_infra_project_name }}-vpn},
+        {Key=Project,Value={{ evpn_aws_infra_project_name }}}]
+      - --query
+      - VpnConnection.VpnConnectionId
+      - --output
+      - text
+  register: _evpn_aws_infra_vpn_create
+  changed_when: true
+  when: _evpn_aws_infra_vpn_lookup.stdout | from_json | length == 0
+  no_log: true
+
+- name: Set VPN connection ID
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_id: >-
+      {{ (_evpn_aws_infra_vpn_lookup.stdout | from_json)[0]
+         if _evpn_aws_infra_vpn_lookup.stdout | from_json | length > 0
+         else _evpn_aws_infra_vpn_create.stdout | trim }}
+
+- name: Wait for VPN connection to be available and read it back
+  ansible.builtin.command: >
+    aws ec2 describe-vpn-connections --region {{ _evpn_aws_infra_region }}
+    --vpn-connection-ids {{ _evpn_aws_infra_vpn_id }}
+    --query "VpnConnections[0]" --output json
+  register: _evpn_aws_infra_vpn_readback
+  until: (_evpn_aws_infra_vpn_readback.stdout | from_json).State == 'available'
+  retries: 60
+  delay: 10
+  changed_when: false
+  no_log: true
+
+- name: Set VPN connection details
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_connection: "{{ _evpn_aws_infra_vpn_readback.stdout | from_json }}"
+  no_log: true
+
+- name: Validate VPN connection configuration
+  ansible.builtin.assert:
+    that:
+      - _evpn_aws_infra_vpn_connection.Type == 'ipsec.1'
+      - _evpn_aws_infra_vpn_connection.TransitGatewayId == _evpn_aws_infra_vpn_gateway.id
+      - _evpn_aws_infra_vpn_connection.CustomerGatewayId == _evpn_aws_infra_vpn_cgw_id
+      - not _evpn_aws_infra_vpn_connection.Options.StaticRoutesOnly
+      - >-
+        _evpn_aws_infra_vpn_connection.Options.TunnelOptions | map(attribute='TunnelInsideCidr') | sort ==
+        evpn_aws_infra_vpn_tunnel_inside_cidrs | sort
+    fail_msg: VPN configuration differs from the requested configuration; reconcile it before retrying.
+  no_log: true
+
+- name: Set expected VPN tunnel readback
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_expected_readback: >-
+      {{ dict(_evpn_aws_infra_vpn_pinned_options | dict2items |
+              map(attribute='key') | map('extract', _evpn_aws_infra_vpn_readback_key_map) |
+              zip(_evpn_aws_infra_vpn_pinned_options.values())) }}
+  vars:
+    _evpn_aws_infra_vpn_readback_key_map: >-
+      {{ dict(_evpn_aws_infra_vpn_pinned_options.keys() | zip(_evpn_aws_infra_vpn_pinned_options.keys()))
+         | combine(_evpn_aws_infra_vpn_readback_names) }}
+
+- name: Validate VPN tunnel configuration
+  ansible.builtin.assert:
+    that:
+      - item.OutsideIpAddress | default('') | ansible.utils.ipv4('address') != false
+      # Compare only the pinned non-secret fields, allowing AWS's additional fields.
+      # A missing field shortens the left side, so it fails too.
+      - >-
+        item | dict2items | selectattr('key', 'in', _evpn_aws_infra_vpn_expected_readback) | items2dict ==
+        _evpn_aws_infra_vpn_expected_readback
+    fail_msg: VPN tunnel options differ from the requested configuration; reconcile them before retrying.
+  loop: "{{ _evpn_aws_infra_vpn_connection.Options.TunnelOptions }}"
+  no_log: true
+
+- name: Initialize VPN handoff
+  ansible.builtin.set_fact:
+    evpn_aws_infra_vpn:
+      connection_id: "{{ _evpn_aws_infra_vpn_id }}"
+      customer_gateway_id: "{{ _evpn_aws_infra_vpn_cgw_id }}"
+      gateway: "{{ _evpn_aws_infra_vpn_gateway }}"
+      tunnels: []
+  no_log: true
+
+- name: Set VPN tunnel handoff
+  ansible.builtin.set_fact:
+    evpn_aws_infra_vpn: >-
+      {{ evpn_aws_infra_vpn | combine({'tunnels': evpn_aws_infra_vpn.tunnels + [{
+           'outside_ip': item.OutsideIpAddress,
+           'inside_cidr': item.TunnelInsideCidr,
+           'aws_inside_ip': item.TunnelInsideCidr | ansible.utils.ipmath(1),
+           'cgw_inside_ip': item.TunnelInsideCidr | ansible.utils.ipmath(2),
+           'aws_bgp_asn': _evpn_aws_infra_vpn_aws_asn.stdout | trim | int,
+           'cgw_bgp_asn': evpn_aws_infra_vpn_customer_gateway_asn | int,
+           'secret_preshared_key': item.PreSharedKey}]}) }}
+  loop: "{{ _evpn_aws_infra_vpn_connection.Options.TunnelOptions }}"
+  # AWS uses host 1 and the CGW host 2; see the AWS Juniper troubleshooting
+  # guide's Tunnel example (169.254.255.1 peer, 169.254.255.2 local).
+  no_log: true
+
+- name: Wait for VPN attachment and stable association
+  ansible.builtin.command: >
+    aws ec2 describe-transit-gateway-attachments --region {{ _evpn_aws_infra_region }}
+    --filters "Name=transit-gateway-id,Values={{ _evpn_aws_infra_vpn_gateway.id }}"
+              "Name=resource-id,Values={{ _evpn_aws_infra_vpn_id }}" "Name=resource-type,Values=vpn"
+    --query "TransitGatewayAttachments[?State!='deleted']" --output json
+  register: _evpn_aws_infra_vpn_attachment_lookup
+  until:
+    - _evpn_aws_infra_vpn_attachment_lookup.stdout | from_json | length == 1
+    - (_evpn_aws_infra_vpn_attachment_lookup.stdout | from_json)[0].State == 'available'
+    - >-
+      ((_evpn_aws_infra_vpn_attachment_lookup.stdout | from_json)[0].Association | default({})).State | default('disassociated')
+      in ['associated', 'disassociated']
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Set VPN attachment details
+  ansible.builtin.set_fact:
+    _evpn_aws_infra_vpn_attachment: "{{ (_evpn_aws_infra_vpn_attachment_lookup.stdout | from_json)[0] }}"
+
+# main.yml creates a fresh TGW with default options, so AWS associates the VPN
+# attachment with, and propagates it to, the default route table; verify that.
+
+- name: Verify VPN association with the TGW route table
+  ansible.builtin.command: >
+    aws ec2 get-transit-gateway-route-table-associations --region {{ _evpn_aws_infra_region }}
+    --transit-gateway-route-table-id {{ _evpn_aws_infra_tgw_rt.stdout | trim }}
+    --filters "Name=transit-gateway-attachment-id,Values={{ _evpn_aws_infra_vpn_attachment.TransitGatewayAttachmentId }}"
+    --query Associations --output json
+  register: _evpn_aws_infra_vpn_association
+  until:
+    - _evpn_aws_infra_vpn_association.stdout | from_json | length == 1
+    - (_evpn_aws_infra_vpn_association.stdout | from_json)[0].State == 'associated'
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Verify VPN route propagation to the TGW route table
+  ansible.builtin.command: >
+    aws ec2 get-transit-gateway-route-table-propagations --region {{ _evpn_aws_infra_region }}
+    --transit-gateway-route-table-id {{ _evpn_aws_infra_tgw_rt.stdout | trim }}
+    --filters "Name=transit-gateway-attachment-id,Values={{ _evpn_aws_infra_vpn_attachment.TransitGatewayAttachmentId }}"
+    --query TransitGatewayRouteTablePropagations --output json
+  register: _evpn_aws_infra_vpn_propagation_state
+  until:
+    - _evpn_aws_infra_vpn_propagation_state.stdout | from_json | length == 1
+    - (_evpn_aws_infra_vpn_propagation_state.stdout | from_json)[0].State == 'enabled'
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Route the on-premises network through the VPN gateway
+  ansible.builtin.command: >
+    aws ec2 create-route --region {{ _evpn_aws_infra_region }}
+    --route-table-id {{ item | trim }}
+    --destination-cidr-block {{ _evpn_aws_infra_vpn_onprem_cidr }}
+    --transit-gateway-id {{ _evpn_aws_infra_vpn_gateway.id }}
+  register: _evpn_aws_infra_r
+  failed_when: _evpn_aws_infra_r.rc != 0 and 'already exists' not in _evpn_aws_infra_r.stderr
+  changed_when: _evpn_aws_infra_r.rc == 0
+  loop:
+    - "{{ _evpn_aws_infra_workload_rt.stdout }}"
+    - "{{ _evpn_aws_infra_infra_rt.stdout }}"
+
+- name: Verify on-premises routes target the VPN gateway
+  ansible.builtin.command: >
+    aws ec2 describe-route-tables --region {{ _evpn_aws_infra_region }}
+    --route-table-ids {{ item | trim }}
+    --query "RouteTables[0].Routes[?DestinationCidrBlock=='{{ _evpn_aws_infra_vpn_onprem_cidr }}']" --output json
+  register: _evpn_aws_infra_vpn_route
+  changed_when: false
+  failed_when: >-
+    _evpn_aws_infra_vpn_route.rc != 0 or
+    (_evpn_aws_infra_vpn_route.stdout | from_json | selectattr('TransitGatewayId', 'defined') |
+     selectattr('TransitGatewayId', 'equalto', _evpn_aws_infra_vpn_gateway.id) | list | length) != 1
+  loop:
+    - "{{ _evpn_aws_infra_workload_rt.stdout }}"
+    - "{{ _evpn_aws_infra_infra_rt.stdout }}"

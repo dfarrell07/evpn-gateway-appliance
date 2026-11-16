@@ -2,8 +2,9 @@
 # ── Tunnel ────────────────────────────────────────────────────
 # Supported types:
 #   wireguard      — dev/test, terminates on infra EC2
-#   ipsec          — Site-to-Site VPN, TGW cloud-side, Libreswan on-prem
-#                    requires on-prem public IP for Customer Gateway
+#   ipsec          — AWS Site-to-Site VPN lifecycle on TGW; host Libreswan/FRR
+#                    configuration is not implemented yet (CORENET-7708).
+#                    Set evpn_aws_infra_vpn_customer_gateway_ip to the on-prem static public IPv4.
 #   direct-connect — production, DX partner + jumbo MTU
 #
 # MTU modes:
@@ -42,6 +43,12 @@ bgp:
   infra_asn: 65100
   workload_asn: 65200
   # max_prefix: 1000   # Defensive backstop only; defaults to 1000 if omitted (source-audit.md §1).
+
+# Map the shared on-prem ASN explicitly into the AWS role.
+evpn_aws_infra_vpn_customer_gateway_asn: "{{ bgp.onprem_asn }}"
+# For ipsec, also set evpn_aws_infra_vpn_customer_gateway_ip (no default).
+# Optional evpn_aws_infra_vpn_preshared_keys: two keys supplied through Ansible Vault.
+# Empty generates keys for creation; an existing VPN retains its keys.
 
 # ── VLAN Stretches ────────────────────────────────────────────
 stretches:

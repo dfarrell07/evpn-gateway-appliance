@@ -41,6 +41,30 @@ argument_specs:
         type: bool
         default: false
         description: Explicitly allow admin ingress from 0.0.0.0/0. For disposable labs only.
+      evpn_aws_infra_vpn_customer_gateway_ip:
+        type: str
+        default: ""
+        description: On-premises static public IPv4 address. Required and validated when tunnel.type is ipsec.
+      evpn_aws_infra_vpn_customer_gateway_asn:
+        type: int
+        default: 65044
+        description: >-
+          Customer gateway BGP ASN, the on-premises ASN (the collection's bgp.onprem_asn default).
+          Keep it distinct from the TGW Amazon-side ASN and from any VPC Route Server ASN
+          (BGP Cloud Connector's helper defaults to 65000) reachable through the TGW.
+      evpn_aws_infra_vpn_tunnel_inside_cidrs:
+        type: list
+        elements: str
+        default: [169.254.10.0/30, 169.254.11.0/30]
+        description: Two distinct canonical /30 networks in 169.254.0.0/16, excluding AWS reserved tunnel ranges.
+      evpn_aws_infra_vpn_preshared_keys:
+        type: list
+        elements: str
+        default: []
+        no_log: true
+        description: >-
+          Optional two secret PSKs, 8-64 alphanumeric, period or underscore characters, not starting with zero.
+          Empty generates two 64-character keys per run for creation. Existing VPN keys are retained and read back for handoff.
       tunnel:
         type: dict
         required: true

@@ -1,0 +1,37 @@
+---
+# ipsec input checks, run before main.yml creates any AWS resource.
+- name: Validate VPN customer gateway address
+  ansible.builtin.assert:
+    that:
+      - evpn_aws_infra_vpn_customer_gateway_ip | length > 0
+      - evpn_aws_infra_vpn_customer_gateway_ip | ansible.utils.ipv4('address') == evpn_aws_infra_vpn_customer_gateway_ip
+    fail_msg: Set evpn_aws_infra_vpn_customer_gateway_ip to the on-premises static public IPv4 address.
+
+- name: Validate VPN tunnel input counts
+  ansible.builtin.assert:
+    that:
+      - evpn_aws_infra_vpn_tunnel_inside_cidrs | length == 2
+      - evpn_aws_infra_vpn_tunnel_inside_cidrs | unique | length == 2
+
+- name: Validate VPN tunnel inside networks
+  ansible.builtin.assert:
+    that:
+      - item | ansible.utils.ipv4('network/prefix') == item
+      - item | ansible.utils.ipv4('prefix') == 30
+      - item | ansible.utils.ipv4('169.254.0.0/16') == item
+      - item not in ['169.254.0.0/30', '169.254.1.0/30', '169.254.2.0/30', '169.254.3.0/30', '169.254.4.0/30', '169.254.5.0/30', '169.254.169.252/30']
+    fail_msg: VPN inside networks must be canonical, non-reserved /30s in 169.254.0.0/16.
+  loop: "{{ evpn_aws_infra_vpn_tunnel_inside_cidrs }}"
+
+- name: Validate VPN key count
+  ansible.builtin.assert:
+    that: evpn_aws_infra_vpn_preshared_keys | length in [0, 2]
+    fail_msg: Supply either zero or two VPN preshared keys.
+  no_log: true
+
+- name: Validate supplied VPN keys
+  ansible.builtin.assert:
+    that: item is match('^[A-Za-z1-9._][A-Za-z0-9._]{7,63}\\Z')
+    fail_msg: VPN preshared keys must meet AWS length and character constraints.
+  loop: "{{ evpn_aws_infra_vpn_preshared_keys }}"
+  no_log: true
