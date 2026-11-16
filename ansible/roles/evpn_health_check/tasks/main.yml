@@ -4,11 +4,25 @@
 # ═══════════════════════════════════════════════════════════════
 # Common checks (all hosts)
 # ═══════════════════════════════════════════════════════════════
-- name: "HEALTH: FRR container is running"
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: Select FRR runtime
+  ansible.builtin.set_fact:
+    _frr_native: "{{ 'frr.service' in ansible_facts.services }}"
+    _vtysh: "{{ 'vtysh' if 'frr.service' in ansible_facts.services else 'podman exec frr vtysh' }}"
+
+- name: "HEALTH: FRR service is active (native)"
+  ansible.builtin.assert:
+    that: ansible_facts.services['frr.service'].state == 'running'
+  when: _frr_native
+
+- name: "HEALTH: FRR container is running (podman)"
   ansible.builtin.command: podman ps --format '{{ '{{' }}.Names{{ '}}' }}' --filter name=frr
   register: _frr_ps
   changed_when: false
   failed_when: "'frr' not in _frr_ps.stdout"
+  when: not _frr_native
 
 # ═══════════════════════════════════════════════════════════════
 # Infra relay checks
@@ -25,7 +39,7 @@
 - name: "HEALTH [infra]: BGP session to workload is Established"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show bgp summary json" |
+    {{ _vtysh }} -c "show bgp summary json" |
     python3 -c "import sys,json; d=json.load(sys.stdin);
     p=d['ipv4Unicast']['peers']['{{ hostvars[workload_vtep_host].private_ip }}'];
     assert p['state']=='Established', f'state={p[\"state\"]}'"
@@ -35,7 +49,7 @@
 - name: "HEALTH [infra]: BGP session to on-prem is Established"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show bgp summary json" |
+    {{ _vtysh }} -c "show bgp summary json" |
     python3 -c "import sys,json; d=json.load(sys.stdin);
     p=d['ipv4Unicast']['peers']['{{ tunnel.onprem_ip }}'];
     assert p['state']=='Established', f'state={p[\"state\"]}'"
@@ -45,7 +59,7 @@
 - name: "HEALTH [infra]: EVPN prefixes relayed from on-prem"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show bgp l2vpn evpn summary json" |
+    {{ _vtysh }} -c "show bgp l2vpn evpn summary json" |
     python3 -c "import sys,json; d=json.load(sys.stdin);
     p=d['peers']['{{ tunnel.onprem_ip }}'];
     assert int(p['pfxRcd'])>0, f'pfxRcd={p[\"pfxRcd\"]}'"
@@ -55,7 +69,7 @@
 - name: "HEALTH [infra]: EVPN prefixes relayed from workload"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show bgp l2vpn evpn summary json" |
+    {{ _vtysh }} -c "show bgp l2vpn evpn summary json" |
     python3 -c "import sys,json; d=json.load(sys.stdin);
     p=d['peers']['{{ hostvars[workload_vtep_host].private_ip }}'];
     assert int(p['pfxRcd'])>0, f'pfxRcd={p[\"pfxRcd\"]}'"
@@ -75,7 +89,7 @@
 - name: "HEALTH [workload]: BGP session to infra is Established"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show bgp summary json" |
+    {{ _vtysh }} -c "show bgp summary json" |
     python3 -c "import sys,json; d=json.load(sys.stdin);
     p=d['ipv4Unicast']['peers']['{{ hostvars[infra_relay_host].private_ip }}'];
     assert p['state']=='Established', f'state={p[\"state\"]}'"
@@ -85,7 +99,7 @@
 - name: "HEALTH [workload]: remote VTEP present per VNI"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show evpn vni {{ 10000 + item.vlan }}" |
+    {{ _vtysh }} -c "show evpn vni {{ 10000 + item.vlan }}" |
     grep -A1 "Remote VTEPs" | grep -oP '\d+\.\d+\.\d+\.\d+'
   register: _remote_vtep
   changed_when: false
@@ -120,7 +134,7 @@
 - name: "HEALTH [onprem]: BGP session to infra is Established"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show bgp summary json" |
+    {{ _vtysh }} -c "show bgp summary json" |
     python3 -c "import sys,json; d=json.load(sys.stdin);
     p=d['ipv4Unicast']['peers']['{{ tunnel.cloud_ip }}'];
     assert p['state']=='Established', f'state={p[\"state\"]}'"
@@ -130,7 +144,7 @@
 - name: "HEALTH [onprem]: remote VTEP present per VNI"
   ansible.builtin.shell: >
     set -o pipefail;
-    podman exec frr vtysh -c "show evpn vni {{ 10000 + item.vlan }}" |
+    {{ _vtysh }} -c "show evpn vni {{ 10000 + item.vlan }}" |
     grep -A1 "Remote VTEPs" | grep -oP '\d+\.\d+\.\d+\.\d+'
   register: _remote_vtep
   changed_when: false

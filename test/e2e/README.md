@@ -144,9 +144,8 @@ host, which is then the rootful one.
 - `SSH_REMOTE` — `user@host` of the target; unset runs everything on this host.
 - `SSH_OPTS` — ssh/scp options, word-split (remote only), e.g.
   `-i /path/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`.
-- `FRR_IMAGE`, `NODE_EXPORTER_IMAGE` — **required**: the appliance's embedded FRR / node-exporter
-  payload (CI injects the in-cluster `metallb-frr` / `prometheus-node-exporter` pullspecs; pass
-  them explicitly locally).
+- `NODE_EXPORTER_IMAGE` — **required**: the image the appliance copies `node_exporter` from
+  (CI injects the in-cluster `prometheus-node-exporter` pullspec; pass it explicitly locally).
 - `EE_BASE_IMAGE`, `APPLIANCE_BASE_IMAGE` — exported OS bases (default public CentOS Stream 10
   images; CI injects in-cluster pullspecs).
 - `CI_IMAGE` — the CI image to ship (default
@@ -169,7 +168,7 @@ repo), so build it rootless and point the script at the target:
 make ci-image               # localhost/evpn-gateway-appliance-ci:local, rootless
 SSH_REMOTE=user@vm \
 SSH_OPTS="-i /path/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-FRR_IMAGE=<ocp frr> NODE_EXPORTER_IMAGE=<ocp node-exporter> \
+NODE_EXPORTER_IMAGE=<ocp node-exporter> \
 REGISTRY_AUTH_FILE="$HOME/.docker/config.json" \
 test/e2e/run_remote.sh
 ```
@@ -183,7 +182,7 @@ store and run under `sudo`:
 
 ```bash
 sudo make ci-image
-sudo env FRR_IMAGE=<ocp frr> NODE_EXPORTER_IMAGE=<ocp node-exporter> \
+sudo env NODE_EXPORTER_IMAGE=<ocp node-exporter> \
     REGISTRY_AUTH_FILE="$HOME/.docker/config.json" \
     test/e2e/run_remote.sh
 ```
@@ -208,7 +207,7 @@ nmstate or keyfiles.
 ```bash
 # Same invocation shape as e2e; the wrapper only selects the lane.
 SSH_REMOTE=user@vm SSH_OPTS="..." \
-FRR_IMAGE=<ocp frr> NODE_EXPORTER_IMAGE=<ocp node-exporter> \
+NODE_EXPORTER_IMAGE=<ocp node-exporter> \
 test/e2e/run_molecule.sh
 ```
 

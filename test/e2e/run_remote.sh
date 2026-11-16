@@ -15,9 +15,9 @@
 #   SSH_REMOTE   user@host of the target VM; UNSET -> run on this host (needs root + podman/systemd)
 #   SSH_OPTS     ssh/scp options, word-split (remote only), e.g.
 #                "-i /path/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-#   FRR_IMAGE, NODE_EXPORTER_IMAGE   
-#       REQUIRED: the appliance's embedded FRR / node-exporter
-#       (CI injects the metallb-frr / prometheus-node-exporter deps; pass them explicitly locally).
+#   NODE_EXPORTER_IMAGE
+#       REQUIRED: the image node_exporter is copied from
+#       (CI injects the prometheus-node-exporter dep; pass it explicitly locally).
 #   CI_IMAGE
 #   EE_BASE_IMAGE
 #   APPLIANCE_BASE_IMAGE
@@ -37,10 +37,8 @@ command -v skopeo >/dev/null || { echo "run_remote: required tool not found: sko
 # Progress banner, so the phases stand out in CI logs.
 banner() { printf '\n========== run_remote: %s ==========\n' "$*"; }
 
-# Base images. FRR and node-exporter are required inputs (no public default that runs as the
-# appliance's embedded payload); CI injects them, pass them explicitly locally. The OS bases
-# default to public images.
-readonly FRR_IMAGE="${FRR_IMAGE:?set FRR_IMAGE (CI: the metallb-frr dependency)}"
+# Base images. node-exporter is a required input (no public default); CI injects it, pass it
+# explicitly locally. The OS bases default to public images.
 readonly NODE_EXPORTER_IMAGE="${NODE_EXPORTER_IMAGE:?set NODE_EXPORTER_IMAGE (CI: the prometheus-node-exporter dependency)}"
 readonly EE_BASE_IMAGE="${EE_BASE_IMAGE:-quay.io/centos/centos:stream10}"
 readonly APPLIANCE_BASE_IMAGE="${APPLIANCE_BASE_IMAGE:-quay.io/centos-bootc/centos-bootc:stream10}"
@@ -128,7 +126,6 @@ save_image() {
 # image's download/decompress/digest work).
 banner "export base images"
 pids=()
-save_image "${FRR_IMAGE}"            metallb-frr.tar &                pids+=($!)
 save_image "${NODE_EXPORTER_IMAGE}"  prometheus-node-exporter.tar &  pids+=($!)
 save_image "${EE_BASE_IMAGE}"        ee-base.tar &                   pids+=($!)
 save_image "${CI_IMAGE}"             ci.tar &                        pids+=($!)
@@ -149,7 +146,6 @@ printf '[[registry]]\nlocation = "localhost:5000"\ninsecure = true\n' > /etc/con
 podman rm -f mirror >/dev/null 2>&1 || true
 podman run -d --name mirror -p 5000:5000 quay.io/libpod/registry:2.8.2 >/dev/null
 until curl -sf http://localhost:5000/v2/ >/dev/null; do sleep 2; done
-skopeo copy --dest-tls-verify=false docker-archive:./metallb-frr.tar              docker://localhost:5000/ocp/metallb-frr:latest
 skopeo copy --dest-tls-verify=false docker-archive:./prometheus-node-exporter.tar docker://localhost:5000/ocp/prometheus-node-exporter:latest
 skopeo copy --dest-tls-verify=false docker-archive:./ee-base.tar                  docker://localhost:5000/openshift/centos:stream10
 skopeo copy --dest-tls-verify=false docker-archive:./appliance-base.tar           docker://localhost:5000/centos-bootc/centos-bootc:stream10
@@ -181,12 +177,11 @@ if [ "$build_ee" = 1 ]; then
 fi
 # Appliance nested-ci image (:ci parent + vfs child) via the make targets. The bases come from
 # the on-VM local registry, so override them to its paths and pass APPLIANCE_BUILD_ARGS so the
-# Containerfile's build-time skopeo can reach it (--network=host + the insecure drop-in). The
-# empty auth file satisfies the target's secret mount; the local registry needs no credentials.
+# build can reach it (--network=host + the insecure drop-in). The empty auth file satisfies the
+# target's auth-file check; the local registry needs no credentials.
 echo '{}' > /tmp/ega/empty-auth.json
 make nested-ci-appliance-image \
     BOOTC_BASE="${reg}/centos-bootc/centos-bootc:stream10" \
-    FRR_IMAGE="${reg}/ocp/metallb-frr:latest" \
     NODE_EXPORTER_IMAGE="${reg}/ocp/prometheus-node-exporter:latest" \
     CONTAINER_AUTH_FILE=/tmp/ega/empty-auth.json \
     APPLIANCE_CI_BUILD_ARGS="--network=host -v /etc/containers/registries.conf.d/99-local.conf:/etc/containers/registries.conf.d/99-local.conf:ro"

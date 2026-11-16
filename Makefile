@@ -71,7 +71,7 @@ ee-image:
 
 # Appliance bootc image (image/rhel10/Containerfile). Host-side: the build needs the
 # host engine and a registry auth file that must stay outside the build context.
-# Unset BOOTC_BASE, FRR_IMAGE, and NODE_EXPORTER_IMAGE keep the Containerfile defaults.
+# Unset BOOTC_BASE, GO_BUILDER, and NODE_EXPORTER_IMAGE keep the Containerfile defaults.
 # ci-appliance-image is the parent of the nested child. It is the same Containerfile
 # with the CentOS CI base from image/streams.yaml bootcImageCi, tagged :ci.
 # appliance-image stays on :dev so a release build does not replace that parent.
@@ -80,11 +80,11 @@ APPLIANCE_IMAGE ?= localhost/evpn-appliance-rhel10:ci
 BOOTC_BASE_CI ?= quay.io/centos-bootc/centos-bootc:stream10
 CONTAINER_AUTH_FILE ?= $(HOME)/.docker/config.json
 BOOTC_BASE ?=
-FRR_IMAGE ?=
+GO_BUILDER ?=
 NODE_EXPORTER_IMAGE ?=
 # Extra `podman build` flags honored ONLY by ci-appliance-image (the CI parent build), not by
 # the release appliance-image. Empty normally; the e2e lane sets --network=host plus an insecure-
-# registry drop-in so the Containerfile's build-time skopeo can pull FRR/node-exporter from an
+# registry drop-in so the build can pull its stage images from an
 # on-VM local registry (see test/e2e/run_remote.sh).
 APPLIANCE_CI_BUILD_ARGS ?=
 
@@ -100,9 +100,8 @@ appliance-image ci-appliance-image:
 		-f image/rhel10/Containerfile \
 		-t "$(APPLIANCE_TAG)" \
 		$(if $(BOOTC_BASE),--build-arg BOOTC_BASE=$(BOOTC_BASE)) \
-		$(if $(FRR_IMAGE),--build-arg FRR_IMAGE=$(FRR_IMAGE)) \
+		$(if $(GO_BUILDER),--build-arg GO_BUILDER=$(GO_BUILDER)) \
 		$(if $(NODE_EXPORTER_IMAGE),--build-arg NODE_EXPORTER_IMAGE=$(NODE_EXPORTER_IMAGE)) \
-		--secret id=dockerconfig,src="$(CONTAINER_AUTH_FILE)" \
 		$(_ci_build_args) \
 		image/rhel10
 

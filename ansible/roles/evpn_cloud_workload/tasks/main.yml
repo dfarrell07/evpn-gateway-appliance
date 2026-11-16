@@ -125,10 +125,10 @@
 
 - name: Start FRR via systemd service (bootc image)
   ansible.builtin.systemd:
-    name: frr-container.service
+    name: frr.service
     state: started
     enabled: true
-  when: ansible_facts.services is defined and 'frr-container.service' in ansible_facts.services
+  when: ansible_facts.services is defined and 'frr.service' in ansible_facts.services
   register: _frr_systemd
 
 - name: Start FRR via podman directly (non-bootc)
