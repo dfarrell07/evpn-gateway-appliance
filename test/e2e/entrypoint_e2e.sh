@@ -25,12 +25,22 @@ export CONTAINERLAB_RUNTIME="podman"
 
 src_topo="${self_dir}/topology/${EGA_TOPOLOGY}"
 
+scenario_args=()
 case "$scenario" in
 	base)
 		inventory_src="${self_dir}/inventory"
 		;;
 	multihoming)
 		inventory_src="${self_dir}/inventory/multihoming"
+		;;
+	ipsec)
+		# The ipsec overlay needs the topology with the simulated AWS VPN endpoint.
+		if [ "$EGA_TOPOLOGY" != "evpn-ipsec.clab.yml" ]; then
+			echo "error: EGA_SCENARIO=ipsec requires EGA_TOPOLOGY=evpn-ipsec.clab.yml" >&2
+			exit 2
+		fi
+		inventory_src="${self_dir}/inventory"
+		scenario_args=(-e "@${EGA_WORK_DIR}/lab/inventory/scenarios/ipsec.yml")
 		;;
 	*)
 		echo "error: unsupported EGA_SCENARIO=$scenario" >&2
@@ -109,6 +119,7 @@ ee_playbook() {
 		-w "${lab_dir}" \
 		"$EGA_EE_IMAGE" \
 		ansible-playbook -i "${lab_dir}/inventory/hosts.yml" \
+			"${scenario_args[@]}" \
 			"$pb" \
 			-u root --private-key "$ssh_key"
 }

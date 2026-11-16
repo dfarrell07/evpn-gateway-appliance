@@ -17,7 +17,7 @@
 #   EGA_ARTIFACT_DIR  host dir for produced artifacts (reserved; nothing is written here yet);
 #                     out of the checkout, Prow sets this to $ARTIFACTS  [default: /tmp/ega/artifact]
 #   EGA_TOPOLOGY      topology file under test/e2e/topology            [default: evpn.clab.yml]
-#   EGA_SCENARIO      base | multihoming; selects inventory and test playbook [default: base]
+#   EGA_SCENARIO      base | multihoming | ipsec; selects inventory, extra vars and test playbook [default: base]
 #   EGA_STAGE         full (deploy+validate+teardown) | deploy (leave up) | destroy  [default: full]
 #   EGA_E2E_SRC       bind this repo checkout over the image's baked /src for live dev of the
 #                     harness (topology/inventory/entrypoint/tests) — NOT the collection,
