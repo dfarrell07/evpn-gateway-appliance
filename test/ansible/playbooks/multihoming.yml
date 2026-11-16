@@ -247,7 +247,7 @@
   gather_facts: false
   tasks:
     - name: Flush the old gateway neighbor
-      ansible.builtin.command: ip neigh flush dev bond-ce.100
+      ansible.builtin.command: ip neigh flush dev edge-br.100
       changed_when: false
     - name: Ping the gateway after appliance-a failure
       ansible.builtin.command: ping -c 5 -W 1 10.42.1.1

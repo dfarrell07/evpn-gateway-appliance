@@ -38,9 +38,11 @@ shared Prow e2e job, so adding a scenario does not require another Prow job or a
 
 ## CORENET-7502 coverage boundary
 
-The CI topology emulates the upstream DVS/edge segment with a dual-attached Linux host
-and a VLAN trunk. The edge side has one two-member 802.3ad bond spanning the two
-appliances; each appliance contributes one link through a single-member 802.3ad bond.
+The CI topology emulates the upstream DVS/edge segment with a VLAN-aware Linux bridge
+and a VLAN trunk. The edge side has one single-member 802.3ad bond per appliance-facing
+link, with both bonds joined to the bridge; each appliance contributes one link through
+its own single-member 802.3ad bond. This avoids claiming that a plain Linux bond can
+provide MLAG state shared across independent namespaces.
 Both appliances run FRR EVPN-MH with the same numeric discriminator and system MAC,
 which produces the shared Type-3 ESI. The multihoming path uses one external VXLAN
 device with explicit VLAN-to-VNI mappings, matching FRR's VLAN-aware bridge model;
