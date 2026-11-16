@@ -25,6 +25,17 @@ Segment identity, checks the requested 802.3ad bond members, and verifies VLAN t
 survives one appliance bond being disabled. The same test playbook is intended for later
 qualification runs; only the topology and inventory change.
 
+The remote runner can execute multiple scenarios sequentially in one provisioned lane by
+setting `EGA_SCENARIOS` to comma-separated `scenario:topology` pairs, for example:
+
+```bash
+EGA_SCENARIOS=base:evpn.clab.yml,multihoming:evpn-7502.clab.yml \
+  test/e2e/run_remote.sh
+```
+
+Each scenario receives its own work and artifact directory. This is the mode used by the
+shared Prow e2e job, so adding a scenario does not require another Prow job or another VM.
+
 ## CORENET-7502 coverage boundary
 
 The CI topology emulates the upstream DVS/edge segment with a dual-attached Linux host
@@ -116,6 +127,9 @@ of its own and builds nothing. `run_remote.sh` is what builds and stages those i
   `/tmp/ega/artifact`; Prow sets it to `$ARTIFACTS`). Mounted but **empty for now** — nothing is
   written here until diagnostics/JUnit capture is added (see Testing plan).
 - `EGA_TOPOLOGY` — topology file under `topology/` (default `evpn.clab.yml`).
+- `EGA_SCENARIOS` — comma-separated `scenario:topology` pairs to run sequentially. When set,
+  it takes precedence over `EGA_SCENARIO` and `EGA_TOPOLOGY`; each scenario gets isolated work
+  and artifact directories.
 - `EGA_STAGE` — `full` (deploy + validate + tear down), `deploy` (same but leave the lab up
   for inspection), or `destroy` (tear down a lab left up by `deploy`). Default `full`.
 - `EGA_E2E_SRC` — bind a repo checkout over the image's baked `/src` for live dev (default

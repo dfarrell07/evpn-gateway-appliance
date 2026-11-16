@@ -28,8 +28,10 @@
 #   REGISTRY_AUTH_FILE   pull secret for the export (default: local docker config; used only if present)
 #   ARTIFACTS    local dir the lane's artifacts are collected into (default /tmp/ega/artifact; Prow
 #                sets it). For a remote target they are copied back here off the target.
-#   EGA_TOPOLOGY, EGA_SCENARIO, EGA_STAGE  topology, scenario and lifecycle stage passed
-#       through to the target lane.
+#   EGA_TOPOLOGY, EGA_SCENARIO, EGA_SCENARIOS, EGA_STAGE
+#       topology, scenario list and lifecycle stage passed through to the target lane.
+#       EGA_SCENARIOS may contain comma-separated scenario:topology pairs; when set, each
+#       pair is run sequentially with isolated work and artifact directories.
 set -euo pipefail
 
 # Image exports are several GiB in aggregate; prefer disk-backed staging over
