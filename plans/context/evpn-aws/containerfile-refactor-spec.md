@@ -371,8 +371,11 @@ builds the product Containerfile. The CI appliance sets
 on `appliance-image`, because that target defaults to the `:dev` tag. Neither
 target is forwarded into `Dockerfile.ci`.
 
-The appliance build mounts secret id `dockerconfig`. The nested build mounts no
-secret. `image/tools/smoke-nested.py` does not bind-mount the drop-in.
+Neither build mounts a secret. The appliance build pulls FRR and node-exporter as
+`FROM` stages and rebuilds each as a one-layer image from its rootfs, so their
+embedded digests differ from the source digests; the build's parent-image record
+names the sources. Make and CI choose them with build arguments; ART lists them
+in `from.builder`. `image/tools/smoke-nested.py` does not bind-mount the drop-in.
 `image/tools/verify-nested.py` runs the two Make targets and then checks the
 vfs line. A nested smoke pass does not prove `bootc install`, upgrade,
 rollback, or a virtual-machine boot.
