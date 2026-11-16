@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check monitoring files: Grafana dashboards (variables, datasource, job/instance scope of
-frrk8s_*, node_* and up selectors, unique panel IDs, PromQL or CloudWatch query fields), that
-dashboards and Prometheus rules name only known frr-k8s series, and that Grafana alert rules are
-consistent and match the panels they link to."""
+frrk8s_*, node_*, ega_path_probe_* and up selectors, unique panel IDs, PromQL or CloudWatch query
+fields), that dashboards and Prometheus rules name only known frr-k8s series, and that Grafana
+alert rules are consistent and match the panels they link to."""
 import json
 import os
 import re
@@ -12,12 +12,12 @@ import sys
 import yaml  # PyYAML; Dockerfile.ci gets it with ansible-core and yamllint
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# Every frrk8s_*, node_* or up selector must start with the dashboard's job/instance filter, spelled
+# Every frrk8s_*, node_*, ega_path_probe_* or up selector must start with the dashboard's job/instance filter, spelled
 # exactly as below. Mark that filter, then blank quoted strings so label values cannot look like
 # metric names.
 SCOPE = '{job=~"$job", instance=~"$instance"'
 STRING = re.compile(r"""("|')(?:\\.|(?!\1)[^\\])*\1|`[^`]*`""")
-UNSCOPED = re.compile(r"\b(frrk8s_\w+|node_\w+|up)\b(?!\{SCOPED)")
+UNSCOPED = re.compile(r"\b(frrk8s_\w+|node_\w+|ega_path_probe_\w+|up)\b(?!\{SCOPED)")
 FRRK8S = re.compile(r"\bfrrk8s_\w+")
 NAME_MATCHER = re.compile(r"\b__name__\s*[=!]")
 CLOUDWATCH_FIELDS = ("namespace", "metricName", "statistic", "period")

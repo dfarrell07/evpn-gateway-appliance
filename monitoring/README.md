@@ -80,16 +80,17 @@ These alerts do not detect:
   evaluation interval no longer than them: with 1m evaluation, `EGABfdSessionDown` fires at
   the first evaluation at least 30s after the first down sample;
 - a target that is down, which is left to the platform's TargetDown or `up` alerting;
-- Ethernet-segment designated-forwarder state or path latency; AWS transport has its own
-  section.
+- Ethernet-segment designated-forwarder state;
+- path latency: the appliance dashboard shows probe RTT, but no alert reads it. AWS transport has
+  its own section.
 
 These signals do not establish forwarding health.
 
 ## Appliance, VLANs and tunnels
 
 `dashboards/appliance.json` shows node-exporter scrape status; the operstate, carrier and
-carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; and the
-traffic, drops and errors of the non-bridge ones.
+carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; the
+traffic, drops and errors of the non-bridge ones; and overlay path probe RTT.
 
 The data comes from node-exporter. The bootc image runs it on `127.0.0.1:9100`, so scraping it
 from another host needs the access path from CORENET-7704. On other hosts `evpn_monitoring`
@@ -162,6 +163,34 @@ refuses to pause or delete file-provisioned rules from its UI or API.
 Grafana sends these alerts through its own notification policies. To route them with the
 Prometheus alerts, add the Alertmanager as a data source with Receive Grafana Alerts on and
 enable it under Alerting > Settings.
+
+## Overlay path probe
+
+BGP and EVPN membership can stay up while VXLAN forwarding fails. On an
+`onprem_appliances` host with `monitoring.node_exporter` on, setting
+`evpn_monitoring_path_probe_target` to an address reachable only through the overlay makes
+`evpn_monitoring` install a timer that pings it every 30s and writes the result through node-exporter's textfile collector. A
+probe fails unless 3 echo replies arrive within 5s (up to 5 requests). It samples one overlay
+path and does not identify the failed component: with a stretch's `cloud_gateway` as the target
+it tests the path from the appliance to the cloud VTEP's bridge, not the on-prem trunk, tenant
+workloads or other stretches. The appliance dashboard's RTT panel shows fresh
+samples.
+
+The probe is opt-in. It complements OVN-Kubernetes's cluster conditions and NetObserv's drop
+and latency rules and replaces none of them, so one incident can fire several alerts. Its two
+alerts carry the same NetObserv label and annotation as the FRR alerts.
+
+- `rules/path-probe-alerts.yaml`: two alerts, tested by `tests/path-probe-alerts_test.yaml`. Add
+  it to `rule_files` with the FRR rules.
+
+| Alert | Severity | Fires when | Silent when |
+| --- | --- | --- | --- |
+| EGAEvpnPathProbeFailed | warning | Probe success is 0 in a file no older than 60s, for 5m | Success is 1, or the result is not fresh |
+| EGAEvpnPathProbeUnavailable | warning | For 5m: the probe file is older than 60s; or, on a host that reported the probe in the last day and was not disabled by the role, node-exporter cannot read a textfile and the probe result is missing, or the probe series is gone while node-exporter is scraped | A fresh, readable probe file, even if another textfile is unreadable; node-exporter not scraped; the probe removed by the role; or no probe series in the last day |
+
+Whenever the role runs on an on-prem appliance without a probe target, and when `teardown.yml`
+runs, it removes any probe and writes `ega_path_probe_disabled 1` to the textfile directory,
+which keeps `EGAEvpnPathProbeUnavailable` quiet on that host.
 
 ## Runbooks
 
