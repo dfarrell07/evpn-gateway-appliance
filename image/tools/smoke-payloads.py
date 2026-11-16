@@ -25,7 +25,8 @@ class Probe(NamedTuple):
 PROBES = (
     Probe("frr", "/usr/lib/frr/bgpd", "--version", "bgpd version"),
     Probe("frr", "/usr/lib/frr/bfdd", "--version", "bfdd version"),
-    Probe("frr", "/frr-metrics", None, None),
+    # frr-metrics.service needs a standalone build (metallb/frr-k8s#519).
+    Probe("frr", "/frr-metrics", "-help", "-disable-metrics-auth"),
     Probe("node-exporter", "node_exporter", "--version", "node_exporter, version"),
 )
 
@@ -323,12 +324,13 @@ def main() -> None:
                     r"[0-9]", version
                 ):
                     print(
-                        f"unexpected version output for {probe.payload}:{probe.binary}",
+                        f"{probe.payload}:{probe.binary} {probe.version_arg} output"
+                        f" lacks {probe.version_marker!r}",
                         file=sys.stderr,
                     )
                     raise Abort(1)
                 with open(inventory, "a", encoding="utf-8") as inv:
-                    inv.write("version_output:\n")
+                    inv.write(f"{probe.version_arg.lstrip('-')}_output:\n")
                     inv.write(f"{version}\n")
             if probe.binary == "node_exporter":
                 node_exporter_path = binary_path

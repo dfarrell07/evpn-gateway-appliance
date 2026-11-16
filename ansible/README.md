@@ -24,7 +24,7 @@ roles/
 ├── evpn_cloud_infra/               Infra VPC: WireGuard server, FRR relay
 ├── evpn_cloud_workload/            Workload VPC: standalone FRR VTEP (dev/test — see role README)
 ├── evpn_aws_infra/                 AWS provisioning (VPCs, TGW, EC2, security groups)
-├── evpn_monitoring/                frr_exporter + node_exporter + optional overlay path probe
+├── evpn_monitoring/                frr-metrics + node_exporter + optional overlay path probe
 └── evpn_health_check/              Read-only validation suite
 playbooks/
 ├── deploy.yml                      Full deploy, idempotent
@@ -164,13 +164,17 @@ ownership):
   Networking to design the actual policy
   (source-audit.md §1, "No BGP policy or limits").
 - `evpn_aws_infra` requires the AWS CLI on the control node.
-- `frr_exporter`/`node_exporter` metrics endpoints are unauthenticated on
+- The non-bootc `node_exporter` metrics endpoint is unauthenticated on
   every interface (`network: host`, no listen-address binding, no host
   firewall) — how this should be locked down in production is not yet
-  decided.
-- `frr_exporter`/`node_exporter` use community container images that Red Hat
+  decided. `frr-metrics` listens on loopback only; remote scraping belongs
+  to CORENET-7704.
+- The non-bootc `node_exporter` uses a community container image that Red Hat
   does not build or security-track; supportable replacements are part of the
   runtime payload work (source-audit.md §2).
+- `frr-metrics` comes from the router image. Hosts without the appliance
+  image need `frr_image` to be an `frr-rhel9` build whose `frr-metrics` has
+  `--disable-metrics-auth`, or `monitoring.frr_exporter: false`.
 - Production lint still skips `var-naming[no-role-prefix]` in `.ansible-lint`.
   [#37](https://github.com/openshift/evpn-gateway-appliance/pull/37) proposes the
   role-variable migration and documents the affected caller inputs and returned facts.

@@ -1,0 +1,89 @@
+---
+# frr-metrics ships in the FRR image and runs inside the router container, named frr on every
+# host. The bootc image installs and enables frr-metrics.service, bound to
+# frr-container.service. Other hosts get the same unit without that binding; their router
+# runs from frr_image, which must then be a build that ships /frr-metrics.
+
+# The frr container may still be starting after deployment or a notified restart. The OpenShift 4.22 build has /frr-metrics but no
+# --disable-metrics-auth (metallb/frr-k8s#519); upstream FRR images have neither.
+- name: Read the router image's frr-metrics flags
+  ansible.builtin.command: podman exec frr /frr-metrics -help
+  register: _evpn_monitoring_frr_metrics_help
+  changed_when: false
+  failed_when: false
+  until: _evpn_monitoring_frr_metrics_help.rc == 0
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Check frr-metrics runs in the router container
+  ansible.builtin.fail:
+    msg: >-
+      Could not run /frr-metrics in the frr container: the router container is not running or
+      its image has no /frr-metrics. podman: {{ _evpn_monitoring_frr_metrics_help.stderr }}
+  when:
+    - not ansible_check_mode
+    - _evpn_monitoring_frr_metrics_help.rc != 0
+
+- name: Check the router image ships a standalone frr-metrics
+  ansible.builtin.assert:
+    that: "'-disable-metrics-auth' in _evpn_monitoring_frr_metrics_help.stderr"
+    fail_msg: >-
+      monitoring.frr_exporter needs /frr-metrics with --disable-metrics-auth in the running frr
+      container. On hosts without the appliance image set frr_image to such an frr-rhel9 build,
+      or set monitoring.frr_exporter to false.
+    quiet: true
+  when: not ansible_check_mode
+
+# Only after the help and flag checks above, so an image whose frr-metrics fails them keeps the
+# old exporter.
+- name: Remove the legacy frr_exporter container
+  containers.podman.podman_container:
+    name: frr_exporter
+    state: absent
+
+# Keep in sync with image/rhel10/frr-metrics.service, minus its frr-container.service binding.
+# /usr/lib, not /etc, so frr_metrics_absent.yml can mask it as on bootc.
+- name: Install frr-metrics.service (non-bootc)
+  ansible.builtin.copy:
+    dest: /usr/lib/systemd/system/frr-metrics.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=FRR metrics exporter in the FRR container
+
+      [Service]
+      Restart=always
+      RestartSec=10
+      ExecStartPre=-/usr/bin/podman exec frr pkill -x frr-metrics
+      ExecStart=/usr/bin/podman exec frr /frr-metrics --disable-metrics-auth --metrics-bind-address=127.0.0.1
+      ExecStop=-/usr/bin/podman exec frr pkill -x frr-metrics
+      SuccessExitStatus=143
+
+      [Install]
+      WantedBy=multi-user.target
+  register: _evpn_monitoring_frr_metrics_unit
+  when: not (ansible_facts.services is defined and 'frr-container.service' in ansible_facts.services)
+
+- name: Unmask, enable and start frr-metrics
+  ansible.builtin.systemd:
+    name: frr-metrics.service
+    daemon_reload: true
+    masked: false
+    enabled: true
+    state: "{{ 'restarted' if _evpn_monitoring_frr_metrics_unit is changed else 'started' }}"
+  # In check mode only the bootc image's unit exists; the copy above did not run.
+  when: >-
+    not ansible_check_mode
+    or (ansible_facts.services is defined and 'frr-container.service' in ansible_facts.services)
+
+# The unit retries every 10s while the router container starts.
+- name: Wait for frr-metrics to serve metrics
+  ansible.builtin.uri:
+    url: https://127.0.0.1:9141/metrics
+    validate_certs: false  # self-signed certificate on loopback
+  register: _evpn_monitoring_frr_metrics
+  until: _evpn_monitoring_frr_metrics.status == 200
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode

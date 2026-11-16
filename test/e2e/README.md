@@ -33,7 +33,7 @@ test/
     run_remote.sh         shared core: against a remote target (or locally): export, ship, build, run
     run_e2e.sh            wrapper: select the e2e lane (entrypoint_e2e.sh)
     run_molecule.sh       wrapper: select the molecule lane (entrypoint_molecule.sh; skips the EE build)
-    entrypoint_e2e.sh     e2e in-container steps: clab deploy -> simulate -> deploy.yml -> health checks -> path probe
+    entrypoint_e2e.sh     e2e in-container steps: clab deploy -> simulate -> deploy.yml -> health checks -> path probe -> monitoring
     entrypoint_molecule.sh  molecule in-container steps: molecule test against the rootful socket
     topology/
       evpn.clab.yml       the emulated fabric
@@ -147,7 +147,9 @@ host, which is then the rootful one.
   `-i /path/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`.
 - `FRR_IMAGE`, `NODE_EXPORTER_IMAGE` — **required**: the appliance's embedded FRR / node-exporter
   payload (CI injects the in-cluster `metallb-frr` / `prometheus-node-exporter` pullspecs; pass
-  them explicitly locally).
+  them explicitly locally). The e2e needs an FRR image whose `/frr-metrics` has
+  `--disable-metrics-auth` and the `bgp`, `bfd` and `evpn` collectors (metallb/frr-k8s#519 and
+  #528).
 - `EE_BASE_IMAGE`, `APPLIANCE_BASE_IMAGE` — exported OS bases (default public CentOS Stream 10
   images; CI injects in-cluster pullspecs).
 - `CI_IMAGE` — the CI image to ship (default
@@ -269,6 +271,6 @@ first real assertion; add scenario files lazily as CORENET-7514 / the isolation 
   lane provides the internet-mode (WireGuard) topology hook.
 - VNI isolation: the appliance currently routes between tenant subnets; the isolation
   test will be authored as `xfail` pending an isolation-model decision.
-- `frr_exporter` + metrics: the image ships no `frr-exporter` Quadlet (would hit the podman
-  fallback), so it's off here and its metrics validation is deferred to CORENET-7504.
-  `node_exporter` is enabled (it has a matching Quadlet).
+- `frr-metrics` on hosts without the appliance image: every node here runs the image, so the
+  role's `--disable-metrics-auth` check runs, but its non-bootc unit install and routers
+  started from `frr_image` are not exercised.

@@ -14,10 +14,10 @@ The data comes from frr-k8s `frr-metrics`, the FRR metrics exporter, with the pe
 EVPN and per-collector `frrk8s_scrape_success` (`bgp`, `bfd`, `evpn`) series that
 metallb/frr-k8s#528 adds. `frrk8s-metrics.txt` lists the series as of #528 at `9e23e3e`;
 `make check-monitoring` fails if a rule or panel names any other `frrk8s_*` series. EGA
-appliances still run the legacy FRR exporter, whose `frr_*` series these files do not read, so
-these alerts and the FRR dashboard stay inactive on appliances until `frr-metrics` replaces it
-([metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)). The collector, gather-error,
-EVPN prefix and remote-VTEP alerts also need an `frr-metrics` that includes metallb/frr-k8s#528.
+appliances run it as `frr-metrics.service` inside the router container, serving HTTPS with a
+self-signed certificate on `127.0.0.1:9141`; scraping it from another host needs an access
+path, which CORENET-7704 owns. The collector, gather-error, EVPN prefix and
+remote-VTEP alerts need an `frr-metrics` that includes metallb/frr-k8s#528.
 
 These are appliance-side FRR signals. They do not replace OVN-Kubernetes control-plane health on
 the cluster, such as its ClusterUserDefinedNetwork, RouteAdvertisements and VTEP condition
@@ -43,7 +43,8 @@ them in separate Prometheus instances; scoping only one set still alerts twice.
 
 To use them:
 
-1. Scrape `frr-metrics`. Any job name works; keep the scrape-added `job` and `instance` labels
+1. Scrape `frr-metrics` over HTTPS; its certificate is self-signed, so set `scheme: https` and
+   `tls_config: {insecure_skip_verify: true}`. Any job name works; keep the scrape-added `job` and `instance` labels
    unique per exporter within the Prometheus that evaluates the rules.
 2. Add `rules/frr-alerts.yaml` to Prometheus's `rule_files`. Do not load `tests/`. With the
    Prometheus Operator or OpenShift monitoring, put its `groups` under a `PrometheusRule`'s

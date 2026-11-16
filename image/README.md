@@ -2,7 +2,8 @@
 
 Part of [openshift/evpn-gateway-appliance](https://github.com/openshift/evpn-gateway-appliance).
 
-The image embeds FRR and node-exporter. It does not install the frr RPM.
+The image embeds FRR and node-exporter. It does not install the frr RPM. `frr-metrics.service`
+runs the FRR image's `/frr-metrics` inside the router container.
 
 ## Local smoke build (optional)
 
@@ -27,7 +28,7 @@ The release build pulls the RHEL bootc base and both payload images from `regist
 From the repository root, `make nested-ci-appliance-image` builds `localhost/evpn-appliance-rhel10:ci` with the CentOS base, then layers the vfs drop-in on that tag.
 
 ```bash
-make nested-ci-appliance-image
+make nested-ci-appliance-image FRR_IMAGE='<compatible frr-rhel9 pullspec>'
 ```
 
 The child image copies `storage.conf` to `/etc/containers/storage.conf.d/99-evpn-vfs.conf` so nested Podman uses vfs. The appliance image does not contain that file. The smoke does not mount it.
@@ -35,6 +36,9 @@ The child image copies `storage.conf` to `/etc/containers/storage.conf.d/99-evpn
 These are two programs. They both ask whether the embedded FRR and node-exporter images run. They start those images in different places, so they do not share a runner.
 
 On a machine that can boot systemd inside Podman, build the vfs child and run the boot smoke.
+Both smokes need an `FRR_IMAGE` whose `frr-metrics` has `--disable-metrics-auth`, and the
+nested smoke also needs every `frrk8s_scrape_success` at 1. The default `FRR_IMAGE` does not
+qualify yet, so pass one to the build.
 
 ```bash
 make nested-ci-appliance-image
@@ -50,7 +54,7 @@ nested offline smoke passed for localhost/evpn-appliance-rhel10:nested-ci (this 
 In nested Podman CI, systemd cannot mount sysfs. Build the appliance tag and run the payload smoke. Set `ARTIFACT_DIR` to a writable directory. That script does not use the vfs child.
 
 ```bash
-make ci-appliance-image
+make ci-appliance-image FRR_IMAGE='<compatible frr-rhel9 pullspec>'
 ARTIFACT_DIR=/tmp/ega-artifacts python3 image/tools/smoke-payloads.py localhost/evpn-appliance-rhel10:ci
 ```
 
