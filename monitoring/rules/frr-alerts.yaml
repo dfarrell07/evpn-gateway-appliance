@@ -1,0 +1,127 @@
+groups:
+  - name: ega-frr
+    rules:
+      - alert: EGAFrrCollectorFailed
+        expr: frrk8s_scrape_success == 0
+        for: 10m
+        labels:
+          severity: warning
+          netobserv: "true"
+        annotations:
+          summary: 'FRR {{ $labels.collector }} collector failed on {{ $labels.instance }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egafrrcollectorfailed
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: {{ $labels.collector }} reads or parses failed for 10m.
+      - alert: EGAFrrMetricsGatherErrors
+        expr: >-
+          increase(promhttp_metric_handler_errors_total[10m]) > 0
+          and on(job, instance) frrk8s_scrape_success
+        for: 10m
+        labels:
+          severity: warning
+          netobserv: "true"
+        annotations:
+          summary: 'FRR metrics gather errors on {{ $labels.instance }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egafrrmetricsgathererrors
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: the exporter failed to gather or encode some metrics
+            (cause {{ $labels.cause }}), for example duplicate BFD series, so series can be missing while up and
+            collector success stay 1.
+      - alert: EGABgpSessionDown
+        expr: frrk8s_bgp_session_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          netobserv: "true"
+        annotations:
+          summary: 'BGP session down on {{ $labels.instance }} for {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgpsessiondown
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
+            has not been Established for 1m; administrative shutdown also reads 0.
+      - alert: EGABgpEvpnNoPrefixesAccepted
+        expr: >-
+          (frrk8s_bgp_family_received_prefixes{afi="l2vpn",safi="evpn"} == 0)
+          and on(job, instance, peer, vrf) (frrk8s_bgp_session_up == 1)
+        for: 5m
+        labels:
+          severity: warning
+          netobserv: "true"
+        annotations:
+          summary: 'No accepted EVPN prefixes on {{ $labels.instance }} from {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgpevpnnoprefixesaccepted
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: Established peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
+            reports zero accepted l2vpn/evpn prefixes for 5m (FRR's post-policy count); routes rejected by inbound
+            policy also leave it at zero. Zero may be intentional and counts do not prove propagation.
+      - alert: EGABgpEvpnNoPrefixesAnnounced
+        expr: >-
+          (frrk8s_bgp_family_announced_prefixes{afi="l2vpn",safi="evpn"} == 0)
+          and on(job, instance, peer, vrf) (frrk8s_bgp_session_up == 1)
+        for: 5m
+        labels:
+          severity: warning
+          netobserv: "true"
+        annotations:
+          summary: 'No EVPN prefixes announced on {{ $labels.instance }} to {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgpevpnnoprefixesannounced
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: Established peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
+            has been sent zero l2vpn/evpn prefixes for 5m, so it learns none of this host's VNIs or MACs.
+      - alert: EGABgpPeerFlapping
+        expr: increase(frrk8s_bgp_opens_sent[10m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          netobserv: "true"
+        annotations:
+          summary: 'BGP peer flapping on {{ $labels.instance }}: {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgppeerflapping
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: more than 3 BGP OPENs sent to {{ $labels.peer }} in VRF
+            {{ $labels.vrf }} in 10m, held for 5m.
+      - alert: EGAEvpnVniNoRemoteVteps
+        expr: frrk8s_evpn_l2_remote_vteps == 0
+        for: 15m
+        labels:
+          severity: warning
+          netobserv: "true"
+        annotations:
+          summary: 'No remote VTEPs on {{ $labels.instance }} for VNI {{ $labels.vni }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egaevpnvninoremotevteps
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: L2 VNI {{ $labels.vni }} in VRF {{ $labels.vrf }}
+            has zero known remote VTEPs for 15m; zero may be intentional and this count is not reachability.
+      - alert: EGABfdSessionDown
+        expr: frrk8s_bfd_session_up == 0
+        for: 30s
+        labels:
+          severity: critical
+          netobserv: "true"
+        annotations:
+          summary: 'BFD session down on {{ $labels.instance }} for {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabfdsessiondown
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: peer {{ $labels.peer }} in VRF {{ $labels.vrf }}
+            reports BFD down for 30s; peer/VRF identity can collide across distinct BFD sessions.
+      - alert: EGABfdPeerFlapping
+        expr: increase(frrk8s_bfd_session_down_events[10m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          netobserv: "true"
+        annotations:
+          summary: 'BFD peer flapping on {{ $labels.instance }}: {{ $labels.peer }}'
+          runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabfdpeerflapping
+          netobserv_io_network_health: '{}'
+          description: >-
+            {{ $labels.job }}/{{ $labels.instance }}: more than 3 BFD down events for {{ $labels.peer }} in VRF
+            {{ $labels.vrf }} in 10m, held for 5m.
