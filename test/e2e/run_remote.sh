@@ -218,12 +218,21 @@ IFS="\$old_ifs"
 for entry in "\${entries[@]}"; do
     scenario="\${entry%%:*}"
     rest="\${entry#*:}"
-    topology="\${rest%%:*}"
-    inventory="\${rest#*:}"
-    if [ "\$topology" = "\$rest" ]; then
+    if [ "\$rest" = "\$entry" ]; then
+        # A bare scenario uses the normal topology and its scenario-specific inventory.
         topology="evpn.clab.yml"
-        inventory="inventory"
-    elif [ "\$inventory" = "\$rest" ]; then
+        inventory=""
+    elif [[ "\$rest" == *:* ]]; then
+        # A three-field entry explicitly selects scenario, topology, and inventory.
+        topology="\${rest%%:*}"
+        inventory="\${rest#*:}"
+    else
+        # A two-field entry selects scenario and topology, while retaining the
+        # scenario-specific inventory default.
+        topology="\$rest"
+        inventory=""
+    fi
+    if [ -z "\$inventory" ]; then
         case "\$scenario" in
             multihoming) inventory="inventory/multihoming" ;;
             relay-ha) inventory="inventory/7503" ;;
