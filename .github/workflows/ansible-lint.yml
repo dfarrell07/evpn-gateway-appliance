@@ -8,7 +8,7 @@ name: ansible-lint
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, test-7705-actions-on37]
 
 permissions:
   contents: read
