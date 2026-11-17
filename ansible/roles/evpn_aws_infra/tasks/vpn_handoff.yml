@@ -1,0 +1,77 @@
+---
+# Read-only entry point: deploy can consume an existing VPN without provisioning.
+- name: Validate the project name
+  ansible.builtin.include_tasks: project_name.yml
+
+- name: Find available VPN connection for handoff
+  block:
+    - name: Read available project VPN connections
+      amazon.aws.ec2_vpc_vpn_info:
+        region: "{{ evpn_aws_infra_aws_region }}"
+        filters:
+          "tag:Project": "{{ evpn_aws_infra_project_name }}"
+          "tag:Name": "{{ evpn_aws_infra_project_name }}-vpn"
+          state: available
+      register: _evpn_aws_infra_vpn_handoff_lookup
+      # The module returns PSKs in tunnel options and customer_gateway_configuration.
+      no_log: true
+  rescue:
+    - name: Report the hidden VPN lookup failure
+      ansible.builtin.fail:
+        msg: >-
+          {{ ansible_failed_task.name }} failed in {{ evpn_aws_infra_aws_region }}; its output is hidden because it carries keys.
+          Check the controller credentials, the region and ec2:DescribeVpnConnections.
+
+- name: Require exactly one available project VPN for handoff
+  ansible.builtin.assert:
+    that: _evpn_aws_infra_vpn_handoff_lookup.vpn_connections | length == 1
+    fail_msg: >-
+      Expected exactly one available VPN with Project={{ evpn_aws_infra_project_name }} and
+      Name={{ evpn_aws_infra_project_name }}-vpn. Provision it first, or reconcile duplicate matches.
+
+- name: Read the VPN customer gateway
+  ansible.builtin.command: >
+    aws ec2 describe-customer-gateways --region {{ evpn_aws_infra_aws_region }}
+    --customer-gateway-ids {{ _evpn_aws_infra_vpn_handoff_lookup.vpn_connections[0].customer_gateway_id }}
+    --query "CustomerGateways[0]" --output json
+  register: _evpn_aws_infra_vpn_handoff_cgw
+  changed_when: false
+  check_mode: false
+
+# Fail before any host change if the inventory no longer matches the provisioned VPN.
+- name: Require the inventory customer gateway to match AWS
+  ansible.builtin.assert:
+    that:
+      - _cgw.IpAddress == evpn_aws_infra_vpn_customer_gateway_ip
+      # AWS reports ASNs above 2147483647 only in BgpAsnExtended.
+      - (_cgw.BgpAsnExtended | default(_cgw.BgpAsn, true)) | int == evpn_aws_infra_vpn_customer_gateway_asn | int
+    fail_msg: >-
+      The project VPN's customer gateway differs from evpn_aws_infra_vpn_customer_gateway_ip or _asn.
+      Fix the inventory, or run teardown-aws.yml and provision again.
+  vars:
+    _cgw: "{{ _evpn_aws_infra_vpn_handoff_cgw.stdout | from_json }}"
+
+- name: Read VPN handoff Amazon BGP ASN
+  amazon.aws.ec2_transit_gateway_info:
+    region: "{{ evpn_aws_infra_aws_region }}"
+    transit_gateway_ids:
+      - "{{ _evpn_aws_infra_vpn_handoff_lookup.vpn_connections[0].transit_gateway_id }}"
+  register: _evpn_aws_infra_vpn_handoff_aws_asn
+
+- name: Set VPN handoff
+  ansible.builtin.set_fact:
+    evpn_aws_infra_vpn:
+      customer_gateway_ip: "{{ evpn_aws_infra_vpn_customer_gateway_ip }}"
+      tunnels: >-
+        {%- set tunnels = [] -%}
+        {%- for t in _evpn_aws_infra_vpn_handoff_lookup.vpn_connections[0].options.tunnel_options
+                     | sort(attribute='tunnel_inside_cidr') -%}
+        {%- set _ = tunnels.append({
+              'outside_ip': t.outside_ip_address,
+              'inside_cidr': t.tunnel_inside_cidr,
+              'aws_bgp_asn': _evpn_aws_infra_vpn_handoff_aws_asn.transit_gateways[0].options.amazon_side_asn | int,
+              'cgw_bgp_asn': evpn_aws_infra_vpn_customer_gateway_asn | int,
+              'secret_preshared_key': t.pre_shared_key}) -%}
+        {%- endfor -%}
+        {{ tunnels }}
+  no_log: true

@@ -1,0 +1,33 @@
+---
+- name: Validate the project name
+  ansible.builtin.include_tasks: project_name.yml
+
+- name: Check AWS VPN tunnel telemetry
+  block:
+    - name: Wait for both AWS VPN tunnels to be UP
+      amazon.aws.ec2_vpc_vpn_info:
+        region: "{{ evpn_aws_infra_aws_region }}"
+        filters:
+          "tag:Project": "{{ evpn_aws_infra_project_name }}"
+          "tag:Name": "{{ evpn_aws_infra_project_name }}-vpn"
+          state: available
+      register: _evpn_aws_infra_vpn_status
+      until:
+        - _evpn_aws_infra_vpn_status.vpn_connections | length == 1
+        - _evpn_aws_infra_vpn_status.vpn_connections[0].vgw_telemetry | selectattr('status', 'equalto', 'UP') | list | length == 2
+      # AWS documents no refresh interval for tunnel telemetry.
+      retries: 30
+      delay: 10
+      # The module also returns tunnel options and customer_gateway_configuration, which contain keys.
+      no_log: true
+  rescue:
+    - name: Report unhealthy AWS VPN tunnel states
+      ansible.builtin.fail:
+        msg: >-
+          {{ 'AWS VPN lookup failed (check controller credentials and region).'
+             if _evpn_aws_infra_vpn_status.vpn_connections is not defined else '' }}
+          Both AWS VPN tunnels must be UP. Matching available VPNs:
+          {{ _evpn_aws_infra_vpn_status.vpn_connections | default([]) | length }}. Tunnels:
+          {% for t in (_evpn_aws_infra_vpn_status.vpn_connections | default([{}], true))[0].vgw_telemetry | default([]) %}
+          {{ t.outside_ip_address }} {{ t.status }}{{ ' (' ~ t.status_message ~ ')' if t.status_message | default('') else '' }}{{ ';' if not loop.last }}
+          {% endfor %}
