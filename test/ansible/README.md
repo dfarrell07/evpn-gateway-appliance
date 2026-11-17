@@ -10,19 +10,18 @@ takes a real `trunk_interface`, and everything that only makes sense in the
 emulated fabric (fabricating a trunk and fake on-prem hosts, pinging from them)
 lives here instead.
 
-## Simulation workload
+## Simulate lane
 
-Production `deploy.yml` discovers OCP frr-k8s pods into `cloud_workload`.
-This collection is the simulation path: list standalone VMs in `cloud_workload`,
-run `deploy_workload`, then `network.evpn_gateway.deploy -e skip_frr_discovery=true`.
-`test/e2e/entrypoint_e2e.sh` does that.
+`entrypoint_simulate.sh` runs `deploy_workload` on the VMs already listed in
+`cloud_workload`, then `network.evpn_gateway.deploy -e skip_frr_discovery=true`.
+Those VMs stand in for the frr-k8s pods that discovery would have added.
 
 ## Roles
 
 | Role | Purpose |
 | --- | --- |
 | `evpn_onprem_appliance_sim` | Simulate the on-prem customer side the appliance attaches to: a VLAN trunk bridge, per-stretch VLAN sub-interfaces, and a network namespace per stretch acting as an on-prem host. `tasks/healthcheck.yml` asserts those hosts can reach the cloud gateway. |
-| `evpn_cloud_workload` | Standalone workload VTEP for the simulation lane. |
+| `evpn_cloud_workload` | Standalone workload VTEP for the simulate lane. |
 
 ## Playbooks
 

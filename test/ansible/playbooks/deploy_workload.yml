@@ -1,5 +1,5 @@
 ---
-# Deploy the standalone workload VTEP. The simulation lane runs this, then
+# Deploy the standalone workload VTEP. The simulate lane runs this, then
 # network.evpn_gateway.deploy -e skip_frr_discovery=true.
 
 - name: Deploy cloud workload (standalone VTEP)
