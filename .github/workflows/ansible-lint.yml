@@ -1,0 +1,20 @@
+---
+# Runs the collection's production ansible-lint profile (ansible/.ansible-lint) per PR, using
+# the reusable workflow the network.* validated collections use. Prow's verify job stays the
+# merge gate; this records the lint result where the validated-content checklist expects it.
+name: ansible-lint
+
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ansible-lint:
+    uses: ansible/ansible-content-actions/.github/workflows/ansible_lint.yaml@cbdec1f72eeee38b7e60d0f2346c66e622eea02a  # main
+    with:
+      working_directory: ansible
