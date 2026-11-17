@@ -82,10 +82,9 @@ Finding, 2026-10-22. `make nested-ci-appliance-image` builds that derivative on 
 The record is
 [Finding 2026-10-22 nested CI vfs image](containerfile-refactor-spec.md#finding-2026-10-22-nested-ci-vfs-image).
 
-`ansible-test sanity` is the standard collection check for publication, but its test
-environments need network setup. Keep that setup outside the offline gate; CORENET-7705
-needs repeatable per-PR sanity evidence ([candidacy plan](ansible-validated-content-plan.md)).
-A local command alone does not establish a Prow or GitHub workflow.
+`ansible-test sanity` is the standard collection check for publication. The CI image primes
+its per-test environments, so verify runs it offline on the installed artifact for
+CORENET-7705 ([candidacy plan](ansible-validated-content-plan.md)).
 
 ## Deferred
 
@@ -149,12 +148,12 @@ not requirements. Recheck one against the current tool before relying on it.
   git -C "$src/src" add --force --all -- .
   chmod -R a+rX "$src/src"
   podman build -f "$src/src/Dockerfile.ci" --iidfile "$src/id" "$src/src"
-  podman run --rm --network none --read-only --tmpfs /tmp -u 1234:0 -e HOME=/tmp \
+  podman run --rm --network none --tmpfs /tmp -u 1234:0 \
     "$(cat "$src/id")" bash -c 'set -e; python3 -m pip check; make verify OFFLINE=1'
   ```
 
-  `HOME=/tmp` is needed because ansible-lint writes a cache under `$HOME` and the image root is
-  read-only here. [`pip check`](https://pip.pypa.io/en/stable/cli/pip_check/) reports missing or
+  Keep the image's `$HOME` writable: ansible-lint writes a cache there, and ansible-test sanity
+  reuses the virtualenvs primed under it. [`pip check`](https://pip.pypa.io/en/stable/cli/pip_check/) reports missing or
   incompatible installed dependencies. Run against the image's `/src`: a writable copy would
   hide its source-permission failures, and `git diff` would miss newly created untracked files.
 - [release#86815](https://github.com/openshift/release/pull/86815) is an open, do-not-merge

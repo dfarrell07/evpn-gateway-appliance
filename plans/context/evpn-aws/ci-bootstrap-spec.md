@@ -369,9 +369,9 @@ a successful local import is not certification. Add the required sanity/core-ver
 matrix separately, using AAP's agreed requirements rather than stale example pins;
 for certified content, the Ansible partner team's SHA-pinned certification checker
 bundles importer, production-profile lint and sanity-matrix jobs.
-Use direct native commands for the selected importer/sanity checks; `ansible-test sanity`
-installs its test environments from the network, so it runs in this lane rather than the
-offline `verify` gate. Consider antsibull-nox
+Use direct native commands for the selected importer/sanity checks; `verify` runs
+`ansible-test sanity` offline from environments primed in `Dockerfile.ci`, and the core-version
+matrix stays separate. Consider antsibull-nox
 only when a real matrix or repeated environment setup would otherwise require custom orchestration.
 The source read on 2026-10-07 of merged
 [`antsibull-nox` `d611d9a8`, build/import session](https://github.com/ansible-community/antsibull-nox/blob/d611d9a87ee543eca2092a56650ce3a7b68ada0a/src/antsibull_nox/sessions/build_import_check.py)

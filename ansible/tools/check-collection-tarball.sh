@@ -12,7 +12,7 @@ tarball=$1
 files=$(tar tzf "$tarball")
 
 # Keep in sync with build_ignore in galaxy.yml.
-allowed='^(MANIFEST\.json|FILES\.json|README\.md|LICENSE|galaxy\.yml|bindep\.txt|requirements\.txt|meta/|roles/|plugins/|playbooks/|docs/|changelogs/)'
+allowed='^(MANIFEST\.json|FILES\.json|README\.md|LICENSE|galaxy\.yml|bindep\.txt|requirements\.txt|meta/|roles/|plugins/|playbooks/|docs/|changelogs/|tests/$|tests/sanity/)'
 
 if grep -Ev "$allowed" <<<"$files"; then
   echo "error: unapproved paths in tarball (see above)" >&2
