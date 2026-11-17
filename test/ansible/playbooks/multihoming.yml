@@ -183,15 +183,15 @@
     - name: Assert the inventory-derived appliance peer and BFD settings
       ansible.builtin.assert:
         that:
-          - _evpn_mh_peer_addresses | length == 1
+          - _evpn_onprem_appliance_mh_peer_addresses | length == 1
           - >-
-            ('neighbor ' ~ _evpn_mh_peer_addresses[0] ~ ' remote-as ' ~
+            ('neighbor ' ~ _evpn_onprem_appliance_mh_peer_addresses[0] ~ ' remote-as ' ~
             bgp.onprem_asn|string) in (frr_config.content | b64decode)
           - >-
-            ('neighbor ' ~ _evpn_mh_peer_addresses[0] ~ ' bfd') in
+            ('neighbor ' ~ _evpn_onprem_appliance_mh_peer_addresses[0] ~ ' bfd') in
             (frr_config.content | b64decode)
           - >-
-            ('peer ' ~ _evpn_mh_peer_addresses[0]) in
+            ('peer ' ~ _evpn_onprem_appliance_mh_peer_addresses[0]) in
             (frr_config.content | b64decode)
           - "'receive-interval 50' in (frr_config.content | b64decode)"
           - "'transmit-interval 50' in (frr_config.content | b64decode)"

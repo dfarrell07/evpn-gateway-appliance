@@ -63,9 +63,9 @@
   ansible.builtin.command: >-
     ip link add vxlan{{ 10000 + item.vlan }} type vxlan id {{ 10000 + item.vlan }}
     dstport 4789 local {{ tunnel.onprem_ip }} nolearning
-  register: _mh_vxlan_create
-  failed_when: _mh_vxlan_create.rc != 0 and 'File exists' not in _mh_vxlan_create.stderr
-  changed_when: _mh_vxlan_create.rc == 0
+  register: _evpn_onprem_appliance_mh_vxlan_create
+  failed_when: _evpn_onprem_appliance_mh_vxlan_create.rc != 0 and 'File exists' not in _evpn_onprem_appliance_mh_vxlan_create.stderr
+  changed_when: _evpn_onprem_appliance_mh_vxlan_create.rc == 0
   loop: "{{ stretches }}"
   loop_control:
     label: "VNI {{ 10000 + item.vlan }}"
@@ -107,14 +107,16 @@
   loop: "{{ stretches }}"
   loop_control:
     label: "{{ item.onprem_gateway }} on trunk.{{ item.vlan }}"
-  register: _mh_ip_add
-  failed_when: _mh_ip_add.rc != 0 and 'already' not in _mh_ip_add.stderr and 'File exists' not in _mh_ip_add.stderr
-  changed_when: _mh_ip_add.rc == 0
+  register: _evpn_onprem_appliance_mh_ip_add
+  failed_when: >-
+    _evpn_onprem_appliance_mh_ip_add.rc != 0 and 'already' not in _evpn_onprem_appliance_mh_ip_add.stderr
+    and 'File exists' not in _evpn_onprem_appliance_mh_ip_add.stderr
+  changed_when: _evpn_onprem_appliance_mh_ip_add.rc == 0
   when: multihoming.enabled | default(false) | bool
 
 - name: Discover multihoming appliance peers from inventory
   ansible.builtin.set_fact:
-    _evpn_mh_peer_addresses: >-
+    _evpn_onprem_appliance_mh_peer_addresses: >-
       {{
         multihoming.peer_addresses
         | default(
@@ -137,7 +139,7 @@
     state: started
     enabled: true
   when: ansible_facts.services is defined and 'frr-container.service' in ansible_facts.services
-  register: _frr_systemd
+  register: _evpn_onprem_appliance_frr_systemd
 
 - name: Start FRR via podman directly (non-bootc)
   containers.podman.podman_container:
@@ -150,7 +152,7 @@
     volumes:
       - /etc/frr:/etc/frr:Z
       - /var/run/frr:/var/run/frr:Z
-  when: _frr_systemd is skipped
+  when: _evpn_onprem_appliance_frr_systemd is skipped
 
 - name: Flush handlers
   ansible.builtin.meta: flush_handlers

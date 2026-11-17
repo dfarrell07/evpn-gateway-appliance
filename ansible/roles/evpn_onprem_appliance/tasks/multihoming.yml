@@ -35,7 +35,7 @@
 
 - name: Check for the persistent bond connection
   ansible.builtin.command: nmcli -t -f NAME connection show
-  register: _bond_connection
+  register: _evpn_onprem_appliance_bond_connection
   changed_when: false
   failed_when: false
 
@@ -44,7 +44,7 @@
     nmcli connection add type bond ifname {{ trunk_interface }}
     con-name {{ trunk_interface }}
     bond.options mode=802.3ad,miimon=100,lacp_rate=fast,xmit_hash_policy=layer3+4,ad_actor_system={{ multihoming.es_sys_mac }}
-  when: trunk_interface not in _bond_connection.stdout_lines
+  when: trunk_interface not in _evpn_onprem_appliance_bond_connection.stdout_lines
   changed_when: true
 
 - name: Configure fast LACP hashing
@@ -56,7 +56,7 @@
 - name: Check each persistent bond-member connection
   ansible.builtin.command: nmcli -t -f NAME connection show
   loop: "{{ multihoming.bond_interfaces }}"
-  register: _bond_member_connections
+  register: _evpn_onprem_appliance_bond_member_connections
   changed_when: false
   failed_when: false
 
@@ -65,7 +65,7 @@
     nmcli connection add type ethernet ifname {{ item.item }}
     con-name ega-{{ trunk_interface }}-{{ item.item }}
     master {{ trunk_interface }} slave-type bond
-  loop: "{{ _bond_member_connections.results }}"
+  loop: "{{ _evpn_onprem_appliance_bond_member_connections.results }}"
   loop_control:
     label: "{{ item.item }} -> {{ trunk_interface }}"
   when: "'ega-' ~ trunk_interface ~ '-' ~ item.item not in item.stdout_lines"
@@ -91,19 +91,19 @@
 
 - name: Read the resulting kernel bond state
   ansible.builtin.command: cat /proc/net/bonding/{{ trunk_interface }}
-  register: _bond_state
+  register: _evpn_onprem_appliance_bond_state
   changed_when: false
 
 - name: Verify the requested 802.3ad bond exists
   ansible.builtin.assert:
     that:
-      - "'Bonding Mode: IEEE 802.3ad Dynamic link aggregation' in _bond_state.stdout"
+      - "'Bonding Mode: IEEE 802.3ad Dynamic link aggregation' in _evpn_onprem_appliance_bond_state.stdout"
       - >-
-        (_bond_state.stdout | regex_findall('(?m)^Slave Interface: ')) | length
+        (_evpn_onprem_appliance_bond_state.stdout | regex_findall('(?m)^Slave Interface: ')) | length
         == multihoming.bond_interfaces | length
       - >-
         (multihoming.bond_interfaces | map('regex_replace', '^', 'Slave Interface: ') | list)
-        | difference(_bond_state.stdout_lines) | length == 0
+        | difference(_evpn_onprem_appliance_bond_state.stdout_lines) | length == 0
     fail_msg: >-
       {{ trunk_interface }} is not the requested persistent 802.3ad bond with
       all configured member interfaces. A live upstream LACP peer is still
