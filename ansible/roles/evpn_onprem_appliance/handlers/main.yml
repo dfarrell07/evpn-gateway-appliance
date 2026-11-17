@@ -27,3 +27,41 @@
       - /var/run/frr:/var/run/frr:Z
   when: not (ansible_facts.services is defined and 'frr-container.service' in ansible_facts.services)
   listen: Restart FRR
+
+# Connection or key changes replace the two appliance tunnels one at a time, so unrelated Libreswan
+# connections stay up. Listed after the FRR handlers so FRR already peers with any new inside addresses or ASN.
+- name: Replace AWS IPsec connections
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      # Invalidate the record first: from here pluto may hold keys or connections no file matches.
+      rm -f /etc/ipsec.d/ega-aws.applied
+      ipsec rereadsecrets
+      # Ready: tunnel N is up and FRR has its AWS BGP session Established.
+      ready() {
+        if [ "$1" = 1 ]; then peer={{ _evpn_onprem_appliance_ipsec_peers[0].aws_inside_ip }}
+        else peer={{ _evpn_onprem_appliance_ipsec_peers[1].aws_inside_ip }}; fi
+        case "$(ipsec trafficstatus)" in *"\"ega-aws-$1\""*) ;; *) return 1 ;; esac
+        case "$(podman exec frr vtysh -c "show bgp neighbors $peer" 2>/dev/null)" in *"BGP state = Established"*) ;; *) return 1 ;; esac
+      }
+      # A tunnel that is already down goes first, and each must be back within 90 s before the next, so a bad
+      # connection change or an AWS endpoint outage never takes down both tunnels. A bad key, loaded for both above,
+      # still reaches the other tunnel at its next re-authentication, and an FRR restart before this handler drops both
+      # BGP sessions briefly. AWS can hold a stale BGP session for its 30 s hold time.
+      if ready 1 && ! ready 2; then order="2 1"; else order="1 2"; fi
+      for n in $order; do
+        ipsec replace "ega-aws-$n"
+        ipsec up --asynchronous "ega-aws-$n"
+        i=0
+        until ready "$n"; do
+          i=$((i + 1))
+          if [ "$i" -gt 18 ]; then
+            echo "ega-aws-$n or its BGP session did not come back up within 90 s; stopped before any further tunnel. Rerun deploy to retry." >&2
+            exit 1
+          fi
+          sleep 5
+        done
+      done
+      # Record what is applied; deploy replaces the tunnels again until this matches (see tasks/ipsec.yml).
+      sha256sum /etc/ipsec.d/ega-aws.conf /etc/ipsec.d/ega-aws.secrets > /etc/ipsec.d/ega-aws.applied
+  changed_when: true

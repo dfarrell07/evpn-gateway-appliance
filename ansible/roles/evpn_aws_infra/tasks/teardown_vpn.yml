@@ -1,0 +1,54 @@
+---
+- name: Find project VPN connections
+  amazon.aws.ec2_vpc_vpn_info:
+    region: "{{ evpn_aws_infra_aws_region }}"
+    filters:
+      "tag:Project": "{{ evpn_aws_infra_project_name }}"
+  register: _evpn_aws_infra_vpn_teardown_lookup
+  # The module returns PSKs even though teardown only needs IDs and states.
+  no_log: true
+
+# ec2_vpc_vpn always waits for deletion; it has no wait argument.
+- name: Delete project VPN connections
+  amazon.aws.ec2_vpc_vpn:
+    region: "{{ evpn_aws_infra_aws_region }}"
+    vpn_connection_id: "{{ item }}"
+    state: absent
+  loop: >-
+    {{ _evpn_aws_infra_vpn_teardown_lookup.vpn_connections | rejectattr('state', 'in', ['deleting', 'deleted']) |
+       map(attribute='vpn_connection_id') | list }}
+  no_log: true
+
+# Also wait for connections that were already deleting when teardown started.
+- name: Wait for project VPN connections to be deleted
+  amazon.aws.ec2_vpc_vpn_info:
+    region: "{{ evpn_aws_infra_aws_region }}"
+    filters:
+      "tag:Project": "{{ evpn_aws_infra_project_name }}"
+  register: _evpn_aws_infra_vpn_teardown_state
+  until: _evpn_aws_infra_vpn_teardown_state.vpn_connections | rejectattr('state', 'equalto', 'deleted') | list | length == 0
+  retries: 60
+  delay: 10
+  when: not ansible_check_mode
+  no_log: true
+
+# ec2_customer_gateway is only in community.aws; use the CLI rather than add that dependency.
+- name: Find project VPN customer gateways
+  ansible.builtin.command: >
+    aws ec2 describe-customer-gateways --region {{ evpn_aws_infra_aws_region }}
+    --filters "Name=tag:Project,Values={{ evpn_aws_infra_project_name }}"
+    --query "CustomerGateways[?State=='available' || State=='pending'].CustomerGatewayId" --output json
+  register: _evpn_aws_infra_vpn_cgw_teardown_lookup
+  changed_when: false
+  check_mode: false
+
+- name: Delete project VPN customer gateways
+  ansible.builtin.command: >
+    aws ec2 delete-customer-gateway --region {{ evpn_aws_infra_aws_region }}
+    --customer-gateway-id {{ item }}
+  register: _evpn_aws_infra_vpn_cgw_teardown
+  until: _evpn_aws_infra_vpn_cgw_teardown.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: true
+  loop: "{{ _evpn_aws_infra_vpn_cgw_teardown_lookup.stdout | from_json }}"
