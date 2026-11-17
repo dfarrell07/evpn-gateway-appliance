@@ -2,7 +2,8 @@
 
 Deploys and configures the EVPN Gateway Appliance (EGA) fabric: the on-prem
 appliance, the AWS infra/workload relays, and the BGP EVPN sessions
-connecting them, using FRR and (dev/test only) WireGuard.
+connecting them, using FRR over WireGuard (development/test only) or an AWS
+Site-to-Site IPsec VPN with on-prem Libreswan (`tunnel.type: ipsec`, not yet qualified).
 
 Collection FQCN: `network.evpn_gateway`.
 
@@ -66,7 +67,7 @@ The machine running these playbooks needs:
 - **ansible-core** — declared minimum 2.16 (`meta/runtime.yml`); CI tests 2.21 on
   Python 3.12 (`Dockerfile.ci`).
 - **Collections** — the Quick start command installs this collection and resolves
-  `galaxy.yml`'s dependencies from Hub: ansible.utils, ansible.posix, amazon.aws,
+  `galaxy.yml`'s dependencies from Hub: ansible.utils, ansible.posix, amazon.aws >=9.0.0,
   containers.podman.
 - **Python** — 3.12 is the current CI-tested controller baseline. A supported
   ansible-core/Python/AAP matrix remains to be defined. Install `boto3`/`botocore`
@@ -74,11 +75,13 @@ The machine running these playbooks needs:
   `pip install -r requirements.txt`.
 - **System** — `wireguard-tools` (the WireGuard key pair is generated on the
   control node); see `bindep.txt`.
-- **AWS** — credentials available in your environment for
+- **AWS** — the AWS CLI, and credentials available in your environment for
   `provision-aws.yml`/`teardown-aws.yml`, e.g.
   `source <(aws configure export-credentials --format env)`.
   Provisioning runs locally without Ansible privilege escalation, using the
   controller account's credential provider chain.
+  IPsec deploy/health checks also need AWS read access unless the handoff is supplied and telemetry disabled;
+  see [VPN handoff and status](roles/evpn_aws_infra/README.md#read-only-vpn-handoff-tasks_from-vpn_handoff).
 - **SSH** — the EC2 key pair named by `evpn_aws_infra_ssh_key_name` must exist in AWS, with
   its private key available to your environment (e.g. loaded into ssh-agent).
 
@@ -98,6 +101,13 @@ ansible-playbook playbooks/provision-aws.yml
 ansible-playbook playbooks/deploy.yml
 ansible-playbook playbooks/health-check.yml
 ```
+
+For the AWS Site-to-Site VPN, set `tunnel.type: ipsec` and
+`evpn_aws_infra_vpn_customer_gateway_ip` (the appliance's static public IPv4
+address) before provisioning, then run the same playbooks. To tear down, run
+`teardown.yml` before `teardown-aws.yml`. Provisioning is not rerunnable, so to
+change transport, tear down and provision again.
+IPsec supports one appliance without multihoming.
 
 ## Required variables
 
@@ -160,10 +170,11 @@ Still open, and **not** resolved by this change (see linked docs for
 ownership):
 
 - No real BGP inbound/outbound policy (route-maps/prefix-lists/route-target
-  filtering) — only a defensive `maximum-prefix` backstop. Needs
+  filtering) — only a defensive `maximum-prefix` backstop; IPsec underlay IPv4 uses prefix lists. Needs
   Networking to design the actual policy
   (source-audit.md §1, "No BGP policy or limits").
-- `evpn_aws_infra` requires the AWS CLI on the control node.
+- `evpn_aws_infra` provisioning, the IPsec deploy handoff and customer gateway teardown require the AWS CLI on the
+  control node.
 - `frr_exporter`/`node_exporter` metrics endpoints are unauthenticated on
   every interface (`network: host`, no listen-address binding, no host
   firewall) — how this should be locked down in production is not yet

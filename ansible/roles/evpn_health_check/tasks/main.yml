@@ -40,7 +40,9 @@
     p=d['ipv4Unicast']['peers']['{{ tunnel.onprem_ip }}'];
     assert p['state']=='Established', f'state={p[\"state\"]}'"
   changed_when: false
-  when: "'cloud_infra' in group_names"
+  when:
+    - "'cloud_infra' in group_names"
+    - tunnel.type != 'ipsec'
 
 - name: "HEALTH [infra]: EVPN prefixes relayed from on-prem"
   ansible.builtin.shell: >
@@ -50,6 +52,10 @@
     p=d['peers']['{{ tunnel.onprem_ip }}'];
     assert int(p['pfxRcd'])>0, f'pfxRcd={p[\"pfxRcd\"]}'"
   changed_when: false
+  register: _evpn_health_check_onprem_prefixes
+  until: _evpn_health_check_onprem_prefixes.rc == 0
+  retries: 12
+  delay: 5
   when: "'cloud_infra' in group_names"
 
 - name: "HEALTH [infra]: EVPN prefixes relayed from workload"
@@ -125,7 +131,15 @@
     p=d['ipv4Unicast']['peers']['{{ tunnel.cloud_ip }}'];
     assert p['state']=='Established', f'state={p[\"state\"]}'"
   changed_when: false
-  when: "'onprem_appliances' in group_names"
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type != 'ipsec'
+
+- name: Check on-prem IPsec health
+  ansible.builtin.include_tasks: ipsec.yml
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'ipsec'
 
 - name: "HEALTH [onprem]: remote VTEP present per VNI"
   ansible.builtin.shell: >
