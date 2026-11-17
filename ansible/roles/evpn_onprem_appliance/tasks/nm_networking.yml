@@ -25,13 +25,13 @@
 # ── Ownership: find ega-* profiles no longer desired ────────────
 - name: Seed the desired profile names with the trunk bridge profile
   ansible.builtin.set_fact:
-    _ega_desired_conns:
+    _evpn_onprem_appliance_desired_conns:
       - ega-bridge-trunk
 
 - name: Add the per-stretch profile names
   ansible.builtin.set_fact:
-    _ega_desired_conns: >-
-      {{ _ega_desired_conns + [
+    _evpn_onprem_appliance_desired_conns: >-
+      {{ _evpn_onprem_appliance_desired_conns + [
            'ega-bridge-vni' ~ (10000 + item.vlan),
            'ega-vxlan-' ~ (10000 + item.vlan),
            'ega-vlan-' ~ item.vlan ] }}
@@ -41,18 +41,18 @@
 
 - name: Read the current network state
   ansible.builtin.command: nmstatectl show
-  register: _ega_state
+  register: _evpn_onprem_appliance_state
   changed_when: false
 
 # nmstate round-trips profile-name, so select the interfaces it owns for us (profile-name
 # ega-*) that are no longer desired; their names become the state:absent entries.
 - name: Build the absent interface list (our profiles no longer desired)
   ansible.builtin.set_fact:
-    _ega_absent: >-
-      {{ (_ega_state.stdout | from_yaml).interfaces
+    _evpn_onprem_appliance_absent: >-
+      {{ (_evpn_onprem_appliance_state.stdout | from_yaml).interfaces
          | selectattr('profile-name', 'defined')
          | selectattr('profile-name', 'match', '^ega-')
-         | rejectattr('profile-name', 'in', _ega_desired_conns)
+         | rejectattr('profile-name', 'in', _evpn_onprem_appliance_desired_conns)
          | map(attribute='name') | list }}
 
 # The trunk is not ega-owned, so the absent list above does not track it. List any interface enslaved to
@@ -60,8 +60,8 @@
 # (controller: ""), unslaving the old trunk when the trunk changes.
 - name: Build the detach list (stale interfaces enslaved to trunk-br)
   ansible.builtin.set_fact:
-    _ega_detach: >-
-      {{ (_ega_state.stdout | from_yaml).interfaces
+    _evpn_onprem_appliance_detach: >-
+      {{ (_evpn_onprem_appliance_state.stdout | from_yaml).interfaces
          | selectattr('controller', 'defined')
          | selectattr('controller', 'equalto', 'trunk-br')
          | map(attribute='name')

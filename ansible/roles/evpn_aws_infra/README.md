@@ -18,6 +18,11 @@ evpn_aws_infra_admin_cidr: 203.0.113.4/32
 Set `evpn_aws_infra_allow_open_admin_cidr: true` only for a disposable lab —
 never in CI.
 
+## Inputs and returned facts
+
+Role-owned inputs and the returned `evpn_aws_infra_{infra,workload}_{public,private}_ip` facts
+carry the `evpn_aws_infra_` prefix; shared settings such as `tunnel` do not.
+
 ## Known limitations (tracked, not fixed by this role)
 
 - Uses 46 `aws` CLI calls instead of `amazon.aws` modules (Python 3.14
