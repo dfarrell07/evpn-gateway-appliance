@@ -51,39 +51,47 @@
   ansible.builtin.include_tasks: nm_networking.yml
   when: not (multihoming.enabled | default(false) | bool)
 
-# The current nmstate path owns the normal per-VNI layout. Multihoming instead uses the
-# shared VLAN-aware trunk bridge and a single external VXLAN device.
+# The current nmstate path owns the normal per-VNI layout. Multihoming uses the shared
+# VLAN-aware trunk bridge with one fixed-VNI VXLAN device per stretch, attached as an
+# access port. This avoids requiring the SVD-only external/vni-filter/vlan_tunnel
+# netlink attributes.
 - name: Set up physical multihoming trunk
   ansible.builtin.include_tasks: physical.yml
   when: multihoming.enabled | default(false) | bool
 
-- name: Create the multihoming shared external VXLAN device
+- name: Create one fixed-VNI VXLAN device per multihoming stretch
   ansible.builtin.command: >-
-    ip link add vxlan0 type vxlan dstport 4789 local {{ tunnel.onprem_ip }}
-    nolearning external vnifilter
+    ip link add vxlan{{ 10000 + item.vlan }} type vxlan id {{ 10000 + item.vlan }}
+    dstport 4789 local {{ tunnel.onprem_ip }} nolearning
   register: _mh_vxlan_create
   failed_when: _mh_vxlan_create.rc != 0 and 'File exists' not in _mh_vxlan_create.stderr
   changed_when: _mh_vxlan_create.rc == 0
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "VNI {{ 10000 + item.vlan }}"
   when: multihoming.enabled | default(false) | bool
 
-- name: Configure the multihoming shared VXLAN device
+- name: Configure fixed-VNI VXLAN devices as access ports
   ansible.builtin.shell: |
     set -e
-    ip link set vxlan0 master trunk-br
-    bridge link set dev vxlan0 vlan_tunnel on neigh_suppress on learning off
-    ip link set vxlan0 up
+    dev=vxlan{{ 10000 + item.vlan }}
+    ip link set "$dev" master trunk-br
+    bridge vlan del vid 1 dev "$dev" 2>/dev/null || true
+    bridge vlan add vid {{ item.vlan }} dev "$dev" pvid untagged
+    bridge link set dev "$dev" neigh_suppress on learning off
+    ip link set "$dev" up
   args:
     executable: /bin/bash
+  loop: "{{ stretches }}"
+  loop_control:
+    label: "VLAN {{ item.vlan }} access port"
   changed_when: true
   when: multihoming.enabled | default(false) | bool
 
-- name: Map multihoming VLANs to VNIs on the shared VXLAN device
+- name: Admit multihoming VLANs on the shared bridge
   ansible.builtin.shell: |
     set -e
     bridge vlan add vid {{ item.vlan }} dev trunk-br self
-    bridge vlan add vid {{ item.vlan }} dev vxlan0
-    bridge vni add dev vxlan0 vni {{ 10000 + item.vlan }}
-    bridge vlan add vid {{ item.vlan }} dev vxlan0 tunnel_info id {{ 10000 + item.vlan }}
   args:
     executable: /bin/bash
   loop: "{{ stretches }}"
