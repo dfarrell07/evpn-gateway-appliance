@@ -1,0 +1,2 @@
+roles/evpn_onprem_appliance/templates/nm-dispatch-neigh-suppress.j2 shebang # Root-run NetworkManager dispatcher script: keep the absolute /bin/bash rather than resolve bash through PATH.
+roles/evpn_onprem_appliance/templates/nm-dispatch-trunk-vlans.j2 shebang # Root-run NetworkManager dispatcher script: keep the absolute /bin/bash rather than resolve bash through PATH.

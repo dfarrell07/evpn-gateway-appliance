@@ -87,6 +87,16 @@ RUN pip install --no-cache-dir \
         molecule-plugins[podman]==26.11.0 \
         netaddr==1.3.0
 
+# Prime ansible-test sanity's per-test virtualenvs (they depend only on ansible-test's pins,
+# so a stub collection suffices and source changes keep the cache), so the sanity check runs
+# on the network-less runner. Group-writable for OpenShift CI's arbitrary UID (GID 0).
+WORKDIR /tmp/ansible_collections/stub/stub
+RUN printf 'namespace: stub\nname: stub\nversion: 0.0.0\n' > galaxy.yml && \
+    ansible-test sanity --prime-venvs --python 3.12 && \
+    rm -rf /tmp/ansible_collections && \
+    chown -R 1001:0 "$HOME/.ansible" && chmod -R g=u "$HOME/.ansible"
+WORKDIR /
+
 # Copy the source code into the container
 COPY . /src
 

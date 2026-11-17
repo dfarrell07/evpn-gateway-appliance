@@ -84,8 +84,9 @@ check-dockerfiles:
 	git ls-files -z -c -o --exclude-standard -- ':(glob)**/Dockerfile*' ':(glob)**/Containerfile*' ':(top,exclude,literal)Dockerfile.ci' | xargs -0 -r env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --
 
 # ── Ansible collection source checks ─────────────────────────────────────────
-# Lint, playbook syntax, collection build + tarball allowlist, and a clean-env
-# install smoke with ansible-builder dependency introspection. Runs under
+# Lint, playbook syntax, collection build + tarball allowlist, a clean-env install
+# smoke with ansible-builder dependency introspection and, in the CI image,
+# ansible-test sanity on the installed artifact. Runs under
 # `make verify OFFLINE=1` on the network-less build root; the only step that
 # touches the network is the install smoke, and only when OFFLINE is unset
 # (then it also resolves galaxy.yml's collection deps). The toolchain
@@ -98,7 +99,8 @@ ANSIBLE := ansible
 ANSIBLE_SMOKE_DIR := /tmp/ega-collections
 
 .PHONY: check-ansible
-check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install
+# Sanity needs the virtualenvs primed in the CI image, so host runs (USE_IMAGE=0) skip it.
+check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install $(if $(EGA_IN_CI_IMAGE),check-ansible-sanity)
 
 .PHONY: check-ansible-lint
 check-ansible-lint:
@@ -147,3 +149,9 @@ check-ansible-install: check-ansible-build
 	expected=$$(ls -d $(ANSIBLE)/roles/*/ | wc -l); \
 	found=$$(ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_SMOKE_DIR) ansible-doc -t role -l 2>/dev/null | grep -cE '^network\.evpn_gateway\.[a-z_]+:$$'); \
 	test "$$found" = "$$expected" || { echo "ERROR: expected $$expected collection roles discoverable from the clean install, found $$found" >&2; exit 1; }
+
+# Collection sanity on the installed artifact, so omitted files cannot be borrowed from the
+# source checkout. Dockerfile.ci primes ansible-test's per-test environments, so it runs offline.
+.PHONY: check-ansible-sanity
+check-ansible-sanity: check-ansible-install
+	cd $(ANSIBLE_SMOKE_DIR)/ansible_collections/network/evpn_gateway && ansible-test sanity --python 3.12
