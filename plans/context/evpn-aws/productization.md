@@ -19,7 +19,7 @@ The September 29 survey found no EVPN productization epic; confirm current onboa
 | Template task | Applies to EGA? |
 | --- | --- |
 | 01 Operations Readiness Form (branding, export compliance, SKU), 02 Privacy Impact Assessment, 03 ProdSec onboarding and RH-SDL, 08 Eng ID → SKU, 10 QE, 11 docs | Confirm applicability and existing coverage with the offering owners; retain the required approvals and QE/docs outcomes, without duplicating completed onboarding |
-| 04 Jira project | Skip: CORENET exists. Ask for an OCPBUGS component or other bug home for customers |
+| 04 Jira project | Skip: CORENET exists. Customer bugs go to OCPBUGS under `Networking / evpn-gateway-appliance` ([#54](https://github.com/openshift/evpn-gateway-appliance/pull/54#discussion_r4643220111)) |
 | 05 Cicada | Partly: the bootc repository fits. Bundle repositories and `fbc_opt_in` do not. Disk downloads and any Hub or AMI channel have no template task ([channels](bib-configuration-spec.md#customer-delivery-channels)) |
 | 06 Konflux | Yes, with the [artifact graph](pipeline-spec.md#artifact-graph-and-candidate-integrity) in place of operator, bundle and FBC |
 | 07 Multi-version FBC | No. BGP Cloud Connector skipped it too (rolling stream, one ReleasePlan and RPA) |
