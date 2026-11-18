@@ -38,7 +38,7 @@ def write_layer(rootfs: str, out: str) -> tuple[dict, str]:
     diff_id = hashlib.sha256()
     entries = [f"./{name}" for name in sorted(os.listdir(rootfs))]
     with subprocess.Popen([*TAR, f"--directory={rootfs}", *entries], stdout=subprocess.PIPE) as tar:
-        with open(tmp, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", compresslevel=6, mtime=0) as gz:
+        with open(tmp, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", compresslevel=6, mtime=0) as gz:
             for chunk in iter(lambda: tar.stdout.read(CHUNK), b""):
                 diff_id.update(chunk)
                 gz.write(chunk)
