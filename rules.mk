@@ -82,6 +82,10 @@ check-shell:
 check-dockerfiles:
 	env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --ignore DL3041 -- Dockerfile.ci
 	git ls-files -z -c -o --exclude-standard -- ':(glob)**/Dockerfile*' ':(glob)**/Containerfile*' ':(top,exclude,literal)Dockerfile.ci' | xargs -0 -r env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --
+	# relabel= rewrites the SELinux label of checkout files on the build host and fails on
+	# virtiofs. COPY the file into a stage and bind-mount from that stage instead.
+	if git grep -n --untracked -E 'relabel=' -- ':(glob)**/Dockerfile*' ':(glob)**/Containerfile*'; then \
+		echo 'build mounts must not relabel checkout files; COPY into a stage and mount from=<stage>' >&2; exit 1; fi
 
 # ── Ansible collection source checks ─────────────────────────────────────────
 # Lint, playbook syntax, collection build + tarball allowlist, and a clean-env
