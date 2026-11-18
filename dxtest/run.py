@@ -77,7 +77,7 @@ def vif(s, i, **kw):
 
 # Lifecycle: preflight, associate, status, rerun preflight blocked, teardown twice.
 s = copy.deepcopy(BASE)
-p, calls, st = run('dx_preflight,dx', s)
+p, calls, st = run('dx_inputs,dx_preflight,dx', s)
 check('lifecycle: preflight and associate', p.returncode == 0 and mut(calls) == [MUTATING[0]] and not leak(p)
       and [a['associationState'] for a in st['assocs']] == ['associated'], p.stdout + p.stderr)
 create = [c for c in calls if c[1] == MUTATING[0]][0]
@@ -86,7 +86,7 @@ check('lifecycle: association allows exactly the two VPC CIDRs',
       json.dumps(create))
 p, calls, st2 = run('dx_status', st)
 check('lifecycle: status passes', p.returncode == 0 and not mut(calls) and not leak(p), p.stdout + p.stderr)
-p, calls, _ = run('dx_preflight', st)
+p, calls, _ = run('dx_inputs,dx_preflight', st)
 check('lifecycle: rerun preflight blocks before changes', p.returncode != 0 and not mut(calls)
       and 'teardown-aws.yml' in p.stdout, p.stdout)
 p, calls, st3 = run('teardown_dx', st)
@@ -101,38 +101,36 @@ check('teardown leaves another TGW\'s association alone', p.returncode == 0 and 
       and st4['assocs'][0]['associationState'] == 'associated', p.stdout + p.stderr)
 
 # Preflight negatives: each fails before any change and prints no MD5 key.
-neg('preflight: private VIF', 'dx_preflight', lambda s: vif(s, 0, virtualInterfaceType='private'))
-neg('preflight: VIF down', 'dx_preflight', lambda s: vif(s, 1, virtualInterfaceState='down'))
-neg('preflight: one BGP peer down', 'dx_preflight', lambda s: s['vifs'][0]['bgpPeers'][1].update(bgpStatus='down'))
-neg('preflight: no BGP peers', 'dx_preflight', lambda s: vif(s, 1, bgpPeers=[]))
-neg('preflight: 1500 MTU in safe mode', 'dx_preflight', lambda s: vif(s, 0, mtu=1500))
-neg('preflight: VIF on another DX gateway', 'dx_preflight', lambda s: vif(s, 1, directConnectGatewayId='other'))
+neg('preflight: private VIF', 'dx_inputs,dx_preflight', lambda s: vif(s, 0, virtualInterfaceType='private'))
+neg('preflight: VIF down', 'dx_inputs,dx_preflight', lambda s: vif(s, 1, virtualInterfaceState='down'))
+neg('preflight: one BGP peer down', 'dx_inputs,dx_preflight', lambda s: s['vifs'][0]['bgpPeers'][1].update(bgpStatus='down'))
+neg('preflight: no BGP peers', 'dx_inputs,dx_preflight', lambda s: vif(s, 1, bgpPeers=[]))
+neg('preflight: 1500 MTU in safe mode', 'dx_inputs,dx_preflight', lambda s: vif(s, 0, mtu=1500))
+neg('preflight: VIF on another DX gateway', 'dx_inputs,dx_preflight', lambda s: vif(s, 1, directConnectGatewayId='other'))
 neg('preflight: a private VIF also attached to the DX gateway', 'dx_preflight',
     lambda s: vif(s, 2, directConnectGatewayId=DXGW), want='PrivateVirtualInterface')
-neg('preflight: VIF ID not found', 'dx_preflight', lambda s: s['vifs'].pop(1))
-neg('preflight: malformed DX gateway ID', 'dx_preflight', lambda s: None, ['dxgw=dxgw-123'])
-neg('preflight: no VIF IDs', 'dx_preflight', lambda s: None, ['{"vifs": []}'])
-neg('preflight: duplicate VIF IDs', 'dx_preflight', lambda s: None, ['{"vifs": ["dxvif-aaaa1111", "dxvif-aaaa1111"]}'])
-neg('preflight: DX gateway not found', 'dx_preflight', lambda s: s['dxgws'].clear())
-neg('preflight: DX gateway deleting', 'dx_preflight', lambda s: s['dxgws'][0].update(directConnectGatewayState='deleting'))
-neg('preflight: DX gateway ASN equals the TGW ASN', 'dx_preflight', lambda s: s['dxgws'][0].update(amazonSideAsn=64512),
+neg('preflight: VIF ID not found', 'dx_inputs,dx_preflight', lambda s: s['vifs'].pop(1))
+neg('preflight: malformed DX gateway ID', 'dx_inputs,dx_preflight', lambda s: None, ['dxgw=dxgw-123'])
+neg('preflight: no VIF IDs', 'dx_inputs,dx_preflight', lambda s: None, ['{"vifs": []}'])
+neg('preflight: duplicate VIF IDs', 'dx_inputs,dx_preflight', lambda s: None, ['{"vifs": ["dxvif-aaaa1111", "dxvif-aaaa1111"]}'])
+neg('preflight: DX gateway not found', 'dx_inputs,dx_preflight', lambda s: s['dxgws'].clear())
+neg('preflight: DX gateway deleting', 'dx_inputs,dx_preflight', lambda s: s['dxgws'][0].update(directConnectGatewayState='deleting'))
+neg('preflight: DX gateway ASN equals the TGW ASN', 'dx_inputs,dx_preflight', lambda s: s['dxgws'][0].update(amazonSideAsn=64512),
     want='64512')
 neg('preflight: DX gateway has six TGWs', 'dx_preflight',
     lambda s: s['assocs'].extend(other_assoc(['10.%d.0.0/16' % i], 'tgw-%d' % i) for i in range(6)), want='found 6')
-neg('preflight: hosted VIF not yet accepted', 'dx_preflight', lambda s: vif(s, 1, virtualInterfaceState='confirming'))
+neg('preflight: hosted VIF not yet accepted', 'dx_inputs,dx_preflight', lambda s: vif(s, 1, virtualInterfaceState='confirming'))
 def vgw(s):
     a = other_assoc([])
     a['associatedGateway'] = {'id': 'vgw-1', 'type': 'virtualPrivateGateway'}
     s['assocs'].append(a)
 neg('preflight: DX gateway associated with a VGW', 'dx_preflight', vgw, want='virtualPrivateGateway')
-neg('preflight: allowed prefix contains a VPC', 'dx_preflight', lambda s: s['assocs'].append(other_assoc(['10.0.0.0/8'])),
+neg('preflight: allowed prefix contains a VPC', 'dx_inputs,dx_preflight', lambda s: s['assocs'].append(other_assoc(['10.0.0.0/8'])),
     want='10.0.0.0/8')
-neg('preflight: allowed prefix inside a VPC', 'dx_preflight', lambda s: s['assocs'].append(other_assoc(['10.200.5.0/24'])),
+neg('preflight: allowed prefix inside a VPC', 'dx_inputs,dx_preflight', lambda s: s['assocs'].append(other_assoc(['10.200.5.0/24'])),
     want='10.200.5.0/24')
-s = copy.deepcopy(BASE)
-vif(s, 0, mtu=1500)
-p, calls, _ = run('dx_preflight', s, ['mtu_mode=unsafe'])
-check('preflight: 1500 MTU passes in unsafe mode', p.returncode == 0 and not mut(calls), p.stdout + p.stderr)
+neg('preflight: unsafe MTU mode (until CORENET-7709)', 'dx_inputs,dx_preflight', lambda s: None, ['mtu_mode=unsafe'],
+    want='CORENET-7709')
 s = copy.deepcopy(BASE)
 s['assocs'] = [other_assoc(['10.50.0.0/16']), other_assoc(['10.200.0.0/16'], 'tgw-gone', 'disassociated')]
 p, calls, _ = run('dx_preflight', s)
@@ -142,7 +140,6 @@ check('preflight: ignores disassociated and non-overlapping associations', p.ret
 s = copy.deepcopy(BASE)
 s['assocs'] = [other_assoc(['10.100.0.0/16'], 'tgw-0001')]
 neg('status: association misses the workload VPC', 'dx_status', lambda x: x.update(copy.deepcopy(s)), want="uncovered: ['10.200.0.0/16']")
-neg('status: no association', 'dx_status', lambda x: None, want="uncovered: ['10.100.0.0/16', '10.200.0.0/16']")
 s2 = copy.deepcopy(BASE)
 s2['assocs'] = [other_assoc(['10.100.0.0/16', '10.200.0.0/16'], 'tgw-0001')]
 s2['routes']['tgw-rtb-0001'] = [{'DestinationCidrBlock': '10.44.0.0/16', 'State': 'active',
@@ -152,6 +149,7 @@ s2['routes']['tgw-rtb-0001'] = [{'DestinationCidrBlock': '10.44.0.0/16', 'State'
 p, calls, _ = run('dx_status', s2)
 check('status: a covering DX aggregate passes', p.returncode == 0 and not mut(calls) and not leak(p), p.stdout + p.stderr)
 if '--slow' in sys.argv:
+    neg('status: no association (slow)', 'dx_status', lambda x: None, want="Read the DX gateway association's allowed prefixes")
     neg('status: a more specific non-DX route wins (slow)', 'dx_status',
         lambda x: (x.update(copy.deepcopy(s2)), x['routes']['tgw-rtb-0001'].append(
             {'DestinationCidrBlock': '10.44.44.0/24', 'State': 'active', 'TransitGatewayAttachments': [{'ResourceType': 'vpc'}]})))

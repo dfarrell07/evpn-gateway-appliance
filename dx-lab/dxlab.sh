@@ -3,8 +3,8 @@
 # Adapted from Mac 3's lab.sh: own work/artifact dirs, EE and scenario.
 set -uo pipefail
 X=/Users/dfarrell07/src/evpn/dx-lab
-SRC=${SRC:-$X/src-5e6b75c}
-EE=${EE:-localhost/ega-ee-dx:5e6b75c}
+SRC=${SRC:-$X/src-0b15614}
+EE=${EE:-localhost/ega-ee-dx:0b15614}
 NODE=${NODE:-localhost/ega-7500-appliance:nested-ci}
 WORK=/tmp/ega/work-dx; LAB=$WORK/lab; OUT=$X/out; mkdir -p "$OUT"
 A=clab-ega-evpn-appliance; T=clab-ega-evpn-tgw
