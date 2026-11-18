@@ -112,6 +112,22 @@
   changed_when: _mh_ip_add.rc == 0
   when: multihoming.enabled | default(false) | bool
 
+- name: Discover multihoming appliance peers from inventory
+  ansible.builtin.set_fact:
+    _evpn_mh_peer_addresses: >-
+      {{
+        multihoming.peer_addresses
+        | default(
+            groups['onprem_appliances'] | default([])
+            | map('extract', hostvars, 'evpn_underlay_ip')
+            | reject('undefined')
+            | reject('equalto', evpn_underlay_ip | default(''))
+            | list,
+            true
+          )
+      }}
+  when: multihoming.enabled | default(false) | bool
+
 - name: Render FRR configuration
   ansible.builtin.include_tasks: frr_config.yml
 

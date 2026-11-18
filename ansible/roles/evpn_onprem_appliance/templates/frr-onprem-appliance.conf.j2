@@ -18,9 +18,9 @@ interface {{ trunk_interface }}
  evpn mh es-df-pref {{ multihoming.df_pref | default(32767) }}
 exit
 !
-{% if multihoming.peer_addresses | default([]) | length > 0 %}
+{% if _evpn_mh_peer_addresses | default([]) | length > 0 %}
 bfd
-{% for peer in multihoming.peer_addresses %}
+{% for peer in _evpn_mh_peer_addresses %}
  peer {{ peer }}
   receive-interval {{ multihoming.bfd.receive_interval | default(50) }}
   transmit-interval {{ multihoming.bfd.transmit_interval | default(50) }}
@@ -47,7 +47,7 @@ router bgp {{ bgp.onprem_asn }}
  neighbor {{ tunnel.cloud_ip }} description infra-relay
  !
 {% if multihoming.enabled | default(false) | bool %}
-{% for peer in multihoming.peer_addresses | default([]) %}
+{% for peer in _evpn_mh_peer_addresses | default([]) %}
  neighbor {{ peer }} remote-as {{ bgp.onprem_asn }}
  neighbor {{ peer }} description appliance-peer
  neighbor {{ peer }} bfd
@@ -64,7 +64,7 @@ router bgp {{ bgp.onprem_asn }}
   neighbor {{ tunnel.cloud_ip }} activate
   neighbor {{ tunnel.cloud_ip }} maximum-prefix {{ bgp.max_prefix | default(1000) }}
 {% if multihoming.enabled | default(false) | bool %}
-{% for peer in multihoming.peer_addresses | default([]) %}
+{% for peer in _evpn_mh_peer_addresses | default([]) %}
   neighbor {{ peer }} activate
 {% endfor %}
 {% endif %}

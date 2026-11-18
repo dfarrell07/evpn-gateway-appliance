@@ -124,7 +124,7 @@ argument_specs:
           peer_addresses:
             type: list
             elements: str
-            description: Direct appliance peer addresses for BFD/BGP.
+            description: Optional direct appliance peer override for BFD/BGP; otherwise peers are derived from the onprem_appliances inventory group.
           bfd:
             type: dict
             options:

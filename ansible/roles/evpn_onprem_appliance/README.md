@@ -58,8 +58,11 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
 
 For two physical appliances, set `trunk_interface: bond0` and use the same
 multihoming identity on both hosts. The CE-facing LACP bundle spans both
-appliances, so each appliance may contribute one local bond member. Keep each
-host's transport/VTEP address and `peer_addresses` unique:
+appliances, so each appliance may contribute one local bond member. When the
+inventory defines an `onprem_appliances` group with each host's
+`evpn_underlay_ip`, the role discovers the other appliance peers automatically.
+An explicit `peer_addresses` list remains available as an override for
+non-standard inventories:
 
 ```yaml
 multihoming:
@@ -68,7 +71,6 @@ multihoming:
   # Numeric discriminator + shared system MAC selects FRR's Type-3 ESI form.
   es_id: 1
   es_sys_mac: "02:aa:bb:cc:dd:ee"
-  peer_addresses: [10.44.44.2]
   bfd:
     receive_interval: 50
     transmit_interval: 50

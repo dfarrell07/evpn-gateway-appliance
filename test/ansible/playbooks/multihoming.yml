@@ -85,15 +85,6 @@
       es_sys_mac: "02:aa:bb:cc:dd:ee"
       df_pref: 32767
       es_id_wire: "03:02:aa:bb:cc:dd:ee:00:00:01"
-      # Derive the other appliance from inventory rather than repeating its
-      # underlay address in the scenario variables.
-      peer_addresses: >-
-        {{
-          groups['onprem_appliances']
-          | map('extract', hostvars, 'evpn_underlay_ip')
-          | reject('equalto', evpn_underlay_ip)
-          | list
-        }}
       bfd:
         receive_interval: 50
         transmit_interval: 50
@@ -192,15 +183,15 @@
     - name: Assert the inventory-derived appliance peer and BFD settings
       ansible.builtin.assert:
         that:
-          - multihoming.peer_addresses | length == 1
+          - _evpn_mh_peer_addresses | length == 1
           - >-
-            ('neighbor ' ~ multihoming.peer_addresses[0] ~ ' remote-as ' ~
+            ('neighbor ' ~ _evpn_mh_peer_addresses[0] ~ ' remote-as ' ~
             bgp.onprem_asn|string) in (frr_config.content | b64decode)
           - >-
-            ('neighbor ' ~ multihoming.peer_addresses[0] ~ ' bfd') in
+            ('neighbor ' ~ _evpn_mh_peer_addresses[0] ~ ' bfd') in
             (frr_config.content | b64decode)
           - >-
-            ('peer ' ~ multihoming.peer_addresses[0]) in
+            ('peer ' ~ _evpn_mh_peer_addresses[0]) in
             (frr_config.content | b64decode)
           - "'receive-interval 50' in (frr_config.content | b64decode)"
           - "'transmit-interval 50' in (frr_config.content | b64decode)"
