@@ -1,7 +1,9 @@
 # e2e lane
 
-Proves the cloud infra role discovers upstream frr-k8s pods and that the relay
-reaches BGP Established with each kind node.
+Proves the cloud infra role discovers upstream frr-k8s pods, the kind nodes
+are the unmanaged VTEP for the production CUDN, and the relay reaches BGP
+Established with each kind node. The appliance health check requires a remote
+VTEP on that VNI.
 
 `entrypoint_e2e.sh` is this lane. `test/e2e/run.sh` and `test/e2e/run_remote.sh`
 default to it, and Prow sets the same entrypoint for `ci/prow/e2e`.
@@ -32,7 +34,14 @@ FRR in that manifest is `quay.io/frrouting/frr:10.4.3`. The controller image is
 `manifests/frrconfiguration.yml`.
 
 Containerlab runs the appliance, the relay (`10.100.0.1`), and the transit
-gateway. Kind nodes are the workload. The entrypoint calls
+gateway. Kind nodes are the workload. The relay has a route to each node.
+`prepare-evpn.sh` creates an unmanaged VTEP on the kind network, the
+production CUDN, and the route advertisement that selects that
+configuration. The CUDN reserves 10.42.1.1 for the appliance and uses
+10.42.1.254 as the OVN gateway. deploy passes that kind network as
+`workload_vpc_cidr`, so the appliance tunnel route covers the VTEPs.
+ovn-kubernetes records each node's kind-network address in `k8s.ovn.org/vteps`.
+The entrypoint calls
 `network.evpn_gateway_test.simulate` so the appliance gets `trunk0`, then
 `network.evpn_gateway.deploy`, which discovers the frr-k8s pods
 (`-e frr_k8s_ns=frr-k8s-system`). Health checks run on the relay and the

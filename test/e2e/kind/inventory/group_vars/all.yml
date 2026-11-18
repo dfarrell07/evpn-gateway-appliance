@@ -10,6 +10,7 @@ tunnel:
 infra_relay_host: infra-router
 
 infra_vpc_cidr: 10.100.0.0/16
+# entrypoint_e2e.sh overrides this with the kind network CIDR.
 workload_vpc_cidr: 172.18.0.0/16
 ocp_pod_network_cidr: 10.244.0.0/16
 

@@ -123,6 +123,10 @@ for ip in "${kind_node_ips[@]}"; do
 	runtime exec "$relay_ctr" ip route replace "${ip}/32" via 10.100.0.2
 done
 
+# The kind nodes are the workload VTEP. This has to exist before deploy.yml's
+# health check, which requires a remote VTEP learned from these peers.
+"${kind_dir}/prepare-evpn.sh"
+
 # Stage the e2e inventory into the work dir so the EE (launched below as a sibling via
 # the host socket) can bind it: podman-remote resolves bind sources on the host, and run.sh
 # mounts the work dir at the same path on the host and here. Remove any previous copy first:
@@ -156,10 +160,20 @@ ee_playbook() {
 			-u root --private-key "$ssh_key"
 }
 
+# The kind network is the workload VPC for this lane. wg-quick installs it
+# from AllowedIPs once deploy brings the tunnel up, which is what covers the
+# node VTEP addresses. 10.44.44.2 is not on-link until then.
+kind_cidr="$(tr -d '[:space:]' < "${EGA_WORK_DIR}/kind-cidr")"
+if [ -z "$kind_cidr" ]; then
+	echo "error: kind network CIDR was not recorded" >&2
+	exit 1
+fi
+echo ">> workload VPC CIDR ${kind_cidr}"
 ee_playbook network.evpn_gateway_test.simulate
 ee_playbook network.evpn_gateway.deploy \
 	-e frr_k8s_ns=frr-k8s-system \
-	-e frr_k8s_lbl=app=frr-k8s
+	-e frr_k8s_lbl=app=frr-k8s \
+	-e "workload_vpc_cidr=${kind_cidr}"
 
 echo ">> frr-k8s discovery and relay BGP peering ok"
 exit 0

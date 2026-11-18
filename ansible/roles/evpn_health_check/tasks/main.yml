@@ -64,9 +64,7 @@
     assert int(p['pfxRcd'])>0, f'pfxRcd={p[\"pfxRcd\"]}'"
   changed_when: false
   loop: "{{ groups['cloud_workload'] | default([]) }}"
-  when:
-    - "'cloud_infra' in group_names"
-    - not (hostvars[item].frr_k8s_discovered | default(false) | bool)
+  when: "'cloud_infra' in group_names"
 
 - name: "HEALTH [infra]: No VXLAN interfaces on relay"
   ansible.builtin.command: ip -o link show type vxlan
@@ -144,15 +142,7 @@
   loop: "{{ stretches }}"
   loop_control:
     label: "VNI {{ 10000 + item.vlan }} ({{ item.name }})"
-  when:
-    - "'onprem_appliances' in group_names"
-    - >-
-      (groups['cloud_workload'] | default([])
-      | map('extract', hostvars)
-      | selectattr('frr_k8s_discovered', 'defined')
-      | selectattr('frr_k8s_discovered')
-      | list | length)
-      < (groups['cloud_workload'] | default([]) | length)
+  when: "'onprem_appliances' in group_names"
 
 - name: "HEALTH [onprem]: Ping cloud gateway"
   ansible.builtin.command: ping -c 2 -W 3 {{ item.cloud_gateway }}

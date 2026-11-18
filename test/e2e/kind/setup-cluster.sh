@@ -102,7 +102,9 @@ while IFS= read -r obj; do
 done < <(kubectl -n ovn-kubernetes get daemonset,deployment -o name)
 
 echo ">> frr-k8s"
-kubectl apply -f "${self_dir}/manifests/frr-k8s.yaml"
+# Upstream starts bgpd with -p 0, so the node never accepts the relay's dial.
+sed 's/-p 0/-p 179/' "${self_dir}/manifests/frr-k8s.yaml" > "${EGA_WORK_DIR}/frr-k8s.yaml"
+kubectl apply -f "${EGA_WORK_DIR}/frr-k8s.yaml"
 rollout frr-k8s-system deployment/frr-k8s-statuscleaner 180s
 rollout frr-k8s-system daemonset/frr-k8s-daemon 180s
 
