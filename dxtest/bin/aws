@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Stateful fake of the AWS CLI calls the Direct Connect tasks make. State: $STUB_STATE (JSON)."""
+import json, os, sys
+import jmespath
+
+SF = os.environ['STUB_STATE']
+st = json.load(open(SF))
+a = sys.argv[1:]
+with open(os.environ['STUB_ARGV_LOG'], 'a') as f:
+    f.write(json.dumps(a) + '\n')
+svc, cmd = a[0], a[1]
+
+
+def opt(name, multi=False):
+    if name not in a:
+        return [] if multi else None
+    i = a.index(name)
+    vals = []
+    for x in a[i + 1:]:
+        if x.startswith('--'):
+            break
+        vals.append(x)
+    return vals if multi else vals[0]
+
+
+def filters():
+    out = {}
+    for f in opt('--filters', True):
+        k, v = f.split(',', 1)
+        out[k[len('Name='):]] = v[len('Values='):].split(',')
+    return out
+
+
+def live(x):
+    return x['associationState'] != 'disassociated'
+
+
+def emit(obj):
+    q = opt('--query')
+    if q:
+        obj = jmespath.search(q, obj)
+    if opt('--output') == 'text':
+        if isinstance(obj, list):
+            print('\t'.join(str(x) for x in obj))
+        elif obj is None:
+            print('None')
+        else:
+            print(obj)
+    else:
+        print(json.dumps(obj))
+
+
+def save():
+    json.dump(st, open(SF, 'w'))
+
+
+if svc == 'directconnect' and cmd == 'describe-virtual-interfaces':
+    emit({'virtualInterfaces': st['vifs']})
+elif svc == 'directconnect' and cmd == 'describe-direct-connect-gateways':
+    emit({'directConnectGateways': [g for g in st['dxgws'] if g['directConnectGatewayId'] == opt('--direct-connect-gateway-id')]})
+elif svc == 'directconnect' and cmd == 'describe-direct-connect-gateway-associations':
+    # Each describe advances pending transitions by one step.
+    for x in st['assocs']:
+        if x['associationState'] == 'associating':
+            x['associationState'] = 'associated'
+        elif x['associationState'] == 'disassociating':
+            x['associationState'] = 'disassociated'
+    save()
+    r = st['assocs']
+    if opt('--association-id'):
+        r = [x for x in r if x['associationId'] == opt('--association-id')]
+    if opt('--direct-connect-gateway-id'):
+        r = [x for x in r if x['directConnectGatewayId'] == opt('--direct-connect-gateway-id')]
+    if opt('--associated-gateway-id'):
+        r = [x for x in r if x['associatedGateway']['id'] == opt('--associated-gateway-id')]
+    emit({'directConnectGatewayAssociations': r})
+elif svc == 'directconnect' and cmd == 'create-direct-connect-gateway-association':
+    st['n'] = st.get('n', 0) + 1
+    x = {'associationId': 'assoc-%04d' % st['n'], 'directConnectGatewayId': opt('--direct-connect-gateway-id'),
+         'associatedGateway': {'id': opt('--gateway-id'), 'type': 'transitGateway'},
+         'associationState': 'associating',
+         'allowedPrefixesToDirectConnectGateway': [{'cidr': c.split('=', 1)[1]}
+                                                   for c in opt('--add-allowed-prefixes-to-direct-connect-gateway', True)]}
+    st['assocs'].append(x)
+    save()
+    emit({'directConnectGatewayAssociation': x})
+elif svc == 'directconnect' and cmd == 'delete-direct-connect-gateway-association':
+    for x in st['assocs']:
+        if x['associationId'] == opt('--association-id') and live(x):
+            x['associationState'] = 'disassociating'
+            save()
+            emit({'directConnectGatewayAssociation': x})
+            break
+    else:
+        sys.stderr.write('An error occurred (DirectConnectClientException): no such association\n')
+        sys.exit(254)
+elif svc == 'ec2' and cmd == 'describe-transit-gateway-attachments':
+    f = filters()
+    r = [{'TransitGatewayId': x['associatedGateway']['id'], 'ResourceId': x['directConnectGatewayId'],
+          'ResourceType': 'direct-connect-gateway', 'State': 'available'} for x in st['assocs'] if live(x)]
+    r = [x for x in r if x['ResourceType'] in f.get('resource-type', [x['ResourceType']])
+         and x['State'] in f.get('state', [x['State']])]
+    emit({'TransitGatewayAttachments': r})
+elif svc == 'ec2' and cmd == 'describe-transit-gateways':
+    f = filters()
+    r = [t for t in st['tgws'] if t['State'] in f.get('state', [t['State']])
+         and all(any(g['Key'] == k[4:] and g['Value'] in v for g in t['Tags']) for k, v in f.items() if k.startswith('tag:'))]
+    emit({'TransitGateways': r})
+elif svc == 'ec2' and cmd == 'search-transit-gateway-routes':
+    f = filters()
+    r = [x for x in st['routes'].get(opt('--transit-gateway-route-table-id'), [])
+         if x['DestinationCidrBlock'] in f.get('route-search.exact-match', [x['DestinationCidrBlock']])
+         and x['State'] in f.get('state', [x['State']])]
+    emit({'Routes': r})
+else:
+    sys.stderr.write('fake aws: unsupported %s %s\n' % (svc, cmd))
+    sys.exit(2)
