@@ -44,6 +44,10 @@ first, so a failure blocks deployment before any host changes (CORENET-7501):
   CORENET-7709, and WireGuard is for development and test only.
 - If `evpn_health_check_workload_mtu` is set, it must fit the transport's budget
   (Direct Connect: 8450).
+- For `direct-connect`, the appliance must have a route to the workload VTEP
+  over an uplink MTU of at least 1550, and the controller runs `dx_status` as
+  above when `evpn_health_check_dx_telemetry` is true. The VTEP address does
+  not exist yet, so the end-to-end ping waits for the health checks.
 
 UDP reachability (WireGuard 51820, IPsec 500 and 4500) is proven after
 deployment by the WireGuard handshake and IPsec Child SA health checks.

@@ -30,6 +30,10 @@
   ansible.builtin.include_tasks: dx_inputs.yml
   when: tunnel.type == 'direct-connect'
 
+- name: Validate the customer's Direct Connect resources
+  ansible.builtin.include_tasks: dx_preflight.yml
+  when: tunnel.type == 'direct-connect'
+
 # ── Look up AMI ─────────────────────────────────────────────────────
 - name: Look up CentOS Stream 10 AMI
   vars:

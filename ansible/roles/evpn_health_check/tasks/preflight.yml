@@ -23,3 +23,54 @@
       {{ _evpn_health_check_workload_mtu_budget[tunnel.type] }} bytes (the transport's inner MTU minus 50 bytes of VXLAN).
   run_once: true
   when: evpn_health_check_workload_mtu | int > 0
+
+# The appliance's VTEP address does not exist yet, so nothing is sent from it here; health
+# checks ping from it after deployment.
+- name: "PREFLIGHT [onprem]: Find the Direct Connect route to the workload VTEP"
+  ansible.builtin.command: ip -j route get {{ hostvars[workload_vtep_host].private_ip }}
+  register: _evpn_health_check_dx_route
+  changed_when: false
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'direct-connect'
+
+- name: "PREFLIGHT [onprem]: Read the uplink MTU toward the workload VTEP"
+  ansible.builtin.command: cat /sys/class/net/{{ (_evpn_health_check_dx_route.stdout | from_json)[0].dev }}/mtu
+  register: _evpn_health_check_dx_mtu
+  changed_when: false
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'direct-connect'
+
+# 1550 bytes carry VXLAN with a 1500-byte workload IP MTU (50 bytes of IPv4 VXLAN).
+- name: "PREFLIGHT [onprem]: Require a 1550-byte uplink toward the workload VTEP"
+  ansible.builtin.assert:
+    that: _evpn_health_check_dx_mtu.stdout | int >= 1550
+    fail_msg: >-
+      {{ (_evpn_health_check_dx_route.stdout | from_json)[0].dev }}, the uplink toward the workload VTEP, has MTU
+      {{ _evpn_health_check_dx_mtu.stdout }}; Direct Connect needs at least 1550 to carry VXLAN with a 1500-byte
+      workload MTU.
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'direct-connect'
+
+- name: Check AWS Direct Connect before deployment
+  delegate_to: localhost
+  connection: local
+  run_once: true
+  become: false
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'direct-connect'
+    - evpn_health_check_dx_telemetry | default(false) | bool
+  block:
+    - name: Require the control-node credential context for Direct Connect checks
+      ansible.builtin.assert:
+        that:
+          - hostvars['localhost'].ansible_connection | default('local') in ['local', 'ansible.builtin.local', 'ansible.legacy.local']
+          - hostvars['localhost'].ansible_become | default(false) is ansible.builtin.falsy(convert_bool=true)
+        fail_msg: Direct Connect checks require local execution without privilege escalation to use controller credentials.
+    - name: Check the Direct Connect interfaces, association and TGW route
+      ansible.builtin.include_role:
+        name: evpn_aws_infra
+        tasks_from: dx_status

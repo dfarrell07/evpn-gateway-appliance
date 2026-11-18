@@ -63,18 +63,26 @@ role never creates or deletes them. Set `evpn_aws_infra_dx_gateway_id` and
 
 Before creating anything, provisioning checks those inputs, `safe` MTU mode,
 and that the gateway is `available` with an Amazon-side ASN other than the
-TGW's. It then associates the gateway with the TGW, allowing exactly the two
+TGW's. `tasks/dx_preflight.yml` then runs the VIF checks of
+[`dx_status`](#read-only-direct-connect-checks-tasks_from-dx_status) without
+waiting, and requires the gateway to serve only transit gateways and have fewer
+than six and no allowed prefixes overlapping the VPC CIDRs
+([AWS](https://docs.aws.amazon.com/directconnect/latest/UserGuide/allowed-to-prefixes.html)).
+Provisioning then associates the gateway with the TGW, allowing exactly the two
 VPC CIDRs (what AWS advertises to on-premises), waits for `associated`, and
 routes `tunnel.network_cidr` from the infra VPC through the TGW. The fresh
 TGW's default route table propagates the routes the customer advertises over
-the VIFs. Teardown removes the association before a rerun.
+the VIFs. Rerunning provisioning fails at preflight until teardown removes the
+earlier association.
 
 `DescribeVirtualInterfaces` returns each VIF's BGP MD5 key; every call selects
 only the fields it needs, so the key is never registered or logged.
 
-Provisioning needs `directconnect:DescribeDirectConnectGateways`,
-`directconnect:CreateDirectConnectGatewayAssociation` and
-`directconnect:DescribeDirectConnectGatewayAssociations`.
+Provisioning needs `directconnect:DescribeDirectConnectGatewayAttachments`,
+`directconnect:DescribeVirtualInterfaces`,
+`directconnect:DescribeDirectConnectGateways`,
+`directconnect:DescribeDirectConnectGatewayAssociations` and
+`directconnect:CreateDirectConnectGatewayAssociation`.
 In every mode, teardown finds DX gateway attachments on project TGWs with
 `ec2:DescribeTransitGatewayAttachments`; only when one exists does it need
 `directconnect:DescribeDirectConnectGatewayAssociations` and
@@ -89,7 +97,8 @@ transit VIF on that gateway, `available`, with every BGP peer `up` and MTU 8500.
 both VPC CIDRs, and the most specific active TGW route covering
 `tunnel.network_cidr` (the customer may advertise an aggregate) to use the DX
 attachment, which proves the customer router advertises it. VIFs and the route
-are retried for up to five minutes. Health checks run it on the controller; it
+are retried for up to five minutes. The transport preflight and health checks
+run it on the controller; it
 needs `directconnect:DescribeDirectConnectGatewayAttachments`,
 `directconnect:DescribeVirtualInterfaces`,
 `directconnect:DescribeDirectConnectGatewayAssociations`,
