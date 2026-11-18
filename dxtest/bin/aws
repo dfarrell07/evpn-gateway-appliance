@@ -55,7 +55,17 @@ def save():
 
 
 if svc == 'directconnect' and cmd == 'describe-virtual-interfaces':
-    emit({'virtualInterfaces': st['vifs']})
+    # A VIF is visible only in its own Region.
+    r = [v for v in st['vifs'] if v.get('region', 'us-west-2') == opt('--region')]
+    if opt('--virtual-interface-id'):
+        r = [v for v in r if v['virtualInterfaceId'] == opt('--virtual-interface-id')]
+    emit({'virtualInterfaces': r})
+elif svc == 'directconnect' and cmd == 'describe-direct-connect-gateway-attachments':
+    emit({'directConnectGatewayAttachments': [
+        {'virtualInterfaceId': v['virtualInterfaceId'], 'virtualInterfaceRegion': v.get('region', 'us-west-2'),
+         'attachmentType': 'TransitVirtualInterface' if v['virtualInterfaceType'] == 'transit' else 'PrivateVirtualInterface',
+         'attachmentState': 'attached'}
+        for v in st['vifs'] if v['directConnectGatewayId'] == opt('--direct-connect-gateway-id')]})
 elif svc == 'directconnect' and cmd == 'describe-direct-connect-gateways':
     emit({'directConnectGateways': [g for g in st['dxgws'] if g['directConnectGatewayId'] == opt('--direct-connect-gateway-id')]})
 elif svc == 'directconnect' and cmd == 'describe-direct-connect-gateway-associations':
@@ -108,9 +118,9 @@ elif svc == 'ec2' and cmd == 'describe-transit-gateways':
     emit({'TransitGateways': r})
 elif svc == 'ec2' and cmd == 'search-transit-gateway-routes':
     f = filters()
+    assert 'route-search.exact-match' not in f, 'the role should search by state, then pick the longest match'
     r = [x for x in st['routes'].get(opt('--transit-gateway-route-table-id'), [])
-         if x['DestinationCidrBlock'] in f.get('route-search.exact-match', [x['DestinationCidrBlock']])
-         and x['State'] in f.get('state', [x['State']])]
+         if x['State'] in f.get('state', [x['State']])]
     emit({'Routes': r})
 else:
     sys.stderr.write('fake aws: unsupported %s %s\n' % (svc, cmd))

@@ -3,8 +3,8 @@
 # Adapted from Mac 3's lab.sh: own work/artifact dirs, EE and scenario.
 set -uo pipefail
 X=/Users/dfarrell07/src/evpn/dx-lab
-SRC=${SRC:-$X/src-24995d6}
-EE=${EE:-localhost/ega-ee-dx:24995d6}
+SRC=${SRC:-$X/src-5e6b75c}
+EE=${EE:-localhost/ega-ee-dx:5e6b75c}
 NODE=${NODE:-localhost/ega-7500-appliance:nested-ci}
 WORK=/tmp/ega/work-dx; LAB=$WORK/lab; OUT=$X/out; mkdir -p "$OUT"
 A=clab-ega-evpn-appliance; T=clab-ega-evpn-tgw
@@ -30,7 +30,6 @@ t_state() { echo "== appliance FRR bgp summary"; ex $A podman exec frr vtysh -c 
   echo "== tcpdump-free DF 1550 VTEP->workload"; ex $A ping -c2 -W2 -M do -s 1522 -I 10.44.44.1 10.200.0.1 | tail -2; }
 t_mtu_neg() { # 1500-byte DX link: preflight must fail before any change; restore after
   ex $T ip link set eth3 mtu 1500; ex $A ip link set eth1 mtu 1500
-  local before=$(ex $A sh -c 'stat -c %Y /etc/frr/frr.conf 2>/dev/null || find / -name frr.conf -path "*frr*" -newer /etc/hostname 2>/dev/null | head -1')
   pb network.evpn_gateway.deploy > $OUT/mtu-neg.log 2>&1; echo "mtu-neg deploy rc=$? (want !=0)"
   grep -E "PLAY \[|fatal" $OUT/mtu-neg.log | head -6; recap $OUT/mtu-neg.log
   ex $T ip link set eth3 mtu 8500; ex $A ip link set eth1 mtu 8500; }

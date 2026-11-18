@@ -9,9 +9,11 @@ BASE = {
         {'virtualInterfaceId': 'dxvif-aaaa1111', 'virtualInterfaceType': 'transit', 'virtualInterfaceState': 'available',
          'mtu': 8500, 'jumboFrameCapable': True, 'directConnectGatewayId': DXGW,
          'bgpPeers': [{'bgpStatus': 'up', 'authKey': SECRET}, {'bgpStatus': 'up', 'authKey': SECRET}]},
+        # In another Region than the TGW (us-west-2): read there or it is not found.
         {'virtualInterfaceId': 'dxvif-bbbb2222', 'virtualInterfaceType': 'transit', 'virtualInterfaceState': 'available',
-         'mtu': 8500, 'jumboFrameCapable': True, 'directConnectGatewayId': DXGW,
-         'bgpPeers': [{'bgpStatus': 'up', 'authKey': SECRET}]},
+         'mtu': 8500, 'jumboFrameCapable': True, 'directConnectGatewayId': DXGW, 'region': 'us-east-1',
+         'bgpPeers': [{'bgpStatus': 'up', 'bgpPeerState': 'available', 'authKey': SECRET},
+                      {'bgpStatus': 'down', 'bgpPeerState': 'deleted', 'authKey': SECRET}]},
         {'virtualInterfaceId': 'dxvif-other999', 'virtualInterfaceType': 'private', 'virtualInterfaceState': 'down',
          'mtu': 1500, 'directConnectGatewayId': 'other', 'bgpPeers': [{'bgpStatus': 'down', 'authKey': SECRET}]},
     ],
@@ -105,6 +107,8 @@ neg('preflight: one BGP peer down', 'dx_preflight', lambda s: s['vifs'][0]['bgpP
 neg('preflight: no BGP peers', 'dx_preflight', lambda s: vif(s, 1, bgpPeers=[]))
 neg('preflight: 1500 MTU in safe mode', 'dx_preflight', lambda s: vif(s, 0, mtu=1500))
 neg('preflight: VIF on another DX gateway', 'dx_preflight', lambda s: vif(s, 1, directConnectGatewayId='other'))
+neg('preflight: a private VIF also attached to the DX gateway', 'dx_preflight',
+    lambda s: vif(s, 2, directConnectGatewayId=DXGW), want='PrivateVirtualInterface')
 neg('preflight: VIF ID not found', 'dx_preflight', lambda s: s['vifs'].pop(1))
 neg('preflight: malformed DX gateway ID', 'dx_preflight', lambda s: None, ['dxgw=dxgw-123'])
 neg('preflight: no VIF IDs', 'dx_preflight', lambda s: None, ['{"vifs": []}'])
@@ -139,7 +143,20 @@ s = copy.deepcopy(BASE)
 s['assocs'] = [other_assoc(['10.100.0.0/16'], 'tgw-0001')]
 neg('status: association misses the workload VPC', 'dx_status', lambda x: x.update(copy.deepcopy(s)), want="uncovered: ['10.200.0.0/16']")
 neg('status: no association', 'dx_status', lambda x: None, want="uncovered: ['10.100.0.0/16', '10.200.0.0/16']")
+s2 = copy.deepcopy(BASE)
+s2['assocs'] = [other_assoc(['10.100.0.0/16', '10.200.0.0/16'], 'tgw-0001')]
+s2['routes']['tgw-rtb-0001'] = [{'DestinationCidrBlock': '10.44.0.0/16', 'State': 'active',
+                                 'TransitGatewayAttachments': [{'ResourceType': 'direct-connect-gateway'}]},
+                                {'DestinationCidrBlock': '10.0.0.0/8', 'State': 'active',
+                                 'TransitGatewayAttachments': [{'ResourceType': 'vpc'}]}]
+p, calls, _ = run('dx_status', s2)
+check('status: a covering DX aggregate passes', p.returncode == 0 and not mut(calls) and not leak(p), p.stdout + p.stderr)
 if '--slow' in sys.argv:
+    neg('status: a more specific non-DX route wins (slow)', 'dx_status',
+        lambda x: (x.update(copy.deepcopy(s2)), x['routes']['tgw-rtb-0001'].append(
+            {'DestinationCidrBlock': '10.44.44.0/24', 'State': 'active', 'TransitGatewayAttachments': [{'ResourceType': 'vpc'}]})))
+    neg('status: VIF BGP down (slow)', 'dx_status',
+        lambda x: (x.update(copy.deepcopy(s2)), x['vifs'][0]['bgpPeers'][0].update(bgpStatus='down')))
     s['assocs'] = [other_assoc(['10.100.0.0/16', '10.200.0.0/16'], 'tgw-0001')]
     s['routes']['tgw-rtb-0001'][0]['TransitGatewayAttachments'] = [{'ResourceType': 'vpc'}]
     neg('status: TGW route not via DX (slow, 30 retries)', 'dx_status', lambda x: x.update(copy.deepcopy(s)),
