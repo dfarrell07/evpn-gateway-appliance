@@ -115,7 +115,7 @@ IPsec supports one appliance without multihoming.
 For Direct Connect, set `tunnel.type: direct-connect`, `evpn_aws_infra_dx_gateway_id` and
 `evpn_aws_infra_dx_virtual_interface_ids` (the customer's DX gateway and transit VIFs) before
 provisioning; the customer router must route `tunnel.network_cidr` to the appliance and advertise
-it over the VIFs.
+it over the VIFs. `deploy.yml` first runs the read-only `playbooks/preflight.yml`.
 
 ## Required variables
 

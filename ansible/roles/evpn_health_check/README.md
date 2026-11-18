@@ -25,3 +25,12 @@ For `tunnel.type: direct-connect`, the appliance pings the workload VTEP from
 `direct-connect`) also runs the AWS role's
 [`dx_status`](../evpn_aws_infra/README.md#read-only-direct-connect-checks-tasks_from-dx_status)
 entry point on the controller.
+
+## Transport preflight (`tasks_from: preflight`)
+
+`playbooks/preflight.yml` runs read-only checks, and `deploy.yml` imports it
+first, so a failure blocks deployment before any host changes (CORENET-7501).
+For `direct-connect` the appliance must have a route to the workload VTEP over
+an uplink MTU of at least 1550; the controller runs `dx_status`
+as above when `evpn_health_check_dx_telemetry` is true. The VTEP address does
+not exist yet, so the end-to-end ping waits for the health checks.
