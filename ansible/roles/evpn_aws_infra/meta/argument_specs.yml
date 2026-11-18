@@ -70,7 +70,7 @@ argument_specs:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec, direct-connect]
+            choices: [wireguard, ipsec]
             description: Transport type. Determines which transport-specific security-group rules are applied.
           port:
             type: int
