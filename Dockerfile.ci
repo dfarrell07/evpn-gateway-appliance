@@ -19,7 +19,7 @@ RUN dnf install -y git && dnf clean all && \
     git config --system --add safe.directory '*'
 
 # Pinned lint/build toolchain (the Ansible tools match the collection's CI pins). jmespath
-# applies --query in the fake AWS CLI of `make check-ansible-dx-preflight`.
+# applies --query in the fake AWS CLI of `make check-ansible-direct-connect`.
 RUN pip install --no-cache-dir \
         ansible-core==2.21.4 \
         ansible-lint==26.8.0 \

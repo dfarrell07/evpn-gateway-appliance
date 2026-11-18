@@ -98,13 +98,14 @@ ANSIBLE := ansible
 ANSIBLE_SMOKE_DIR := /tmp/ega-collections
 
 .PHONY: check-ansible
-check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install check-ansible-dx-preflight
+check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install check-ansible-direct-connect
 
-# The read-only Direct Connect preflight against a fake AWS CLI: each bad input fails with its
-# own message, makes only describe-* calls and prints no VIF BGP key (test/dx-preflight/run.py).
-.PHONY: check-ansible-dx-preflight
-check-ansible-dx-preflight:
-	ANSIBLE_HOME="$$(mktemp -d)" python3 test/dx-preflight/run.py
+# evpn_aws_infra's Direct Connect tasks against a fake AWS CLI (test/direct-connect/run.py): each
+# bad input fails the read-only preflight with its own message, association and teardown change
+# only the project TGW's association, and no VIF BGP key is printed.
+.PHONY: check-ansible-direct-connect
+check-ansible-direct-connect:
+	ANSIBLE_HOME="$$(mktemp -d)" python3 test/direct-connect/run.py
 
 .PHONY: check-ansible-lint
 check-ansible-lint:
