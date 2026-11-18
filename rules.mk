@@ -98,7 +98,13 @@ ANSIBLE := ansible
 ANSIBLE_SMOKE_DIR := /tmp/ega-collections
 
 .PHONY: check-ansible
-check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install
+check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install check-ansible-dx-preflight
+
+# The read-only Direct Connect preflight against a fake AWS CLI: each bad input fails with its
+# own message, makes only describe-* calls and prints no VIF BGP key (test/dx-preflight/run.py).
+.PHONY: check-ansible-dx-preflight
+check-ansible-dx-preflight:
+	ANSIBLE_HOME="$$(mktemp -d)" python3 test/dx-preflight/run.py
 
 .PHONY: check-ansible-lint
 check-ansible-lint:
