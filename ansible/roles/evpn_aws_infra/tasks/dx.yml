@@ -1,0 +1,48 @@
+---
+# Included only for direct-connect, after the TGW and its VPC attachments are available.
+# Associates the customer's DX gateway with the project TGW; the customer keeps the
+# connection, VIFs and gateway. Allowed prefixes are what AWS advertises to on-premises.
+- name: Associate the DX gateway with the TGW
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - create-direct-connect-gateway-association
+      - --region
+      - "{{ _evpn_aws_infra_region }}"
+      - --direct-connect-gateway-id
+      - "{{ evpn_aws_infra_dx_gateway_id }}"
+      - --gateway-id
+      - "{{ _evpn_aws_infra_tgw.stdout | trim }}"
+      - --add-allowed-prefixes-to-direct-connect-gateway
+      - cidr={{ evpn_aws_infra_infra_vpc_cidr }}
+      - cidr={{ evpn_aws_infra_workload_vpc_cidr }}
+      - --query
+      - directConnectGatewayAssociation.associationId
+      - --output
+      - text
+  register: _evpn_aws_infra_dx_assoc
+  changed_when: true
+
+# AWS documents no association time; allow 20 minutes.
+- name: Wait for the DX gateway association
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - describe-direct-connect-gateway-associations
+      - --region
+      - "{{ _evpn_aws_infra_region }}"
+      - --association-id
+      - "{{ _evpn_aws_infra_dx_assoc.stdout | trim }}"
+      - --query
+      - directConnectGatewayAssociations[0].associationState
+      - --output
+      - text
+  register: _evpn_aws_infra_dx_assoc_state
+  # A rejected association ends disassociated; stop waiting then.
+  until: _evpn_aws_infra_dx_assoc_state.stdout | trim in ['associated', 'disassociated']
+  failed_when: _evpn_aws_infra_dx_assoc_state.rc != 0 or _evpn_aws_infra_dx_assoc_state.stdout | trim != 'associated'
+  retries: 120
+  delay: 10
+  changed_when: false

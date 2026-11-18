@@ -3,14 +3,14 @@
 # Supported types:
 #   wireguard      — dev/test, terminates on infra EC2
 #   ipsec          — AWS VPN on TGW; on-prem Libreswan + FRR (dev/test)
-#   direct-connect — planned (CORENET-7708): production, DX partner + jumbo MTU
+#   direct-connect — production, DX partner + jumbo MTU
 #
 # MTU modes:
 #   safe           — underlay MTU ≥ 1550, no clamping (default)
 #   unsafe         — underlay MTU < 1550, TCP MSS clamping + DF bit,
 #                    UDP > MTU is dropped, live migration will not work
 tunnel:
-  type: wireguard          # or 'ipsec'
+  type: wireguard          # or 'ipsec' or 'direct-connect'
   mtu_mode: unsafe         # safe requires underlay MTU ≥ 1550
   onprem_ip: 10.44.44.1    # WG: tunnel address. IPSec/DX: VTEP loopback
   cloud_ip: 10.44.44.2     # WG: tunnel address. IPSec/DX: ignored
@@ -41,6 +41,10 @@ bgp:
 # IPsec: set evpn_aws_infra_vpn_customer_gateway_ip; map the ASN and enable AWS telemetry.
 evpn_aws_infra_vpn_customer_gateway_asn: "{{ bgp.onprem_asn }}"
 evpn_health_check_vpn_telemetry: "{{ tunnel.type == 'ipsec' }}"
+
+# Direct Connect: set evpn_aws_infra_dx_gateway_id and evpn_aws_infra_dx_virtual_interface_ids
+# to the customer's DX gateway and transit VIFs; health checks then read them from AWS.
+evpn_health_check_dx_telemetry: "{{ tunnel.type == 'direct-connect' }}"
 
 # ── VLAN Stretches ────────────────────────────────────────────
 stretches:

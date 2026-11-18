@@ -34,6 +34,14 @@ case "$scenario" in
 		fi
 		scenario_args=(-e "@${EGA_WORK_DIR}/lab/inventory/scenarios/ipsec.yml")
 		;;
+	dx)
+		# The Direct Connect scenario needs the topology with the routed DX link.
+		if [ "$EGA_TOPOLOGY" != "evpn-dx.clab.yml" ]; then
+			echo "error: EGA_SCENARIO=dx requires EGA_TOPOLOGY=evpn-dx.clab.yml" >&2
+			exit 2
+		fi
+		scenario_args=(-e "@${EGA_WORK_DIR}/lab/inventory/scenarios/dx.yml")
+		;;
 	*)
 		echo "error: unsupported EGA_SCENARIO=$scenario" >&2
 		exit 2

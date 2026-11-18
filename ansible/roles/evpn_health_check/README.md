@@ -18,3 +18,10 @@ Set `evpn_health_check_vpn_telemetry: true` to also run the AWS role's
 [`vpn_status`](../evpn_aws_infra/README.md#read-only-vpn-status-tasks_from-vpn_status)
 entry point on the controller during deploy/health checks. It defaults to
 `false`; source inventory enables it for IPsec, while emulation leaves it disabled.
+
+For `tunnel.type: direct-connect`, the appliance pings the workload VTEP from
+`tunnel.onprem_ip`, unfragmented at 1550 bytes.
+`evpn_health_check_dx_telemetry: true` (source inventory's default for
+`direct-connect`) also runs the AWS role's
+[`dx_status`](../evpn_aws_infra/README.md#read-only-direct-connect-checks-tasks_from-dx_status)
+entry point on the controller.

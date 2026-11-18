@@ -1,0 +1,34 @@
+---
+# Direct Connect: the customer's network carries the underlay, so prove the path VXLAN takes,
+# from the VTEP address to the workload VTEP, which also proves the return route to
+# tunnel.network_cidr. The path must carry 1550-byte packets
+# unfragmented (a 1500-byte workload IP MTU plus 50 bytes of IPv4 VXLAN): 1522 bytes of ICMP
+# payload + 28 bytes of headers.
+- name: "HEALTH [onprem]: Direct Connect path reaches the workload VTEP"
+  ansible.builtin.command: >-
+    ping -c 3 -W 2
+    -I {{ tunnel.onprem_ip }} -M do -s 1522
+    {{ hostvars[workload_vtep_host].private_ip }}
+  changed_when: false
+  register: _evpn_health_check_dx_ping
+  until: _evpn_health_check_dx_ping.rc == 0
+  retries: 6
+  delay: 5
+
+- name: Check AWS Direct Connect
+  delegate_to: localhost
+  connection: local
+  run_once: true
+  become: false
+  when: evpn_health_check_dx_telemetry | default(false) | bool
+  block:
+    - name: Require the control-node credential context for Direct Connect checks
+      ansible.builtin.assert:
+        that:
+          - hostvars['localhost'].ansible_connection | default('local') in ['local', 'ansible.builtin.local', 'ansible.legacy.local']
+          - hostvars['localhost'].ansible_become | default(false) is ansible.builtin.falsy(convert_bool=true)
+        fail_msg: Direct Connect checks require local execution without privilege escalation to use controller credentials.
+    - name: Check the Direct Connect interfaces, association and TGW route
+      ansible.builtin.include_role:
+        name: evpn_aws_infra
+        tasks_from: dx_status

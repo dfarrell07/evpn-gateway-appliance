@@ -44,6 +44,14 @@ argument_specs:
             type: str
             required: true
             description: Gateway IP on the cloud workload side for this stretch. Pinged to verify cloud gateway reachability.
+      evpn_health_check_dx_telemetry:
+        type: bool
+        default: false
+        description: >-
+          Enable controller-side Direct Connect checks for direct-connect (VIF and BGP state, the association and the TGW
+          route to tunnel.network_cidr); requires directconnect:DescribeDirectConnectGatewayAttachments,
+          directconnect:DescribeVirtualInterfaces, directconnect:DescribeDirectConnectGatewayAssociations,
+          ec2:DescribeTransitGateways and ec2:SearchTransitGatewayRoutes credentials.
       evpn_health_check_vpn_telemetry:
         type: bool
         default: false
@@ -61,7 +69,7 @@ argument_specs:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec]
+            choices: [wireguard, ipsec, direct-connect]
             description: Transport type. Determines which transport-specific checks run.
           cloud_ip:
             type: str

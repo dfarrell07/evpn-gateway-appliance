@@ -22,15 +22,15 @@ router bgp {{ bgp.infra_asn }}
  !
  neighbor {{ tunnel.onprem_ip }} remote-as {{ bgp.onprem_asn }}
  neighbor {{ tunnel.onprem_ip }} description onprem-appliance
-{% if tunnel.type == 'ipsec' %}
- neighbor {{ tunnel.onprem_ip }} ebgp-multihop 4
+{% if tunnel.type != 'wireguard' %}
+ neighbor {{ tunnel.onprem_ip }} ebgp-multihop {{ 255 if tunnel.type == 'direct-connect' else 4 }}
 {% endif %}
  !
  address-family ipv4 unicast
   network {{ private_ip }}/32
   neighbor {{ workload_host.private_ip }} activate
   neighbor {{ workload_host.private_ip }} soft-reconfiguration inbound
-{% if tunnel.type != 'ipsec' %}
+{% if tunnel.type == 'wireguard' %}
   neighbor {{ tunnel.onprem_ip }} activate
   neighbor {{ tunnel.onprem_ip }} soft-reconfiguration inbound
 {% endif %}

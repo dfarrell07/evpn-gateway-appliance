@@ -1,0 +1,80 @@
+---
+# Reads and checks the customer's transit VIFs for direct-connect. With
+# _evpn_aws_infra_dx_vif_wait, waits for each VIF and its BGP sessions to come up.
+# Each describe selects fields: AWS returns the VIF's BGP MD5 key (bgpPeers[].authKey).
+- name: Read the DX gateway's virtual interface attachments
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - describe-direct-connect-gateway-attachments
+      - --region
+      - "{{ evpn_aws_infra_aws_region }}"
+      - --direct-connect-gateway-id
+      - "{{ evpn_aws_infra_dx_gateway_id }}"
+      - --query
+      - "directConnectGatewayAttachments[?attachmentState!='detached'].{id: virtualInterfaceId,
+        region: virtualInterfaceRegion, type: attachmentType}"
+      - --output
+      - json
+  register: _evpn_aws_infra_dx_attachments
+  changed_when: false
+  check_mode: false
+
+# AWS refuses a TGW association for a DX gateway attached to a private VIF; a VIF lives in its
+# connection's Region, which can differ from the TGW's.
+- name: Require only transit VIFs on the DX gateway, including the input VIFs
+  ansible.builtin.assert:
+    that:
+      - _evpn_aws_infra_dx_attached | rejectattr('type', 'equalto', 'TransitVirtualInterface') | list | length == 0
+      - evpn_aws_infra_dx_virtual_interface_ids | difference(_evpn_aws_infra_dx_attached | map(attribute='id')) | length == 0
+    fail_msg: >-
+      DX gateway {{ evpn_aws_infra_dx_gateway_id }} must have only transit VIFs attached, including
+      {{ evpn_aws_infra_dx_virtual_interface_ids }}. Attached: {{ _evpn_aws_infra_dx_attached }}
+  vars:
+    _evpn_aws_infra_dx_attached: "{{ _evpn_aws_infra_dx_attachments.stdout | from_json }}"
+
+- name: Read each input VIF in its own Region
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - describe-virtual-interfaces
+      - --region
+      - "{{ (_evpn_aws_infra_dx_attachments.stdout | from_json | selectattr('id', 'equalto', item) | first).region }}"
+      - --virtual-interface-id
+      - "{{ item }}"
+      - --query
+      - "virtualInterfaces[0].{id: virtualInterfaceId, type: virtualInterfaceType, state: virtualInterfaceState,
+        mtu: mtu, gateway: directConnectGatewayId, bgp: bgpPeers[?bgpPeerState!='deleted'].bgpStatus}"
+      - --output
+      - json
+  register: _evpn_aws_infra_dx_vif_reads
+  changed_when: false
+  check_mode: false
+  until: >-
+    _evpn_aws_infra_dx_vif_reads.rc == 0 and (not (_evpn_aws_infra_dx_vif_wait | default(false)) or
+    ((_evpn_aws_infra_dx_vif_reads.stdout | from_json).state == 'available' and
+     (_evpn_aws_infra_dx_vif_reads.stdout | from_json).bgp | length > 0 and
+     (_evpn_aws_infra_dx_vif_reads.stdout | from_json).bgp | reject('equalto', 'up') | list | length == 0))
+  retries: "{{ 30 if _evpn_aws_infra_dx_vif_wait | default(false) else 0 }}"
+  delay: 10
+  loop: "{{ evpn_aws_infra_dx_virtual_interface_ids }}"
+
+- name: Require usable transit VIFs on the DX gateway
+  ansible.builtin.assert:
+    that:
+      - item.type == 'transit'
+      - item.gateway == evpn_aws_infra_dx_gateway_id
+      # A hosted VIF the customer has not accepted stays 'confirming'.
+      - item.state == 'available'
+      - item.bgp | length > 0
+      - item.bgp | reject('equalto', 'up') | list | length == 0
+      # 1550 bytes carry VXLAN with a 1500-byte workload IP MTU; transit VIFs offer 1500 or 8500.
+      - item.mtu | int == 8500
+    fail_msg: >-
+      Each VIF must be a transit VIF on {{ evpn_aws_infra_dx_gateway_id }}, available (accepted) with every BGP
+      peer up, and use MTU 8500. Found: {{ item }}
+  loop: "{{ _evpn_aws_infra_dx_vif_reads.results | map(attribute='stdout') | map('from_json') | list }}"
+  loop_control:
+    label: "{{ item.id }}"

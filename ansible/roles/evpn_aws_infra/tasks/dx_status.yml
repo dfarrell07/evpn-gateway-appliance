@@ -1,0 +1,109 @@
+---
+# Read-only Direct Connect checks for health checks and the transport preflight: the VIFs and
+# their BGP sessions, the project TGW's association, and the TGW route that proves on-premises
+# advertises tunnel.network_cidr over DX.
+- name: Check the Direct Connect VIFs
+  ansible.builtin.include_tasks: dx_vifs.yml
+  vars:
+    _evpn_aws_infra_dx_vif_wait: true
+
+- name: Find the project TGW
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ec2
+      - describe-transit-gateways
+      - --region
+      - "{{ evpn_aws_infra_aws_region }}"
+      - --filters
+      - Name=tag:Project,Values={{ evpn_aws_infra_project_name }}
+      - Name=state,Values=available
+      - --query
+      - "TransitGateways[].{id: TransitGatewayId, rt: Options.AssociationDefaultRouteTableId}"
+      - --output
+      - json
+  register: _evpn_aws_infra_dx_status_tgw
+  changed_when: false
+  check_mode: false
+  failed_when: _evpn_aws_infra_dx_status_tgw.rc != 0 or _evpn_aws_infra_dx_status_tgw.stdout | from_json | length != 1
+
+- name: Read the DX gateway association's allowed prefixes
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - describe-direct-connect-gateway-associations
+      - --region
+      - "{{ evpn_aws_infra_aws_region }}"
+      - --direct-connect-gateway-id
+      - "{{ evpn_aws_infra_dx_gateway_id }}"
+      - --associated-gateway-id
+      - "{{ (_evpn_aws_infra_dx_status_tgw.stdout | from_json)[0].id }}"
+      - --query
+      - "directConnectGatewayAssociations[?associationState=='associated'].allowedPrefixesToDirectConnectGateway[].cidr"
+      - --output
+      - json
+  register: _evpn_aws_infra_dx_status_assoc
+  # An association briefly 'updating' is not yet listed.
+  until: _evpn_aws_infra_dx_status_assoc.rc == 0 and _evpn_aws_infra_dx_status_assoc.stdout | from_json | length > 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  check_mode: false
+
+- name: Require allowed prefixes that cover both VPCs
+  ansible.builtin.assert:
+    that: _evpn_aws_infra_dx_status_uncovered | length == 0
+    fail_msg: >-
+      The DX gateway must be associated with the project TGW, allowing both VPC CIDRs; uncovered:
+      {{ _evpn_aws_infra_dx_status_uncovered }}
+  vars:
+    _evpn_aws_infra_dx_status_uncovered: >-
+      {%- set missing = [] -%}
+      {%- for c in [evpn_aws_infra_infra_vpc_cidr, evpn_aws_infra_workload_vpc_cidr] -%}
+      {%- set covered = [] -%}
+      {%- for p in _evpn_aws_infra_dx_status_assoc.stdout | from_json if p | ansible.utils.network_in_network(c) -%}
+      {%- set _ = covered.append(p) -%}
+      {%- endfor -%}
+      {%- if covered | length == 0 -%}
+      {%- set _ = missing.append(c) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ missing }}
+
+# The customer may advertise tunnel.network_cidr or a covering aggregate; the most specific
+# active route covering it must use the DX attachment.
+- name: Wait for the TGW to route the on-premises VTEP network over Direct Connect
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ec2
+      - search-transit-gateway-routes
+      - --region
+      - "{{ evpn_aws_infra_aws_region }}"
+      - --transit-gateway-route-table-id
+      - "{{ (_evpn_aws_infra_dx_status_tgw.stdout | from_json)[0].rt }}"
+      - --filters
+      - Name=state,Values=active
+      - --query
+      - "Routes[].{cidr: DestinationCidrBlock, types: TransitGatewayAttachments[].ResourceType}"
+      - --output
+      - json
+  register: _evpn_aws_infra_dx_status_routes
+  until:
+    - _evpn_aws_infra_dx_status_routes.rc == 0
+    - "'direct-connect-gateway' in _evpn_aws_infra_dx_status_best.types | default([])"
+  vars:
+    _evpn_aws_infra_dx_status_best: >-
+      {%- set best = {'len': -1, 'route': {}} -%}
+      {%- for r in _evpn_aws_infra_dx_status_routes.stdout | default('[]', true) | from_json -%}
+      {%- if r.cidr | ansible.utils.network_in_network(tunnel.network_cidr | default('10.44.44.0/24'))
+            and (r.cidr | ansible.utils.ipaddr('prefix')) > best.len -%}
+      {%- set _ = best.update({'len': r.cidr | ansible.utils.ipaddr('prefix'), 'route': r}) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ best.route }}
+  retries: 30
+  delay: 10
+  changed_when: false
+  check_mode: false
