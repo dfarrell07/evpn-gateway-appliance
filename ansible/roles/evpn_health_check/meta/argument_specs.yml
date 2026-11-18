@@ -1,5 +1,22 @@
 ---
 argument_specs:
+  preflight:
+    short_description: Read-only transport checks that block provisioning and deployment.
+    description:
+      - Run by provision-aws.yml before it creates anything, and by playbooks/preflight.yml, which deploy.yml imports first.
+    options:
+      tunnel:
+        type: dict
+        required: true
+        description: Transport configuration, as for the main entry point; the preflight reads its type.
+      evpn_health_check_accept_internet_mode_limits:
+        type: bool
+        default: false
+        description: Accept the limits of the internet-mode transports (wireguard, ipsec); see the main entry point.
+      evpn_health_check_workload_mtu:
+        type: int
+        default: 0
+        description: The workload IP MTU to check against the transport's budget; 0 skips the check.
   main:
     short_description: Validate EVPN fabric health (BGP sessions, EVPN prefixes, connectivity).
     description:
@@ -42,6 +59,31 @@ argument_specs:
             type: str
             required: true
             description: Gateway IP on the cloud workload side for this stretch. Pinged to verify cloud gateway reachability.
+      evpn_health_check_accept_internet_mode_limits:
+        type: bool
+        default: false
+        description: >-
+          Accept the limits of the internet-mode transports (wireguard, ipsec): a smaller workload MTU with no MSS
+          clamping yet, internet latency and loss, and WireGuard for development and test only. The transport
+          preflight fails for those transports unless this is true.
+      evpn_health_check_workload_mtu:
+        type: int
+        default: 0
+        description: >-
+          The workload (CUDN and on-premises VLAN) IP MTU. When set, the transport preflight requires it to fit the
+          transport (wireguard 1370, ipsec 1388); 0 skips the check.
+      evpn_health_check_max_loss_percent:
+        type: float
+        default: 0
+        description: >-
+          Highest packet loss, over 20 pings from the VTEP address to the workload VTEP, that health checks accept;
+          0 records partial loss without a limit. Total loss always fails.
+      evpn_health_check_max_rtt_ms:
+        type: float
+        default: 0
+        description: >-
+          Highest average round-trip time, in milliseconds, from the VTEP address to the workload VTEP that health
+          checks accept; 0 records the RTT without a limit.
       evpn_health_check_vpn_telemetry:
         type: bool
         default: false

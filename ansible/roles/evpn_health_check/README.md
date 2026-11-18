@@ -18,3 +18,28 @@ Set `evpn_health_check_vpn_telemetry: true` to also run the AWS role's
 [`vpn_status`](../evpn_aws_infra/README.md#read-only-vpn-status-tasks_from-vpn_status)
 entry point on the controller during deploy/health checks. It defaults to
 `false`; source inventory enables it for IPsec, while emulation leaves it disabled.
+
+On the appliance, the health checks also record a baseline: loss and average
+RTT over 20 pings from `tunnel.onprem_ip` to the workload VTEP. Total loss
+fails; partial loss and RTT fail only above `evpn_health_check_max_loss_percent`
+or `evpn_health_check_max_rtt_ms`, when set. No BGP neighbor enables BFD, so BGP hold
+timers detect a dead path; sustained loss, or an RTT that is a large share of
+the hold time, means the transport is unfit before any timer fires.
+
+## Transport preflight (`tasks_from: preflight`)
+
+`provision-aws.yml` runs these read-only checks before creating anything, and
+`deploy.yml` first imports `playbooks/preflight.yml`, which runs them before any
+host changes (CORENET-7501):
+
+- WireGuard and IPsec cross the internet, so deployment requires
+  `evpn_health_check_accept_internet_mode_limits: true`: workload packets above
+  1370 (WireGuard) or 1388 (IPsec) bytes are dropped, with no MSS clamping until
+  CORENET-7709, and WireGuard is for development and test only.
+- If `evpn_health_check_workload_mtu` is set, it must fit the transport's budget.
+
+UDP reachability (WireGuard 51820, IPsec 500 and 4500) is proven after
+deployment by the WireGuard handshake and IPsec Child SA health checks.
+WireGuard answers only an authenticated handshake, so no probe can prove it
+earlier, and an IKE probe of the AWS endpoints would only repeat Libreswan's
+own first exchange.

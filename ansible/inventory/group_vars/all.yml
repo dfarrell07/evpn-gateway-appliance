@@ -42,6 +42,12 @@ bgp:
 evpn_aws_infra_vpn_customer_gateway_asn: "{{ bgp.onprem_asn }}"
 evpn_health_check_vpn_telemetry: "{{ tunnel.type == 'ipsec' }}"
 
+# ── Transport preflight (playbooks/preflight.yml, run first by deploy.yml) ──
+# WireGuard and IPsec cross the internet; deploy fails until you accept their limits
+# (see roles/evpn_health_check/README.md).
+evpn_health_check_accept_internet_mode_limits: false
+# evpn_health_check_workload_mtu: 1300   # your CUDN/VLAN MTU, checked against the transport
+
 # ── VLAN Stretches ────────────────────────────────────────────
 stretches:
   - vlan: 100

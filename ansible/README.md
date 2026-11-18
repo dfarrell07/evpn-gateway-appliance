@@ -121,6 +121,10 @@ ones (`tunnel`, `bgp`, `stretches`) are normally set once in
   (disposable labs only). See that role's README.
 - **`evpn_aws_infra_aws_region`** — cross-check it matches the region you intend to
   provision in.
+- **`evpn_health_check_accept_internet_mode_limits`** must be `true` to provision or
+  deploy WireGuard or IPsec: `provision-aws.yml` and `deploy.yml` first run the
+  read-only transport preflight, which otherwise stops with the limits you accept.
+  See the [`evpn_health_check` README](roles/evpn_health_check/README.md#transport-preflight-tasks_from-preflight).
 
 ## Known limitations (tracked, not all fixed here)
 
