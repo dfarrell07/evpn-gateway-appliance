@@ -10,6 +10,21 @@ schema (`tunnel`, `stretches`, `trunk_interface`, `frr_image`, `bgp`,
 three (plus `tunnel.network_cidr`) all default to the lab/dev values below if
 left unset — only override them if your VPC/pod-network CIDRs differ.
 
+## AWS Direct Connect (`tunnel.type: direct-connect`)
+
+Not yet qualified for production (CORENET-7708). The customer's network carries
+the underlay: a customer router terminates the transit VIF's BGP session (AWS
+requires MD5, which FIPS-mode kernels disable), routes `tunnel.network_cidr` to
+the appliance and advertises it over the VIF; the appliance needs routes to
+`infra_vpc_cidr` and `workload_vpc_cidr` through that network. The role
+configures no tunnel and no underlay BGP. As with IPsec, nmstate owns `ega-vtep`
+(`tunnel.onprem_ip/32`), and the EVPN neighbor is the relay's `private_ip`, with
+source `tunnel.onprem_ip` and only the `l2vpn evpn` address family; both ends use
+`ebgp-multihop 255`, since the customer's routed path has an unknown hop count.
+`tunnel.cloud_ip` and `tunnel.port` are not used. Like IPsec, it serves one
+appliance without multihoming (CORENET-7502). It requires `tunnel.mtu_mode:
+safe` until the reduced-MTU controls (CORENET-7709) exist.
+
 ## AWS Site-to-Site VPN (`tunnel.type: ipsec`)
 
 This transport is not yet qualified for production (MTU/MSS controls are CORENET-7709;
@@ -83,8 +98,6 @@ Direct Connect or HA.
 - The on-prem networking (nmstate, `tasks/nm_networking.yml`) is exercised by
   the Molecule lane against a veth stand-in trunk; it is not yet validated
   against actual hardware or a real tagged customer trunk (source-audit.md).
-- `direct-connect` is not implemented yet (CORENET-7708), so the argument specs reject it:
-  WireGuard's paths would add a TGW static route that overrides routes learned over Direct Connect.
 - WireGuard and EVPN have no inbound/outbound route policy beyond a
   defensive EVPN `maximum-prefix`; IPsec underlay IPv4 has the VPC/VTEP prefix
   lists described above. See the comment at the top of

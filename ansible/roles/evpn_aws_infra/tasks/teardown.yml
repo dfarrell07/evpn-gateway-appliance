@@ -8,6 +8,10 @@
 - name: Tear down AWS Site-to-Site VPN
   ansible.builtin.include_tasks: teardown_vpn.yml
 
+# Likewise for an association with a customer's DX gateway, which blocks TGW deletion.
+- name: Tear down Direct Connect gateway associations
+  ansible.builtin.include_tasks: teardown_dx.yml
+
 - name: Find EC2 instances
   amazon.aws.ec2_instance_info:
     region: "{{ evpn_aws_infra_aws_region }}"

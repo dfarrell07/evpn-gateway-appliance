@@ -19,6 +19,13 @@ Set `evpn_health_check_vpn_telemetry: true` to also run the AWS role's
 entry point on the controller during deploy/health checks. It defaults to
 `false`; source inventory enables it for IPsec, while emulation leaves it disabled.
 
+For `tunnel.type: direct-connect`, the appliance pings the workload VTEP from
+`tunnel.onprem_ip`, unfragmented at 1550 bytes.
+`evpn_health_check_dx_telemetry: true` (source inventory's default for
+`direct-connect`) also runs the AWS role's
+[`dx_status`](../evpn_aws_infra/README.md#read-only-direct-connect-checks-tasks_from-dx_status)
+entry point on the controller.
+
 On the appliance, the health checks also record a baseline: loss and average
 RTT over 20 pings from `tunnel.onprem_ip` to the workload VTEP, failing above
 `evpn_health_check_max_loss_percent` (default 5) or, when set,
@@ -35,7 +42,8 @@ first, so a failure blocks deployment before any host changes (CORENET-7501):
   `evpn_health_check_accept_internet_mode_limits: true`: workload packets above
   1370 (WireGuard) or 1388 (IPsec) bytes are dropped, with no MSS clamping until
   CORENET-7709, and WireGuard is for development and test only.
-- If `evpn_health_check_workload_mtu` is set, it must fit the transport's budget.
+- If `evpn_health_check_workload_mtu` is set, it must fit the transport's budget
+  (Direct Connect: 8450).
 
 UDP reachability (WireGuard 51820, IPsec 500 and 4500) is proven after
 deployment by the WireGuard handshake and IPsec Child SA health checks.

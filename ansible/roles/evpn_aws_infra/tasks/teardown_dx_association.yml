@@ -1,0 +1,59 @@
+---
+- name: Find the DX gateway association
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - describe-direct-connect-gateway-associations
+      - --region
+      - "{{ evpn_aws_infra_aws_region }}"
+      - --direct-connect-gateway-id
+      - "{{ _evpn_aws_infra_dx_attachment.dxgw }}"
+      - --associated-gateway-id
+      - "{{ _evpn_aws_infra_dx_attachment.tgw }}"
+      - --query
+      - "directConnectGatewayAssociations[?associationState!='disassociated'].{id: associationId, state: associationState}"
+      - --output
+      - json
+  register: _evpn_aws_infra_dx_teardown_assoc
+  changed_when: false
+  check_mode: false
+
+- name: Delete the DX gateway association
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - delete-direct-connect-gateway-association
+      - --region
+      - "{{ evpn_aws_infra_aws_region }}"
+      - --association-id
+      - "{{ item.id }}"
+  changed_when: true
+  loop: "{{ _evpn_aws_infra_dx_teardown_assoc.stdout | from_json | rejectattr('state', 'equalto', 'disassociating') | list }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+# The TGW cannot be deleted while the association remains.
+- name: Wait for the DX gateway association to be removed
+  ansible.builtin.command:
+    argv:
+      - aws
+      - directconnect
+      - describe-direct-connect-gateway-associations
+      - --region
+      - "{{ evpn_aws_infra_aws_region }}"
+      - --direct-connect-gateway-id
+      - "{{ _evpn_aws_infra_dx_attachment.dxgw }}"
+      - --associated-gateway-id
+      - "{{ _evpn_aws_infra_dx_attachment.tgw }}"
+      - --query
+      - "length(directConnectGatewayAssociations[?associationState!='disassociated'])"
+      - --output
+      - text
+  register: _evpn_aws_infra_dx_teardown_wait
+  until: _evpn_aws_infra_dx_teardown_wait.stdout | trim == '0'
+  retries: 120
+  delay: 10
+  changed_when: false
+  when: not ansible_check_mode

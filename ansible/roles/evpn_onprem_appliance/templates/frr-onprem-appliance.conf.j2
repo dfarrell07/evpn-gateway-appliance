@@ -9,7 +9,7 @@ hostname {{ inventory_hostname }}
 log syslog informational
 no ipv6 forwarding
 !
-{% set evpn_peer = hostvars[infra_relay_host].private_ip if tunnel.type == 'ipsec' else tunnel.cloud_ip %}
+{% set evpn_peer = tunnel.cloud_ip if tunnel.type == 'wireguard' else hostvars[infra_relay_host].private_ip %}
 {% if tunnel.type == 'ipsec' %}
 ip prefix-list EGA-AWS-OUT seq 5 permit {{ tunnel.network_cidr | default('10.44.44.0/24') }}
 ip prefix-list EGA-AWS-IN seq 5 permit {{ infra_vpc_cidr | default('10.100.0.0/16') }}
@@ -33,8 +33,8 @@ router bgp {{ bgp.onprem_asn }}
 {% endif %}
  neighbor {{ evpn_peer }} remote-as {{ bgp.infra_asn }}
  neighbor {{ evpn_peer }} description infra-relay
-{% if tunnel.type == 'ipsec' %}
- neighbor {{ evpn_peer }} ebgp-multihop 4
+{% if tunnel.type != 'wireguard' %}
+ neighbor {{ evpn_peer }} ebgp-multihop {{ 255 if tunnel.type == 'direct-connect' else 4 }}
  neighbor {{ evpn_peer }} update-source {{ tunnel.onprem_ip }}
 {% endif %}
  !
@@ -47,7 +47,7 @@ router bgp {{ bgp.onprem_asn }}
   neighbor {{ t.aws_inside_ip }} prefix-list EGA-AWS-IN in
   neighbor {{ t.aws_inside_ip }} soft-reconfiguration inbound
 {% endfor %}
-{% else %}
+{% elif tunnel.type == 'wireguard' %}
   neighbor {{ evpn_peer }} activate
   neighbor {{ evpn_peer }} soft-reconfiguration inbound
 {% endif %}

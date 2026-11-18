@@ -4,3 +4,5 @@
 _evpn_health_check_workload_mtu_budget:
   wireguard: 1370
   ipsec: 1388
+  # An 8500-byte transit VIF; direct-connect requires safe MTU mode.
+  direct-connect: 8450

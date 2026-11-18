@@ -1,4 +1,21 @@
 ---
+# Direct Connect: the customer's network carries the underlay; the appliance only needs its VTEP and the relay.
+- name: Validate the Direct Connect VTEP and relay addresses
+  ansible.builtin.assert:
+    that:
+      - tunnel.onprem_ip | ansible.utils.ipv4('address') == tunnel.onprem_ip
+      - >-
+        tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.ipv4('network/prefix') ==
+        tunnel.network_cidr | default('10.44.44.0/24')
+      - tunnel.onprem_ip | ansible.utils.ipv4(tunnel.network_cidr | default('10.44.44.0/24')) == tunnel.onprem_ip
+      - hostvars[infra_relay_host].private_ip | ansible.utils.ipv4('address') == hostvars[infra_relay_host].private_ip
+      # Reduced-MTU controls are CORENET-7709.
+      - tunnel.mtu_mode | default('safe') == 'safe'
+    fail_msg: >-
+      Set tunnel.onprem_ip inside tunnel.network_cidr, a relay private IPv4 address, and tunnel.mtu_mode safe
+      (required for direct-connect until CORENET-7709).
+  when: tunnel.type == 'direct-connect'
+
 - name: Generate/load WireGuard keys
   # include_role (not a playbook_dir-relative path) so this resolves correctly once installed from a collection (ci-bootstrap-spec.md, "Cross-role include").
   ansible.builtin.include_role:

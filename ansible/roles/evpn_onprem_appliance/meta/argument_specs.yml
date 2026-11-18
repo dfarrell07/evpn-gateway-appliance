@@ -68,7 +68,7 @@ argument_specs:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec]
+            choices: [wireguard, ipsec, direct-connect]
             description: Transport type. Determines which transport-specific configuration is applied.
           onprem_ip:
             type: str
@@ -76,7 +76,7 @@ argument_specs:
             description: Tunnel address of the on-prem appliance. Used as the VTEP and BGP router-id.
           cloud_ip:
             type: str
-            description: WireGuard tunnel address of the infra relay. IPsec uses the relay private_ip instead.
+            description: WireGuard tunnel address of the infra relay. IPsec and direct-connect use the relay private_ip instead.
           port:
             type: int
             description: WireGuard listen port. Used as the endpoint port to the infra relay.
