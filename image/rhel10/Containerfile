@@ -13,6 +13,12 @@ ARG NODE_EXPORTER_IMAGE=registry.redhat.io/openshift4/ose-prometheus-node-export
 FROM ${FRR_IMAGE} AS frr
 FROM ${NODE_EXPORTER_IMAGE} AS node-exporter
 
+# Carries embed-payload.py. A stage mount needs no relabel; a build-context bind mount
+# does, and relabel fails on virtiofs. Built on frr so doozer counts it as a stage
+# reference, not a parent.
+FROM frr AS tools
+COPY embed-payload.py /embed-payload.py
+
 FROM ${BOOTC_BASE}
 
 # Package versions are not pinned; they follow the base image's repositories.
@@ -47,7 +53,7 @@ RUN mkdir -p /etc/frr && printf '%s\n' 'bgpd=yes' 'bfdd=yes' > /etc/frr/daemons
 ARG TARGETARCH
 RUN --mount=type=bind,from=frr,source=/,target=/run/payload/frr,ro \
     --mount=type=bind,from=node-exporter,source=/,target=/run/payload/node-exporter,ro \
-    --mount=type=bind,source=embed-payload.py,target=/run/embed-payload.py,ro,relabel=shared \
+    --mount=type=bind,from=tools,source=/embed-payload.py,target=/run/embed-payload.py,ro \
     mkdir -p /usr/lib/containers-image-cache \
     && python3 /run/embed-payload.py /run/payload/frr \
         /usr/lib/containers-image-cache/frr "${TARGETARCH}" \
