@@ -112,14 +112,29 @@ def edit(path, **kw):
 
 # Each negative must fail with its check's message, not with an unrelated error.
 INPUTS, GATEWAY, SAFE = "Set evpn_aws_infra_dx_gateway_id", "must exist, be available", "requires tunnel.mtu_mode safe"
+ATTACHED, USABLE, SLOT = "only transit VIFs attached", "Each VIF must be a transit VIF", "only transit gateway associations"
 
 # The task files provisioning runs before creating anything.
-STEPS = ["dx_inputs"]
+STEPS = ["dx_inputs", "dx_preflight"]
 
 # (name, mutator, extra vars, expected failure message or None for success)
 CASES = [
     ("valid transit VIFs", None, {}, None),
+    ("VIF in another Region", edit(("vifs", 1), region="us-east-1"), {}, None),
+    ("deleted BGP peer ignored", lambda s: s["vifs"][0]["bgpPeers"].append(
+        {"bgpStatus": "down", "bgpPeerState": "deleted", "authKey": KEY}), {}, None),
+    ("disassociated and unrelated associations", lambda s: s["assocs"].extend(
+        [assoc(["10.50.0.0/16"]), assoc(["10.200.0.0/16"], state="disassociated")]), {}, None),
+    ("private VIF", edit(("vifs", 0), virtualInterfaceType="private"), {}, ATTACHED),
+    ("VIF down", edit(("vifs", 1), virtualInterfaceState="down"), {}, USABLE),
+    ("hosted VIF not accepted", edit(("vifs", 1), virtualInterfaceState="confirming"), {}, USABLE),
+    ("BGP peer down", edit(("vifs", 0, "bgpPeers", 0), bgpStatus="down"), {}, USABLE),
+    ("no BGP peers", edit(("vifs", 1), bgpPeers=[]), {}, USABLE),
+    ("1500-byte VIF", edit(("vifs", 0), mtu=1500), {}, USABLE),
     ("unsafe MTU mode", None, {"mtu_mode": "unsafe"}, SAFE),
+    ("input VIF on another DX gateway", edit(("vifs", 1), directConnectGatewayId="other"), {}, ATTACHED),
+    ("private VIF attached to the DX gateway", lambda s: s["vifs"].append(
+        vif("dxvif-cccc3333", virtualInterfaceType="private")), {}, ATTACHED),
     ("malformed DX gateway ID", None, {"dxgw": "dxgw-123"}, INPUTS),
     ("no VIF IDs", None, {"vifs": []}, INPUTS),
     ("duplicate VIF IDs", None, {"vifs": ["dxvif-aaaa1111", "dxvif-aaaa1111"]}, INPUTS),
@@ -127,6 +142,12 @@ CASES = [
     ("DX gateway missing", lambda s: s["dxgws"].clear(), {}, GATEWAY),
     ("DX gateway deleting", edit(("dxgws", 0), directConnectGatewayState="deleting"), {}, GATEWAY),
     ("DX gateway ASN equals the TGW's", edit(("dxgws", 0), amazonSideAsn=64512), {}, GATEWAY),
+    ("DX gateway has six TGWs", lambda s: s["assocs"].extend(
+        assoc(["10.%d.0.0/16" % i], gw="tgw-%d" % i) for i in range(6)), {}, SLOT),
+    ("DX gateway associated with a VGW", lambda s: s["assocs"].append(
+        assoc([], gw_type="virtualPrivateGateway")), {}, SLOT),
+    ("allowed prefix covers a VPC", lambda s: s["assocs"].append(assoc(["10.0.0.0/8"])), {}, SLOT),
+    ("allowed prefix inside a VPC", lambda s: s["assocs"].append(assoc(["10.200.5.0/24"])), {}, SLOT),
 ]
 
 

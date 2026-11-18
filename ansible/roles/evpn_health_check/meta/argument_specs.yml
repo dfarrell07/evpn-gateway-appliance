@@ -17,6 +17,10 @@ argument_specs:
         type: int
         default: 0
         description: The workload IP MTU to check against the transport's budget; 0 skips the check.
+      evpn_health_check_dx_telemetry:
+        type: bool
+        default: false
+        description: Run the controller-side Direct Connect checks before deployment; see the main entry point.
   main:
     short_description: Validate EVPN fabric health (BGP sessions, EVPN prefixes, connectivity).
     description:

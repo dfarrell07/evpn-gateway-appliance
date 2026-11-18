@@ -47,6 +47,11 @@ host changes (CORENET-7501):
   (Direct Connect: 1500, the `safe` mode contract).
 - For `direct-connect`, `tunnel.onprem_ip` must be inside `tunnel.network_cidr`,
   the relay must have a private IPv4 address, and `tunnel.mtu_mode` must be `safe`.
+- For `direct-connect`, the appliance must have a route to the workload VTEP
+  over an uplink MTU of at least 1550, and the controller runs `dx_status` as
+  above when `evpn_health_check_dx_telemetry` is true (the sample inventory's
+  default for `direct-connect`; the role's default is false). The VTEP address does
+  not exist yet, so the end-to-end ping waits for the health checks.
 
 UDP reachability (WireGuard 51820, IPsec 500 and 4500) is proven after
 deployment by the WireGuard handshake and IPsec Child SA health checks.
