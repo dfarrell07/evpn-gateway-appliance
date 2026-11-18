@@ -115,13 +115,3 @@
         _evpn_aws_infra_vpn_pinned_options
     fail_msg: VPN tunnel options differ from the requested configuration; reconcile them before retrying.
   loop: "{{ (_evpn_aws_infra_vpn_readback.stdout | from_json).TunnelOptions }}"
-
-- name: Route the on-premises network through the TGW
-  ansible.builtin.command: >
-    aws ec2 create-route --region {{ _evpn_aws_infra_region }}
-    --route-table-id {{ _evpn_aws_infra_infra_rt.stdout | trim }}
-    --destination-cidr-block {{ tunnel.network_cidr | default('10.44.44.0/24') }}
-    --transit-gateway-id {{ _evpn_aws_infra_tgw.stdout | trim }}
-  register: _evpn_aws_infra_r
-  failed_when: _evpn_aws_infra_r.rc != 0 and 'already exists' not in _evpn_aws_infra_r.stderr
-  changed_when: _evpn_aws_infra_r.rc == 0

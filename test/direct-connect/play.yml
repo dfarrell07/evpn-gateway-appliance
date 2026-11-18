@@ -1,0 +1,26 @@
+---
+# Runs evpn_aws_infra's Direct Connect task files named in steps against the fake `aws` that
+# run.py puts first on PATH.
+- name: Direct Connect tasks against a fake AWS CLI
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    tunnel:
+      type: direct-connect
+      mtu_mode: "{{ mtu_mode | default('safe') }}"
+      onprem_ip: 10.44.44.1
+      network_cidr: 10.44.44.0/24
+    evpn_aws_infra_aws_region: us-west-2
+    evpn_aws_infra_infra_vpc_cidr: 10.100.0.0/16
+    evpn_aws_infra_workload_vpc_cidr: 10.200.0.0/16
+    evpn_aws_infra_dx_gateway_id: "{{ dxgw | default('5f0e6c1e-1b1a-4c2a-9a55-0123456789ab') }}"
+    evpn_aws_infra_dx_virtual_interface_ids: "{{ vifs | default(['dxvif-aaaa1111', 'dxvif-bbbb2222']) }}"
+    # For the association (dx) and teardown (teardown_dx) cases.
+    evpn_aws_infra_project_name: ega-test
+    _evpn_aws_infra_region: us-west-2
+    _evpn_aws_infra_tgw: {stdout: tgw-0001}
+  tasks:
+    - name: Run the selected task files
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../ansible/roles/evpn_aws_infra/tasks/{{ item }}.yml"
+      loop: "{{ steps }}"

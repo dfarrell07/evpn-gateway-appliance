@@ -23,3 +23,22 @@
       {{ _evpn_health_check_workload_mtu_budget[tunnel.type] }} bytes (the transport's inner MTU minus 50 bytes of VXLAN).
   run_once: true
   when: evpn_health_check_workload_mtu | int > 0
+
+# Direct Connect: the customer's network carries the underlay; the appliance needs only its VTEP and the relay.
+- name: "PREFLIGHT [onprem]: Validate the Direct Connect VTEP, relay and MTU mode"
+  ansible.builtin.assert:
+    that:
+      - tunnel.onprem_ip | ansible.utils.ipv4('address') == tunnel.onprem_ip
+      - >-
+        tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.ipv4('network/prefix') ==
+        tunnel.network_cidr | default('10.44.44.0/24')
+      - tunnel.onprem_ip | ansible.utils.ipv4(tunnel.network_cidr | default('10.44.44.0/24')) == tunnel.onprem_ip
+      - hostvars[infra_relay_host].private_ip | ansible.utils.ipv4('address') == hostvars[infra_relay_host].private_ip
+      # Reduced-MTU controls are CORENET-7709.
+      - tunnel.mtu_mode | default('safe') == 'safe'
+    fail_msg: >-
+      Set tunnel.onprem_ip inside tunnel.network_cidr, a relay private IPv4 address, and tunnel.mtu_mode safe
+      (required for direct-connect until CORENET-7709).
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'direct-connect'

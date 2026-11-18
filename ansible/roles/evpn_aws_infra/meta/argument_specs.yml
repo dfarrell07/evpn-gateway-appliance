@@ -57,6 +57,19 @@ argument_specs:
         elements: str
         default: [169.254.10.0/30, 169.254.11.0/30]
         description: Two distinct canonical /30 networks in 169.254.0.0/16, excluding AWS reserved tunnel ranges.
+      evpn_aws_infra_dx_gateway_id:
+        type: str
+        default: ""
+        description: >-
+          Existing Direct Connect gateway ID, required when tunnel.type is direct-connect. The role associates it
+          with its TGW, allowing the VPC CIDRs, and deletes only that association on teardown.
+      evpn_aws_infra_dx_virtual_interface_ids:
+        type: list
+        elements: str
+        default: []
+        description: >-
+          The customer's transit VIF IDs on that gateway, required when tunnel.type is direct-connect.
+          Each must be available with BGP up, and use MTU 8500 (direct-connect requires tunnel.mtu_mode safe).
       tunnel:
         type: dict
         required: true
@@ -70,7 +83,7 @@ argument_specs:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec]
+            choices: [wireguard, ipsec, direct-connect]
             description: Transport type. Determines which transport-specific security-group rules are applied.
           port:
             type: int
@@ -88,4 +101,4 @@ argument_specs:
           mtu_mode:
             type: str
             choices: [safe, unsafe]
-            description: Intended underlay MTU regime. Part of the shared playbook configuration model; not used by this role.
+            description: Intended underlay MTU regime. direct-connect requires safe (the default) and 8500-byte transit VIFs until CORENET-7709.

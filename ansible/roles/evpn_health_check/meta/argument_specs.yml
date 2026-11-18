@@ -71,7 +71,7 @@ argument_specs:
         default: 0
         description: >-
           The workload (CUDN and on-premises VLAN) IP MTU. When set, the transport preflight requires it to fit the
-          transport (wireguard 1370, ipsec 1388); 0 skips the check.
+          transport (wireguard 1370, ipsec 1388, direct-connect 1500); 0 skips the check.
       evpn_health_check_max_loss_percent:
         type: float
         default: 0
@@ -84,6 +84,14 @@ argument_specs:
         description: >-
           Highest average round-trip time, in milliseconds, from the VTEP address to the workload VTEP that health
           checks accept; 0 records the RTT without a limit.
+      evpn_health_check_dx_telemetry:
+        type: bool
+        default: false
+        description: >-
+          Enable controller-side Direct Connect checks for direct-connect (VIF and BGP state, the association and the TGW
+          route to tunnel.network_cidr); requires directconnect:DescribeDirectConnectGatewayAttachments,
+          directconnect:DescribeVirtualInterfaces, directconnect:DescribeDirectConnectGatewayAssociations,
+          ec2:DescribeTransitGateways and ec2:SearchTransitGatewayRoutes credentials.
       evpn_health_check_vpn_telemetry:
         type: bool
         default: false
@@ -101,7 +109,7 @@ argument_specs:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec]
+            choices: [wireguard, ipsec, direct-connect]
             description: Transport type. Determines which transport-specific checks run.
           cloud_ip:
             type: str

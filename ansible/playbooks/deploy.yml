@@ -10,15 +10,16 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
-    # Before any host changes: the AWS VPN serves one appliance, and multihoming (CORENET-7502) is not supported with IPsec.
-    - name: Require one appliance without multihoming for IPsec
+    # Before any host changes: IPsec and Direct Connect share one VTEP address and relay peering, so they
+    # serve one appliance; multihoming (CORENET-7502) is not supported with them.
+    - name: Require one appliance without multihoming for IPsec and Direct Connect
       ansible.builtin.assert:
         that:
           - groups['onprem_appliances'] | length == 1
           - not (multihoming.enabled | default(false) | bool)
-        fail_msg: tunnel.type ipsec supports one on-premises appliance without multihoming.
+        fail_msg: tunnel.type {{ tunnel.type }} supports one on-premises appliance without multihoming.
       run_once: true
-      when: tunnel.type == 'ipsec'
+      when: tunnel.type != 'wireguard'
 
     - name: Load missing IPsec handoff from AWS
       delegate_to: localhost

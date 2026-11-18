@@ -50,6 +50,51 @@ The VPN connection and its public IPv4 addresses bill hourly whether or not
 tunnels come up. After a failed or abandoned run, remove them with
 `ansible-playbook playbooks/teardown-aws.yml`.
 
+## AWS Direct Connect (`tunnel.type: direct-connect`)
+
+The customer provisions the DX connection, transit VIFs and DX gateway; the
+role never creates or deletes them. Set `evpn_aws_infra_dx_gateway_id` and
+`evpn_aws_infra_dx_virtual_interface_ids`.
+
+| Input | Default | Contract for `direct-connect` |
+| --- | --- | --- |
+| `evpn_aws_infra_dx_gateway_id` | Empty | Existing DX gateway ID; its Amazon-side ASN must differ from the TGW's default `64512`. |
+| `evpn_aws_infra_dx_virtual_interface_ids` | `[]` | The gateway's transit VIF IDs: each `available` (accepted) with every BGP peer `up`, and MTU 8500. Direct Connect requires `tunnel.mtu_mode: safe` until the reduced-MTU controls (CORENET-7709) exist. |
+
+Before creating anything, provisioning checks those inputs, `safe` MTU mode,
+and that the gateway is `available` with an Amazon-side ASN other than the
+TGW's. It then associates the gateway with the TGW, allowing exactly the two
+VPC CIDRs (what AWS advertises to on-premises), waits for `associated`, and
+routes `tunnel.network_cidr` from the infra VPC through the TGW. The fresh
+TGW's default route table propagates the routes the customer advertises over
+the VIFs. Teardown removes the association before a rerun.
+
+`DescribeVirtualInterfaces` returns each VIF's BGP MD5 key; every call selects
+only the fields it needs, so the key is never registered or logged.
+
+Provisioning needs `directconnect:DescribeDirectConnectGateways`,
+`directconnect:CreateDirectConnectGatewayAssociation` and
+`directconnect:DescribeDirectConnectGatewayAssociations`.
+In every mode, teardown finds DX gateway attachments on project TGWs with
+`ec2:DescribeTransitGatewayAttachments`; only when one exists does it need
+`directconnect:DescribeDirectConnectGatewayAssociations` and
+`directconnect:DeleteDirectConnectGatewayAssociation` to delete that
+association and wait for it to go before the TGW is deleted.
+
+## Read-only Direct Connect checks (`tasks_from: dx_status`)
+
+Requires only transit VIFs attached to the DX gateway (AWS refuses a TGW
+association otherwise), and each input VIF, read in its own Region, to be a
+transit VIF on that gateway, `available`, with every BGP peer `up` and MTU 8500. It then requires the project TGW's association to allow
+both VPC CIDRs, and the most specific active TGW route covering
+`tunnel.network_cidr` (the customer may advertise an aggregate) to use the DX
+attachment, which proves the customer router advertises it. VIFs and the route
+are retried for up to five minutes. Health checks run it on the controller; it
+needs `directconnect:DescribeDirectConnectGatewayAttachments`,
+`directconnect:DescribeVirtualInterfaces`,
+`directconnect:DescribeDirectConnectGatewayAssociations`,
+`ec2:DescribeTransitGateways` and `ec2:SearchTransitGatewayRoutes`.
+
 ## Read-only VPN handoff (`tasks_from: vpn_handoff`)
 
 Reads the existing **available** VPN with both `Project: <project>` and
@@ -134,3 +179,5 @@ Teardown therefore needs the AWS CLI and `ec2:DescribeVpnConnections`,
   compatibility was the prototype's rationale); `tasks/teardown.yml` mostly
   uses `amazon.aws` modules (customer gateways use the CLI), so the two paths are inconsistent today.
 - VPN supports TGW only; a VGW would need provisioning, routing and handoff changes.
+- Direct Connect associates a DX gateway in the same account only; a gateway in
+  another account needs an association proposal its owner accepts.

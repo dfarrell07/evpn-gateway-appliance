@@ -2,8 +2,9 @@
 
 Deploys and configures the EVPN Gateway Appliance (EGA) fabric: the on-prem
 appliance, the AWS infra/workload relays, and the BGP EVPN sessions
-connecting them, using FRR over WireGuard (development/test only) or an AWS
-Site-to-Site IPsec VPN with on-prem Libreswan (`tunnel.type: ipsec`, not yet qualified).
+connecting them, using FRR over WireGuard (development/test only), an AWS
+Site-to-Site IPsec VPN with on-prem Libreswan (`tunnel.type: ipsec`, not yet qualified)
+or the customer's AWS Direct Connect (`tunnel.type: direct-connect`, not yet qualified).
 
 Collection FQCN: `network.evpn_gateway`.
 
@@ -82,6 +83,8 @@ The machine running these playbooks needs:
   controller account's credential provider chain.
   IPsec deploy/health checks also need AWS read access unless the handoff is supplied and telemetry disabled;
   see [VPN handoff and status](roles/evpn_aws_infra/README.md#read-only-vpn-handoff-tasks_from-vpn_handoff).
+  Direct Connect deploy/health checks need AWS read access unless `evpn_health_check_dx_telemetry` is false;
+  see [Direct Connect](roles/evpn_aws_infra/README.md#aws-direct-connect-tunneltype-direct-connect).
 - **SSH** — the EC2 key pair named by `evpn_aws_infra_ssh_key_name` must exist in AWS, with
   its private key available to your environment (e.g. loaded into ssh-agent).
 
@@ -108,6 +111,11 @@ address) before provisioning, then run the same playbooks. To tear down, run
 `teardown.yml` before `teardown-aws.yml`. Provisioning is not rerunnable, so to
 change transport, tear down and provision again.
 IPsec supports one appliance without multihoming.
+
+For Direct Connect, set `tunnel.type: direct-connect`, `evpn_aws_infra_dx_gateway_id` and
+`evpn_aws_infra_dx_virtual_interface_ids` (the customer's DX gateway and transit VIFs) before
+provisioning; the customer router must route `tunnel.network_cidr` to the appliance and advertise
+it over the VIFs.
 
 ## Required variables
 

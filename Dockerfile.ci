@@ -18,7 +18,8 @@ USER 0
 RUN dnf install -y git && dnf clean all && \
     git config --system --add safe.directory '*'
 
-# Pinned lint/build toolchain (the Ansible tools match the collection's CI pins).
+# Pinned lint/build toolchain (the Ansible tools match the collection's CI pins). jmespath
+# applies --query in the fake AWS CLI of `make check-ansible-direct-connect`.
 RUN pip install --no-cache-dir \
         ansible-core==2.21.4 \
         ansible-lint==26.8.0 \
@@ -26,7 +27,8 @@ RUN pip install --no-cache-dir \
         ansible-builder==3.1.1 \
         ruff==0.17.0 \
         shellcheck-py==0.11.0.1 \
-        hadolint-py==v2.15.1.2
+        hadolint-py==v2.15.1.2 \
+        jmespath==1.1.0
 
 # Collection dependencies, pinned to exact versions for reproducible image builds and
 # so the checks can resolve FQCN modules on the network-less runner. Keep in sync with
