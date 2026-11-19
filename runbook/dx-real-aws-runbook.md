@@ -1,7 +1,7 @@
 # DX real-AWS runbook (CORENET-7501/7708), ready for the account
 
 Owner: DX laptop + DX Mac. Status 2026-11-18: prepared, NOT run. No spend, no credentials until Daniel's account exists.
-Code under test: PR B's head, fork `corenet-7708-direct-connect` (56e5924 on 2026-11-19, after round 8 removed the VIF-ids input; recheck the head before the run and report the SHA).
+Code under test: PR B's head, fork `corenet-7708-direct-connect` (913cc48 on 2026-11-19, after round 10; round 8 removed the VIF-ids input; recheck the head before the run and report the SHA).
 
 ## What runs without a circuit, and what doesn't
 
@@ -114,6 +114,10 @@ TGWs and instances; no association on GW. Real error text from AWS for malformed
    `aws ec2 create-route --route-table-id <infra VPC rt> --destination-cidr-block 10.100.44.0/24 --transit-gateway-id $TGW`
    (more specific than the VPC's local 10.100.0.0/16) and record whether AWS refuses it and with what text, then delete it if created.
    If AWS refuses, a preflight check that tunnel.network_cidr doesn't overlap the VPC CIDRs is worth adding (every transport).
+9. Failed/rejected attachment observation (round 10): B now treats a TGW DX attachment in `failed` or `rejected` as gone in
+   teardown. If S2 ever produces one (e.g. an association AWS rejects), record whether `DeleteTransitGateway` then succeeds or is
+   refused until AWS reaps the attachment, and how long that takes. If refused, teardown fails at the TGW delete and a rerun recovers;
+   note it in the report and the README's teardown section.
 
 ## Teardown and leak checks (always, also on failure)
 
