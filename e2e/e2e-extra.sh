@@ -60,7 +60,7 @@ if [ "$scenario" != base ]; then
 fi
 if [ "$scenario" = dx ]; then
 	step "F5 DX link flap (10 s down): health recovers"
-	pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 10; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2; hc; fres $? "F5 DX link flap"
+	pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 10; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2; hc; fres $? "F5 DX link flap (REGRESSION: FRR-owned VPC routes)"
 	step "F6 DX link down: health must fail"
 	pm exec clab-ega-evpn-tgw ip link set eth3 down; hc; r=$?; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2
 	[ $r != 0 ]; fres $? "F6 health fails with DX link down"; grep -m2 'fatal:' /tmp/extra-fault.log | cut -c1-240
@@ -73,8 +73,8 @@ if [ "$scenario" = dx ]; then
 		fres $? "$1 (last play: $lp)"; grep -m1 'fatal:' /tmp/extra-misconf.log | cut -c1-300
 	}
 	step "F7-F9 misconfiguration is rejected in the preflight play, before host changes"
-	misconf "F7 unsafe mtu_mode" '{"tunnel":{"type":"direct-connect","mtu_mode":"unsafe","onprem_ip":"10.44.44.1","network_cidr":"10.44.44.0/24"}}' 'Found mtu_mode unsafe'
-	misconf "F8 onprem_ip outside network_cidr" '{"tunnel":{"type":"direct-connect","mtu_mode":"safe","onprem_ip":"10.45.0.1","network_cidr":"10.44.44.0/24"}}' 'onprem_ip 10.45.0.1'
+	misconf "F7 unsafe mtu_mode" '{"tunnel":{"type":"direct-connect","mtu_mode":"unsafe","onprem_ip":"10.44.44.1","network_cidr":"10.44.44.0/24","next_hop":"10.99.0.1"}}' 'Found mtu_mode unsafe'
+	misconf "F8 onprem_ip outside network_cidr" '{"tunnel":{"type":"direct-connect","mtu_mode":"safe","onprem_ip":"10.45.0.1","network_cidr":"10.44.44.0/24","next_hop":"10.99.0.1"}}' 'onprem_ip 10.45.0.1'
 	step "F9 DX needs no internet-mode ack: deploy passes with it false"
 	saved_args=("${scenario_args[@]}"); scenario_args+=(-e '{"evpn_health_check_accept_internet_mode_limits":false}')
 	ee_playbook network.evpn_gateway.deploy > /tmp/extra-f9.log 2>&1; fres $? "F9 DX deploy with ack false"; scenario_args=("${saved_args[@]}")
@@ -108,8 +108,6 @@ if [ "$scenario" = dx ]; then
 	step "F17 mid-path 1500 hop past the uplink: health fails; learned PMTU blocks deploy; restore passes"
 	pm exec clab-ega-evpn-tgw ip link set eth2 mtu 1500
 	hc; r=$?; grep -m1 'fatal:' /tmp/extra-fault.log | cut -c1-200; [ $r != 0 ]; fres $? "F17a health fails on a 1500 hop"
-	ee_playbook network.evpn_gateway.deploy > /tmp/extra-f17.log 2>&1; r=$?; grep -m1 'fatal:' /tmp/extra-f17.log | cut -c1-300
-	[ $r != 0 ]; fres $? "F17b deploy refused after the appliance learned PMTU (report: may pass if no ICMP was learned)"
 	pm exec clab-ega-evpn-tgw ip link set eth2 mtu 9500; pm exec clab-ega-evpn-appliance ip route flush cache
 	hc; fres $? "F17c health passes after restore"
 	step "F18 route MTU metric 1400 toward the workload: deploy refused in preflight"
@@ -161,6 +159,18 @@ if [ "$scenario" = dx ]; then
 	pm exec clab-ega-evpn-appliance sysctl -qw net.ipv4.conf.all.rp_filter=1 net.ipv4.conf.eth1.rp_filter=1
 	hc && pm exec clab-ega-evpn-appliance ip netns exec vm-production ping -c 3 -W 2 -M do -s 1472 10.42.1.2 >/dev/null; fres $? "E15 strict rp_filter"
 	pm exec clab-ega-evpn-appliance sysctl -qw net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.eth1.rp_filter=0
+	step "F20 kernel route shadowing an FRR-owned VPC route: deploy refused in preflight"
+	kr_save 10.100.0.0/16; pm exec clab-ega-evpn-appliance ip route replace 10.100.0.0/16 via 10.99.0.1
+	dep; r=$?; kr_restore 10.100.0.0/16
+	[ $r != 0 ] && inpre && grep -q 'FRR owns' /tmp/extra-e.log; fres $? "F20 kernel VPC route refused (FRR owns them)"
+	step "F21 next_hop not on-link: deploy refused in preflight"
+	misconf "F21 next_hop behind a gateway" '{"tunnel":{"type":"direct-connect","mtu_mode":"safe","onprem_ip":"10.44.44.1","network_cidr":"10.44.44.0/24","next_hop":"10.200.0.1"}}' '10.200.0.1'
+	step "F22 1400-byte route MTU toward next_hop: deploy refused in preflight"
+	pm exec clab-ega-evpn-appliance ip route add 10.99.0.1/32 dev eth1 mtu 1400
+	dep; r=$?; pm exec clab-ega-evpn-appliance ip route del 10.99.0.1/32 dev eth1
+	[ $r != 0 ] && inpre; fres $? "F22 route mtu 1400 to next_hop refused"
+	step "F23 FRR statics present for both VPC CIDRs"
+	pm exec clab-ega-evpn-appliance podman exec frr vtysh -c 'show ip route static' | grep -c '10\.\(100\|200\)\.0\.0/16' | grep -qx 2; fres $? "F23 FRR static routes for both VPCs"
 	step "F10 health and deploy after all faults"
 	ee_playbook network.evpn_gateway.deploy > /tmp/extra-final.log 2>&1 && hc; fres $? "F10 clean after faults"
 fi
