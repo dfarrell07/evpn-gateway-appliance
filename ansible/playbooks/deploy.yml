@@ -2,6 +2,9 @@
 # Full deploy — idempotent, safe to re-run.
 # Usage: ansible-playbook playbooks/deploy.yml
 
+- name: Run the read-only transport preflight
+  ansible.builtin.import_playbook: preflight.yml
+
 - name: Check and load the IPsec handoff
   hosts: onprem_appliances
   gather_facts: false
