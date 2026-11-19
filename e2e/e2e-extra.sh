@@ -165,10 +165,16 @@ if [ "$scenario" = dx ]; then
 	[ $r != 0 ] && inpre && grep -q 'FRR owns' /tmp/extra-e.log; fres $? "F20 kernel VPC route refused (FRR owns them)"
 	step "F21 next_hop not on-link: deploy refused in preflight"
 	misconf "F21 next_hop behind a gateway" '{"tunnel":{"type":"direct-connect","mtu_mode":"safe","onprem_ip":"10.44.44.1","network_cidr":"10.44.44.0/24","next_hop":"10.200.0.1"}}' '10.200.0.1'
-	step "F22 1400-byte route MTU toward next_hop: deploy refused in preflight"
+	step "F22 kernel host route to next_hop (mtu 1400): deploy refused in preflight"
 	pm exec clab-ega-evpn-appliance ip route add 10.99.0.1/32 dev eth1 mtu 1400
 	dep; r=$?; pm exec clab-ega-evpn-appliance ip route del 10.99.0.1/32 dev eth1
-	[ $r != 0 ] && inpre; fres $? "F22 route mtu 1400 to next_hop refused"
+	[ $r != 0 ] && inpre; fres $? "F22 kernel host route to next_hop refused (statics must resolve over the connected route)"
+	step "F24 more-specific kernel route inside a VPC CIDR: deploy refused in preflight"
+	pm exec clab-ega-evpn-appliance ip route add 10.100.5.0/24 via 10.99.0.1
+	dep; r=$?; pm exec clab-ega-evpn-appliance ip route del 10.100.5.0/24
+	[ $r != 0 ] && inpre; fres $? "F24 more-specific kernel VPC route refused"
+	step "F25 next_hop is the appliance's own uplink address: deploy refused in preflight"
+	misconf "F25 next_hop = own address" '{"tunnel":{"type":"direct-connect","mtu_mode":"safe","onprem_ip":"10.44.44.1","network_cidr":"10.44.44.0/24","next_hop":"10.99.0.2"}}' '10.99.0.2'
 	step "F23 FRR statics present for both VPC CIDRs"
 	pm exec clab-ega-evpn-appliance podman exec frr vtysh -c 'show ip route static' | grep -c '10\.\(100\|200\)\.0\.0/16' | grep -qx 2; fres $? "F23 FRR static routes for both VPCs"
 	step "F10 health and deploy after all faults"
