@@ -17,9 +17,9 @@ import sys
 # build's MCS label on every file, not the payload's; the appliance's policy labels
 # the files when podman runs them. Sorted names, no atime/ctime, and no entry for the
 # mount point itself (its mtime is the build's) make the layer bytes depend only on
-# the payload.
+# the payload. No --sparse: GNU tar names each sparse member GNUSparseFile.<pid>.
 TAR = (
-    "tar", "--create", "--file=-", "--format=posix", "--numeric-owner", "--sparse",
+    "tar", "--create", "--file=-", "--format=posix", "--numeric-owner",
     "--sort=name", "--xattrs", "--xattrs-exclude=security.selinux",
     "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime",
 )
