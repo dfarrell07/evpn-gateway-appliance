@@ -157,8 +157,16 @@ links the `emulated` inventory and adds `group_vars/all/ipsec.yml`. Its TGW node
 Libreswan responders and FRR in place of the AWS VPN endpoint, with a public test-only
 handoff. It does not prove IKE/ESP proposal compatibility with AWS (the simulator copies
 the appliance's), AWS telemetry, NAT-T, rekey or maintenance behavior, ECMP or route
-limits. It ends with the product teardown, which `EGA_STAGE=deploy` skips (as it does any
-`*.teardown` or `*.teardown_check` playbook) so the lab stays deployed for inspection.
+limits. It ends with the product teardown and a check that no FRR static routes remain,
+which `EGA_STAGE=deploy` skips (as it does any `*.teardown` or `*.teardown_check`
+playbook) so the lab stays deployed for inspection.
+
+`dx` runs the Direct Connect transport. Its inventory links the `emulated` inventory and
+adds `group_vars/all/tunnel.yml`, and its playbooks rerun the read-only preflight after
+the deploy, then run the appliance teardown and check that no FRR static routes remain. A
+plain routed 8500-byte link from the appliance to the TGW node stands in for the customer
+router, transit VIF and DX gateway, in `safe` MTU mode. It does not prove the AWS Direct
+Connect checks, VIF BGP, MD5, route limits or failover.
 
 ## run_remote.sh — remote target (or local, no target)
 

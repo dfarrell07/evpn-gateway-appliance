@@ -6,8 +6,9 @@ configures FRR as a route relay (not a VTEP) between
 the on-prem appliance and the workload-VPC VTEP, preserving VTEP IPs
 end-to-end because eBGP keeps EVPN next hops.
 
-For `tunnel.type: ipsec`, AWS terminates the VPN: the relay peers only in `l2vpn evpn` with each
-`onprem_appliances` host's `tunnel.onprem_ip`, and VXLAN goes directly between VTEPs through the TGW.
+For `tunnel.type: ipsec`, AWS terminates the VPN; for `direct-connect`, the customer's DX path carries the
+underlay. The relay peers only in `l2vpn evpn` with each `onprem_appliances` host's `tunnel.onprem_ip`
+(`ebgp-multihop 4` for IPsec, `255` for Direct Connect), and VXLAN goes directly between VTEPs through the TGW.
 
 This role also owns `tasks/wireguard_keys.yml`, shared with
 `evpn_onprem_appliance` via `include_role` (not a hardcoded path — see that

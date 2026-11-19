@@ -14,9 +14,8 @@ TCP MSS clamping, but the checked roles do not implement the corresponding
 iptables/nftables/MSS tasks. The design's 1399-byte AWS VPN figure is also out of
 date (item 3).
 
-Production DX remains implementation work, and the Site-to-Site VPN (#52) is
-implemented but not yet qualified; WireGuard is development/test only in
-CORENET-7498. The task breakdown (§2.1) terminates Site-to-Site VPN
+DX (#57) and the Site-to-Site VPN (#52) are implemented but not yet qualified;
+WireGuard is development/test only in CORENET-7498. The task breakdown (§2.1) terminates Site-to-Site VPN
 IPsec on the on-prem appliance itself (Libreswan in the bootc image) and on the
 AWS TGW, leaving the cloud EVPN relay outside that data path. The appliance is
 therefore the AWS customer gateway, with a static, registered public IP (directly

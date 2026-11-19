@@ -2,8 +2,9 @@
 
 Deploys and configures the EVPN Gateway Appliance (EGA) fabric: the on-prem
 appliance, the AWS infra/workload relays, and the BGP EVPN sessions
-connecting them, using FRR over WireGuard (development/test only) or an AWS
-Site-to-Site IPsec VPN with on-prem Libreswan (`tunnel.type: ipsec`, not yet qualified).
+connecting them, using FRR over WireGuard (development/test only), an AWS
+Site-to-Site IPsec VPN with on-prem Libreswan (`tunnel.type: ipsec`, not yet qualified)
+or the customer's AWS Direct Connect (`tunnel.type: direct-connect`, not yet qualified).
 
 Collection FQCN: `network.evpn_gateway`.
 
@@ -72,7 +73,7 @@ The machine running these playbooks needs:
   containers.podman.
 - **Python** — 3.12 is the current CI-tested controller baseline. A supported
   ansible-core/Python/AAP matrix remains to be defined. Install `boto3`/`botocore`
-  for the amazon.aws modules, `awscli` for `evpn_aws_infra`'s `aws ec2` calls and
+  for the amazon.aws modules, `awscli` for `evpn_aws_infra`'s AWS CLI calls and
   `netaddr` for the ansible.utils IP filters: `pip install -r requirements.txt`.
 - **System** — `wireguard-tools` (the WireGuard key pair is generated on the
   control node); see `bindep.txt`.
@@ -84,6 +85,8 @@ The machine running these playbooks needs:
   controller account's credential provider chain.
   IPsec deploy/health checks also need AWS read access unless the handoff is supplied and telemetry disabled;
   see [VPN handoff and status](roles/evpn_aws_infra/README.md#read-only-vpn-handoff-tasks_from-vpn_handoff).
+  Direct Connect deploy/health checks need AWS read access unless `evpn_health_check_dx_telemetry` is false;
+  see [Direct Connect checks](roles/evpn_aws_infra/README.md#read-only-direct-connect-checks-tasks_from-dx_status).
 - **SSH** — the EC2 key pair named by `evpn_aws_infra_ssh_key_name` must exist in AWS, with
   its private key available to your environment (e.g. loaded into ssh-agent).
 
@@ -122,6 +125,13 @@ provisioning keeps only each appliance's `ansible_host`, `ansible_connection`
 and `trunk_interface`. Appliances share `bgp.onprem_asn`, so they do not learn
 each other's EVPN routes. IPsec with multihoming is gated until CORENET-7502, so put each appliance on its own
 on-prem L2 segment: two appliances bridging the same VLANs would loop broadcast traffic.
+
+For Direct Connect, list the appliance under `onprem_appliances` in `inventory/hosts.yml` (other host settings in
+`host_vars/`), and set `tunnel.type: direct-connect`, `tunnel.mtu_mode: safe`, `tunnel.next_hop` and
+`evpn_aws_infra_dx_gateway_id` in `group_vars/all.yml`, before provisioning. Direct Connect supports one appliance;
+the appliance and customer-router requirements are in the [`evpn_onprem_appliance`
+README](roles/evpn_onprem_appliance/README.md#aws-direct-connect-tunneltype-direct-connect). To tear down, run
+`teardown.yml` before `teardown-aws.yml`.
 
 ## Required variables
 

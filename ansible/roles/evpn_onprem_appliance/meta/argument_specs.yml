@@ -57,6 +57,7 @@ argument_specs:
         required: true
         required_if:
           - [type, wireguard, [port, cloud_ip]]
+          - [type, direct-connect, [next_hop]]
         description: >-
           Transport configuration parameters for the tunnel between on-prem and
           cloud; type, onprem_ip, cloud_ip, port and network_cidr are used to
@@ -65,7 +66,7 @@ argument_specs:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec]
+            choices: [wireguard, ipsec, direct-connect]
             description: Transport type. Determines which transport-specific configuration is applied.
           onprem_ip:
             type: str
@@ -73,10 +74,15 @@ argument_specs:
             description: Address of the on-prem appliance's VTEP (with WireGuard, also its tunnel address); also the BGP router-id.
           cloud_ip:
             type: str
-            description: WireGuard tunnel address of the infra relay. IPsec uses the relay private_ip instead.
+            description: WireGuard tunnel address of the infra relay. IPsec and direct-connect use the relay private_ip instead.
           port:
             type: int
             description: WireGuard listen port. Used as the endpoint port to the infra relay.
+          next_hop:
+            type: str
+            description: >-
+              Direct Connect only; the customer router's address on the appliance's uplink. FRR routes infra_vpc_cidr
+              and workload_vpc_cidr to it.
           network_cidr:
             type: str
             default: 10.44.44.0/24
@@ -92,11 +98,11 @@ argument_specs:
       infra_vpc_cidr:
         type: str
         default: 10.100.0.0/16
-        description: CIDR of the infra VPC; routed to the cloud over the tunnel.
+        description: CIDR of the infra VPC; routed to the cloud over the tunnel, or to tunnel.next_hop for direct-connect.
       workload_vpc_cidr:
         type: str
         default: 10.200.0.0/16
-        description: CIDR of the workload VPC; routed to the cloud over the tunnel.
+        description: CIDR of the workload VPC; routed to the cloud over the tunnel, or to tunnel.next_hop for direct-connect.
       ocp_pod_network_cidr:
         type: str
         default: 10.128.0.0/16

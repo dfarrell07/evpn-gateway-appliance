@@ -29,7 +29,6 @@ check "" '{"ttype": "wireguard", "evpn_health_check_accept_internet_mode_limits"
 check "exceeds the" '{"ttype": "wireguard", "evpn_health_check_accept_internet_mode_limits": true, "evpn_health_check_workload_mtu": 1371}'
 check "exceeds the" '{"ttype": "ipsec", "evpn_health_check_accept_internet_mode_limits": true, "evpn_health_check_workload_mtu": 1389}'
 check "exceeds the" '{"ttype": "ipsec", "evpn_health_check_accept_internet_mode_limits": true, "second_workload_mtu": 1389}'
-check "must be one of" '{"ttype": "direct-connect"}'
 # Provisioning runs the preflight on localhost, which may not see per-appliance addresses.
 check "" '{"tunnel": {"type": "wireguard"}, "evpn_health_check_accept_internet_mode_limits": true}'
 # deploy.yml runs the preflight first, and one host's failure stops every host.

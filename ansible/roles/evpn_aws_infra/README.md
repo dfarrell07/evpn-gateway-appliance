@@ -48,6 +48,50 @@ provisioning completed, not that IKE/BGP sessions are up.
 Each VPN connection and its public IPv4 addresses bill hourly whether or not tunnels come up, so run
 `ansible-playbook playbooks/teardown-aws.yml` after a failed or abandoned run.
 
+## AWS Direct Connect (`tunnel.type: direct-connect`)
+
+The customer provisions the DX connection, transit VIFs and DX gateway; the
+role never creates or deletes them. Set `evpn_aws_infra_dx_gateway_id` to an
+existing DX gateway whose Amazon-side ASN differs from the TGW's default `64512`,
+with only transit VIFs attached, each readable by this account at MTU 8500 with
+a customer router ASN other than `64512` (AWS can use any of them), and at least
+one `available` with every IPv4 BGP peer `up`.
+
+Before creating anything, `tasks/dx_preflight.yml` checks the gateway, its
+associations and the VIFs (the transport preflight checks `safe` MTU mode).
+Provisioning then associates the gateway with the TGW, allowing exactly the two
+VPC CIDRs (what AWS advertises to on-premises), and routes `tunnel.network_cidr`
+from the infra VPC through the TGW; the TGW's default route table propagates
+the routes the customer advertises over the VIFs. Rerunning provisioning fails
+at preflight while the project has a TGW in that Region; run `teardown-aws.yml` first.
+
+In every transport mode, teardown first deletes the project TGWs' Direct Connect gateway associations. If
+provisioning stopped before AWS created the TGW's DX attachment, teardown cannot find the association yet; when TGW
+deletion then fails, run teardown again.
+
+`DescribeVirtualInterfaces` returns each VIF's BGP MD5 key; every call selects
+only the fields it needs, so the key is never registered or logged. Keep AWS
+CLI client-side history disabled: `cli_history=enabled` records the full response.
+
+Provisioning needs `directconnect:DescribeDirectConnectGatewayAttachments`,
+`directconnect:DescribeVirtualInterfaces`,
+`directconnect:DescribeDirectConnectGateways`,
+`directconnect:DescribeDirectConnectGatewayAssociations` and
+`directconnect:CreateDirectConnectGatewayAssociation`.
+
+## Read-only Direct Connect checks (`tasks_from: dx_status`)
+
+Rechecks the VIFs, then requires the project TGW's association to allow both VPC
+CIDRs and the most specific TGW route (active or blackhole) to
+`tunnel.onprem_ip` to use the attachment of `evpn_aws_infra_dx_gateway_id`, which
+confirms the TGW routes `tunnel.onprem_ip` through the configured DX gateway. Health checks run
+it on the controller with the `onprem_appliances` hosts' `evpn_aws_infra_*` and
+`tunnel` variables (set them in `group_vars/all.yml`, not with `-e` at
+provisioning); it needs `directconnect:DescribeDirectConnectGatewayAttachments`,
+`directconnect:DescribeVirtualInterfaces`,
+`directconnect:DescribeDirectConnectGatewayAssociations`,
+`ec2:DescribeTransitGateways` and `ec2:SearchTransitGatewayRoutes`.
+
 ## Read-only VPN handoff (`tasks_from: vpn_handoff`)
 
 Reads the existing **available** VPNs tagged `Project: <project>` and
@@ -82,7 +126,8 @@ credentials; the handoff and teardown also need the AWS CLI. IPsec provisioning 
 exist. It and the controller tasks need `ec2:DescribeVpnConnections` (provisioning, handoff, telemetry and teardown),
 `ec2:DescribeTransitGateways` (handoff), `ec2:DescribeCustomerGateways` (provisioning, handoff and teardown),
 and, for teardown with every transport, `ec2:DeleteVpnConnection`, `ec2:DescribeTransitGatewayAttachments` and
-`ec2:DeleteCustomerGateway`.
+`ec2:DeleteCustomerGateway`, plus `directconnect:DescribeDirectConnectGatewayAssociations` and
+`directconnect:DeleteDirectConnectGatewayAssociation` when a Direct Connect association exists.
 
 ## Required: `evpn_aws_infra_admin_cidr`
 
@@ -107,3 +152,5 @@ carry the `evpn_aws_infra_` prefix; shared settings such as `tunnel` do not.
   uses `amazon.aws` modules (VPN teardown uses the CLI for TGW attachments and customer
   gateways), so the two paths are inconsistent today.
 - VPN supports TGW only; a VGW would need provisioning, routing and handoff changes.
+- Direct Connect associates a DX gateway in the same account only; a gateway in
+  another account needs an association proposal its owner accepts.

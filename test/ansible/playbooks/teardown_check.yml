@@ -1,0 +1,11 @@
+---
+# After network.evpn_gateway.teardown: FRR's static routes (protocol 196) must not outlive it.
+- name: Check the appliance teardown
+  hosts: onprem_appliances
+  gather_facts: false
+  tasks:
+    - name: "TEARDOWN [onprem]: No FRR static routes remain"
+      ansible.builtin.command: ip -N -j route show proto 196
+      register: _ega_frr_routes
+      changed_when: false
+      failed_when: _ega_frr_routes.rc != 0 or _ega_frr_routes.stdout | from_json | length > 0
