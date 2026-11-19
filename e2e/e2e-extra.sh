@@ -109,6 +109,13 @@ if [ "$scenario" = dx ]; then
 	step "F14 FRR stopped: health fails with a clear message, deploy restores"
 	pm exec clab-ega-evpn-appliance systemctl stop frr-container; hc; r=$?; grep -m1 'fatal:' /tmp/extra-fault.log | cut -c1-240
 	[ $r != 0 ]; fres $? "F14a health fails with FRR stopped"
+	if [ "$scenario" = dx ]; then
+		# Round 13: the blackhole backups live in zebra, so FRR stopped removes them. Leak only if the VPC route
+		# falls back to eth0 AND the kernel still holds remote VTEP FDB entries to send VXLAN to.
+		rg=$(pm exec clab-ega-evpn-appliance ip route get 10.100.0.1 2>&1); echo "   $rg"
+		nf=$(pm exec clab-ega-evpn-appliance bridge fdb show 2>/dev/null | grep -c ' dst '); echo "   remote VTEP fdb entries: $nf"
+		! { echo "$rg" | grep -q 'dev eth0' && [ "$nf" -gt 0 ]; }; fres $? "F14c FRR stopped: no VXLAN path out mgmt (route fallback with remote FDB left)"
+	fi
 	ee_playbook network.evpn_gateway.deploy > /tmp/extra-f14.log 2>&1 && hc; fres $? "F14b deploy restarts FRR and health passes"
 	step "F15 soak: 5 consecutive health checks"
 	n=0; for i in 1 2 3 4 5; do hc && n=$((n+1)); done; [ $n = 5 ]; fres $? "F15 soak $n/5"
