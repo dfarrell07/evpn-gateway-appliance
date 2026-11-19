@@ -1,7 +1,7 @@
 # DX real-AWS runbook (CORENET-7501/7708), ready for the account
 
 Owner: DX laptop + DX Mac. Status 2026-11-18: prepared, NOT run. No spend, no credentials until Daniel's account exists.
-Code under test: PR B's head, fork `corenet-7708-direct-connect` (913cc48 on 2026-11-19, after round 10; round 8 removed the VIF-ids input; recheck the head before the run and report the SHA).
+Code under test: PR B's head, fork `corenet-7708-direct-connect` (73756b5 on 2026-11-19, after round 12; round 8 removed the VIF-ids input, round 11 added the required `tunnel.next_hop`; recheck the head before the run and report the SHA).
 
 ## What runs without a circuit, and what doesn't
 
@@ -118,6 +118,23 @@ TGWs and instances; no association on GW. Real error text from AWS for malformed
    teardown. If S2 ever produces one (e.g. an association AWS rejects), record whether `DeleteTransitGateway` then succeeds or is
    refused until AWS reaps the attachment, and how long that takes. If refused, teardown fails at the TGW delete and a rerun recovers;
    note it in the report and the README's teardown section.
+
+## S3: full DX deploy inputs (when a circuit exists)
+
+The appliance side needs `tunnel.next_hop` (required for direct-connect since round 11): the customer router's address on
+the appliance's uplink. S0-S2 don't use it (`provision-aws.yml` ignores it).
+
+```yaml
+tunnel: {type: direct-connect, mtu_mode: safe, onprem_ip: <VTEP, inside network_cidr>, network_cidr: <tunnel CIDR>, next_hop: <router on uplink>}
+```
+
+Before deploy, on the appliance: `ip -j route get <next_hop>` must show a `dev` (the uplink, NM-managed, MTU >= 1550) and no
+`gateway`; there must be no kernel routes covering the VPC CIDRs (FRR owns them). Pass, besides R2-R5/R8:
+- `vtysh -c 'show ip route <infra_vpc_cidr>'` shows the static via next_hop on the uplink;
+- a 10 s uplink flap recovers without restarting FRR (the arm64 lab regression);
+- during an uplink outage `ip route get <infra VPC address>` does not leave via the mgmt interface
+  (if the blackhole backups land, it shows a blackhole);
+- rerun deploy leaves `frr.conf` unchanged.
 
 ## Teardown and leak checks (always, also on failure)
 
