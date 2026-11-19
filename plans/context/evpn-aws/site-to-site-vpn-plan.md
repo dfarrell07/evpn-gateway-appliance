@@ -20,7 +20,7 @@ The posted [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500) acce
 
 1. Decided ([decision 20](kickoff-decisions.md#decisions-at-a-glance)): Transit Gateway (TGW).
 2. Decision 18 owners (PM / Architecture / QE): approve AWS (non-bare-metal) EVPN support or an exception.
-3. Who takes 7501 and records its corrected [virtual-interface (VIF) criterion](source-audit.md#3-configuration--structure-mismatches) before acceptance?
+3. Decided: the CORENET-7501 owner, Daniel Farrell, takes it ([decision 22](kickoff-decisions.md#decisions-at-a-glance)); correcting its [virtual-interface (VIF) criterion](source-audit.md#3-configuration--structure-mismatches) in Jira stays with decision 1.
 4. Who owns BGP Cloud Connector (BCC) coordination for FRR, RouteAdvertisements and primary-ENI SourceDestCheck?
 5. Name a coordinator for transport, security, and CI budgets, gates and cleanup.
 6. Networking and CI owners: #52 adds the IPsec scenario to the shared e2e job and asks this repository's approvers, who own its job configuration, to agree to that in its review (AC6); the decision is recorded with their agreement. Architecture: agree transport MTUs. The IPsec [cipher profile](#test-obligations) is decided ([decision 20](kickoff-decisions.md#decisions-at-a-glance)); PSK authentication is #52's choice, pending the 7708 owner. 7708 and CI/QE owners: agree transport limits and emulation fidelity.
