@@ -59,7 +59,8 @@ MTU/MSS/DF control yet (CORENET-7709).
 - The on-prem networking (nmstate, `tasks/nm_networking.yml`) is exercised by
   the Molecule lane against a veth stand-in trunk; it is not yet validated
   against actual hardware or a real tagged customer trunk (source-audit.md).
-- `direct-connect` is accepted but has no implementation yet.
+- `direct-connect` is not implemented yet (CORENET-7708), so the argument specs reject it:
+  WireGuard's paths would add a TGW static route that overrides routes learned over Direct Connect.
 - WireGuard and EVPN have no inbound/outbound route policy beyond a
   defensive EVPN `maximum-prefix`; IPsec underlay IPv4 has the VPC/VTEP prefix
   lists described above. See the comment at the top of

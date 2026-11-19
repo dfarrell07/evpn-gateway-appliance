@@ -171,3 +171,7 @@
   loop_control:
     label: "→ {{ item.cloud_gateway }}"
   when: "'onprem_appliances' in group_names"
+
+- name: Record the loss and RTT baseline to the workload VTEP
+  ansible.builtin.include_tasks: baseline.yml
+  when: "'onprem_appliances' in group_names"

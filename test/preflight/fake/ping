@@ -1,0 +1,8 @@
+#!/bin/sh
+# iputils ping for baseline.yml: prints the canned output in $PING_OUT, but only for 20 pings from the VTEP
+# address (tunnel.onprem_ip) to the workload VTEP (private_ip), in the C locale baseline.yml parses, as it sets them.
+[ "$LC_ALL" = C ] || { echo "fake ping: LC_ALL is not C" >&2; exit 2; }
+case " $* " in
+*" -c 20 "*" -I 10.44.44.1 10.200.1.10 "*) printf "%s\n" "$PING_OUT" ;;
+*) echo "fake ping: unexpected arguments: $*" >&2; exit 2 ;;
+esac

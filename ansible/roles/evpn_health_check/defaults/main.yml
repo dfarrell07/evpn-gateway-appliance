@@ -1,0 +1,3 @@
+---
+evpn_health_check_accept_internet_mode_limits: false
+evpn_health_check_workload_mtu: 0
