@@ -35,12 +35,16 @@ if [ "$scenario" = dx ]; then
 	ee_playbook "$HCPB"
 fi
 # Round 8 fault cases: non-fatal, each prints FAULT-PASS/FAULT-FAIL so later steps still run.
-fres() { if [ "$1" = 0 ]; then echo ">> EXTRA[$scenario] FAULT-PASS: $2"; else echo ">> EXTRA[$scenario] FAULT-FAIL: $2"; fi; }
+fres() { if [ "$1" = 0 ]; then echo ">> EXTRA[$scenario] FAULT-PASS: $2"; else echo ">> EXTRA[$scenario] FAULT-FAIL: $2"
+	local l; l=$(ls -t /tmp/extra-*.log 2>/dev/null | head -1); [ -n "$l" ] && { echo "   (from $l)"; grep -m4 -E 'fatal:|FAILED!|"msg"' "$l" | cut -c1-400; }; fi; }
+# Overlay state on both EVPN ends, for diagnosing a failed recovery.
+evpn_diag() { for n in appliance relay; do echo "--- $n"; pm exec clab-ega-evpn-$n podman exec frr vtysh -c 'show evpn vni' -c 'show bgp l2vpn evpn summary' -c 'show bgp l2vpn evpn route type multicast' 2>&1 | head -60
+	pm exec clab-ega-evpn-$n sh -c 'bridge fdb show | grep 00:00:00:00:00:00; ip -d -br link show type vxlan; ip -d link show | grep -m3 -o "vxlan id [0-9]* local [0-9.]*"; podman ps --format "{{.Names}} {{.Status}}"' 2>&1 | head -30; done; }
 hc() { ee_playbook "$HCPB" > /tmp/extra-fault.log 2>&1; }
 step "F1 restart frr-container on the appliance, health recovers"
-pm exec clab-ega-evpn-appliance systemctl restart frr-container; hc; fres $? "F1 appliance FRR restart"
+pm exec clab-ega-evpn-appliance systemctl restart frr-container; hc; r=$?; fres $r "F1 appliance FRR restart"; [ $r = 0 ] || { evpn_diag; sleep 60; hc; fres $? "F1-late health 60 s later (slow vs stuck)"; }
 step "F2 restart frr-container on the relay, health recovers"
-pm exec clab-ega-evpn-relay systemctl restart frr-container; hc; fres $? "F2 relay FRR restart"
+pm exec clab-ega-evpn-relay systemctl restart frr-container; hc; r=$?; fres $r "F2 relay FRR restart"; [ $r = 0 ] || evpn_diag
 step "F3 restart NetworkManager on the appliance, health recovers"
 pm exec clab-ega-evpn-appliance systemctl restart NetworkManager; sleep 5; hc; fres $? "F3 appliance NetworkManager restart"
 if [ "$scenario" != base ]; then
