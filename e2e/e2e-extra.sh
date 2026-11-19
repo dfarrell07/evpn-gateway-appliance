@@ -35,6 +35,8 @@ if [ "$scenario" = dx ]; then
 	ee_playbook "$HCPB"
 fi
 # Round 8 fault cases: non-fatal, each prints FAULT-PASS/FAULT-FAIL so later steps still run.
+# The entrypoint runs under set -euo pipefail; fault cases expect failures, so errexit is off until teardown.
+set +e  # fault cases
 fres() { if [ "$1" = 0 ]; then echo ">> EXTRA[$scenario] FAULT-PASS: $2"; else echo ">> EXTRA[$scenario] FAULT-FAIL: $2"
 	local l; l=$(ls -t /tmp/extra-*.log 2>/dev/null | head -1); [ -n "$l" ] && { echo "   (from $l)"; grep -m4 -E 'fatal:|FAILED!|"msg"' "$l" | cut -c1-400; }; fi; }
 # Wait (up to $2 s) until node $1 runs the frr container and has an Established BGP session.
@@ -180,6 +182,7 @@ if [ "$scenario" = dx ]; then
 	step "F10 health and deploy after all faults"
 	ee_playbook network.evpn_gateway.deploy > /tmp/extra-final.log 2>&1 && hc; fres $? "F10 clean after faults"
 fi
+set -e
 step "teardown"
 ee_playbook network.evpn_gateway.teardown
 if [ "$scenario" = dx ]; then
