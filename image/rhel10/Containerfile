@@ -1,11 +1,25 @@
 # FRR alternate: embedded OpenShift FRR image. node-exporter is embedded too.
 # No frr RPM.
-#   podman build -f Containerfile --secret id=dockerconfig,src="${CONTAINER_AUTH_FILE:-$HOME/.docker/config.json}" --build-arg BOOTC_BASE=... .
+#   REGISTRY_AUTH_FILE=... podman build -f Containerfile --build-arg BOOTC_BASE=... .
 ARG BOOTC_BASE=registry.redhat.io/rhel10/rhel-bootc
-FROM ${BOOTC_BASE}
-
 ARG FRR_IMAGE=registry.redhat.io/openshift4/frr-rhel9@sha256:82fd7cc0123f6286bad46231a9939799ae79c30b9369047d2ffd109dacefa76e
 ARG NODE_EXPORTER_IMAGE=registry.redhat.io/openshift4/ose-prometheus-node-exporter-rhel9@sha256:7d2884dc16f902e31b897d475d3e0dc09bc735df16b22544d0fefc4396a0ca48
+
+# Payloads are FROM stages so Konflux pre-pulls them with the base; the build needs
+# no registry access or secret. Only their rootfs reaches the final stage.
+# Make and CI override the ARGs; doozer rewrites these FROM lines in order from
+# ocp-build-data's from.builder, then from.image. Keep payload refs out of later
+# stages, because doozer never edits ARG values.
+FROM ${FRR_IMAGE} AS frr
+FROM ${NODE_EXPORTER_IMAGE} AS node-exporter
+
+# Carries embed-payload.py. A stage mount needs no relabel; a build-context bind mount
+# does, and relabel fails on virtiofs. Built on frr so doozer counts it as a stage
+# reference, not a parent.
+FROM frr AS tools
+COPY embed-payload.py /embed-payload.py
+
+FROM ${BOOTC_BASE}
 
 # Package versions are not pinned; they follow the base image's repositories.
 # hadolint ignore=DL3041
@@ -29,14 +43,24 @@ RUN dnf install -y \
 # file inside the FRR image is hidden. This file is only bgpd and bfdd.
 RUN mkdir -p /etc/frr && printf '%s\n' 'bgpd=yes' 'bfdd=yes' > /etc/frr/daemons
 
-RUN --mount=type=secret,id=dockerconfig,target=/root/.docker/config.json \
-    mkdir -p /usr/lib/containers-image-cache/frr /usr/lib/containers-image-cache/node-exporter \
-    && skopeo copy --preserve-digests \
-        "docker://${FRR_IMAGE}" \
-        dir:/usr/lib/containers-image-cache/frr \
-    && skopeo copy --preserve-digests \
-        "docker://${NODE_EXPORTER_IMAGE}" \
-        dir:/usr/lib/containers-image-cache/node-exporter
+# Rebuild each payload from its stage rootfs as a one-layer image in the dir: layout
+# payload-load.sh reads. The mount shows the merged rootfs, so whiteouts are already
+# applied. Nested podman import is avoided: a rootless build drops CAP_SYS_ADMIN, so
+# podman falls back to a single UID mapping and cannot chown payload files.
+# A stage exposes no image config, so the JSON restates the source's runtime config
+# (skopeo inspect --config); recheck it when a digest moves. The nested smoke runs
+# both units on it.
+ARG TARGETARCH
+RUN --mount=type=bind,from=frr,source=/,target=/run/payload/frr,ro \
+    --mount=type=bind,from=node-exporter,source=/,target=/run/payload/node-exporter,ro \
+    --mount=type=bind,from=tools,source=/embed-payload.py,target=/run/embed-payload.py,ro \
+    mkdir -p /usr/lib/containers-image-cache \
+    && python3 /run/embed-payload.py /run/payload/frr \
+        /usr/lib/containers-image-cache/frr "${TARGETARCH}" \
+        '{"User": "root", "WorkingDir": "/root", "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "container=oci", "GODEBUG=x509ignoreCN=0,madvdontneed=1", "PYTHONDONTWRITEBYTECODE=yes"], "Entrypoint": ["/sbin/tini", "--"], "Cmd": ["/usr/lib/frr/docker-start"]}' \
+    && python3 /run/embed-payload.py /run/payload/node-exporter \
+        /usr/lib/containers-image-cache/node-exporter "${TARGETARCH}" \
+        '{"User": "nobody", "WorkingDir": "/", "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "container=oci", "GODEBUG=x509ignoreCN=0,madvdontneed=1"], "ExposedPorts": {"9100/tcp": {}}, "Entrypoint": ["/bin/node_exporter"]}'
 
 RUN cat > /etc/sysctl.d/99-ip-forward.conf <<'EOF'
 net.ipv4.ip_forward = 1

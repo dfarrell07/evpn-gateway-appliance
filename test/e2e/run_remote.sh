@@ -180,16 +180,15 @@ if [ "$build_ee" = 1 ]; then
     EGA_EE_BASE="${reg}/openshift/centos:stream10" make ee-image
 fi
 # Appliance nested-ci image (:ci parent + vfs child) via the make targets. The bases come from
-# the on-VM local registry, so override them to its paths and pass APPLIANCE_BUILD_ARGS so the
-# Containerfile's build-time skopeo can reach it (--network=host + the insecure drop-in). The
-# empty auth file satisfies the target's secret mount; the local registry needs no credentials.
+# the on-VM local registry, so override them to its paths; the host engine pulls them as FROM
+# stages through the insecure drop-in. The empty auth file satisfies the target's auth-file
+# check; the local registry needs no credentials.
 echo '{}' > /tmp/ega/empty-auth.json
 make nested-ci-appliance-image \
     BOOTC_BASE="${reg}/centos-bootc/centos-bootc:stream10" \
     FRR_IMAGE="${reg}/ocp/metallb-frr:latest" \
     NODE_EXPORTER_IMAGE="${reg}/ocp/prometheus-node-exporter:latest" \
-    CONTAINER_AUTH_FILE=/tmp/ega/empty-auth.json \
-    APPLIANCE_CI_BUILD_ARGS="--network=host -v /etc/containers/registries.conf.d/99-local.conf:/etc/containers/registries.conf.d/99-local.conf:ro"
+    CONTAINER_AUTH_FILE=/tmp/ega/empty-auth.json
 EOF
 
 # lane.sh: run the selected lane (repo-default image tags, so no EGA_* image overrides). Pin the
