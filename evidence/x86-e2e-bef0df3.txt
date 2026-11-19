@@ -1,0 +1,126 @@
+# x86 e2e on bef0df3 (2026-11-19), extracted lines
+>> e2e at bef0df3 CORENET-7708: Add the Direct Connect transport and preflight (+ local run_remote.sh scenario overlay); scenarios base:evpn.clab.yml,ipsec:evpn-ipsec.clab.yml,dx:evpn-dx.clab.yml
+>> EXTRA[base] CHECKMODE-FAIL: deploy --check
+>> EXTRA[base] CHECKMODE-PASS: health-check --check
+>> EXTRA[base] FAULT-PASS: F1 appliance FRR restart
+>> EXTRA[base] FAULT-PASS: F2 relay FRR restart
+>> EXTRA[base] FAULT-PASS: F3 appliance NetworkManager restart
+>> EXTRA[ipsec] CHECKMODE-FAIL: deploy --check
+>> EXTRA[ipsec] CHECKMODE-PASS: health-check --check
+>> EXTRA[ipsec] FAULT-PASS: F1 appliance FRR restart
+>> EXTRA[ipsec] FAULT-PASS: F2 relay FRR restart
+>> EXTRA[ipsec] FAULT-PASS: F3 appliance NetworkManager restart
+>> EXTRA[ipsec] FAULT-PASS: F4 VTEP drift repaired by deploy
+>> EXTRA[dx] CHECKMODE-FAIL: deploy --check
+>> EXTRA[dx] CHECKMODE-PASS: health-check --check
+>> EXTRA[dx] FAULT-PASS: F1 appliance FRR restart
+>> EXTRA[dx] FAULT-PASS: F2 relay FRR restart
+>> EXTRA[dx] FAULT-PASS: F3 appliance NetworkManager restart
+>> EXTRA[dx] FAULT-PASS: F4 VTEP drift repaired by deploy
+>> EXTRA[dx] FAULT-PASS: F5 DX link flap (REGRESSION: FRR-owned VPC routes)
+>> EXTRA[dx] FAULT-PASS: F5b short flaps (REGRESSION: interface-qualified FRR statics)
+>> EXTRA[dx] FAULT-PASS: F5c VPC routes do not fall back to mgmt during an outage
+>> EXTRA[dx] FAULT-PASS: F5c health passes after the outage
+>> EXTRA[dx] FAULT-PASS: F6 health fails with DX link down
+>> EXTRA[dx] FAULT-FAIL: F6b health recovers after link up
+>> EXTRA[dx] FAULT-PASS: F7 unsafe mtu_mode (last play: PLAY [Check the transport before deployment] ***********************************)
+>> EXTRA[dx] FAULT-PASS: F8 onprem_ip outside network_cidr (last play: PLAY [Check the transport before deployment] ***********************************)
+>> EXTRA[dx] FAULT-FAIL: F9 DX deploy with ack false
+>> EXTRA[dx] FAULT-FAIL: F11a degraded path passes with default (report-only) limits
+>> EXTRA[dx] FAULT-FAIL: F11b RTT limit 20 ms fails
+>> EXTRA[dx] FAULT-PASS: F11c loss limit 5% fails
+>> EXTRA[dx] FAULT-FAIL: F11d same limits pass once the path is clean
+>> EXTRA[dx] FAULT-FAIL: F12 concurrent deploy rc=4 health rc=2
+>> EXTRA[dx] FAULT-PASS: F13 recover after FRR kill
+>> EXTRA[dx] FAULT-PASS: F14a health fails with FRR stopped
+>> EXTRA[dx] FAULT-PASS: F14c FRR stopped: no VXLAN path out mgmt (route fallback with remote FDB left)
+>> EXTRA[dx] FAULT-PASS: F14b deploy restarts FRR and health passes
+>> EXTRA[dx] FAULT-PASS: F15 soak 5/5
+>> EXTRA[dx] FAULT-PASS: F16 1472-byte DF ping vm-production -> cloud gateway
+>> EXTRA[dx] FAULT-PASS: F17a health fails on a 1500 hop
+>> EXTRA[dx] FAULT-PASS: F17c health passes after restore
+>> EXTRA[dx] FAULT-PASS: F18 kernel route with mtu 1400 refused in preflight
+>> EXTRA[dx] FAULT-PASS: E1a 1549-byte DX link refused in preflight
+>> EXTRA[dx] FAULT-PASS: E1b 1550-byte DX link accepted
+>> EXTRA[dx] FAULT-PASS: E2 health fails with a 1500-byte far side
+>> EXTRA[dx] FAULT-PASS: E2b health passes after restore
+>> EXTRA[dx] FAULT-PASS: E3 health fails through a PMTU black hole
+>> EXTRA[dx] FAULT-FAIL: E4 health fails when only large frames are dropped
+>> EXTRA[dx] FAULT-PASS: E5 health fails with VXLAN blocked
+>> EXTRA[dx] FAULT-PASS: E3-E5 health passes after restore
+>> EXTRA[dx] FAULT-FAIL: E6 health fails one-way
+>> EXTRA[dx] FAULT-PASS: E6b health passes after restore
+>> EXTRA[dx] FAULT-PASS: E7 wrong egress refused in preflight
+>> EXTRA[dx] E10 health rc=2 in 83s (report: pass or fail, bounded)
+>> EXTRA[dx] FAULT-PASS: E10 health bounded (<900 s) during an outage
+>> EXTRA[dx] FAULT-FAIL: E10b health passes after the outage
+>> EXTRA[dx] FAULT-PASS: E14 health fails with a VTEP address conflict
+>> EXTRA[dx] FAULT-FAIL: E15 strict rp_filter
+>> EXTRA[dx] FAULT-FAIL: F20 kernel VPC route refused (FRR owns them)
+>> EXTRA[dx] FAULT-PASS: F21 next_hop behind a gateway (last play: PLAY [Check the transport before deployment] ***********************************)
+>> EXTRA[dx] FAULT-PASS: F22 kernel host route to next_hop refused (statics must resolve over the connected route)
+>> EXTRA[dx] FAULT-PASS: F24 more-specific kernel VPC route refused
+>> EXTRA[dx] FAULT-PASS: F25 next_hop = own address (last play: PLAY [Check the transport before deployment] ***********************************)
+>> EXTRA[dx] FAULT-FAIL: F23 FRR static routes for both VPCs
+>> EXTRA[dx] FAULT-FAIL: F10 clean after faults
+>> EXTRA[dx] FAULT-PASS: F19 teardown removes ega-vtep
+>> EXTRA[dx] FAULT-PASS: F19b no ega- NM profiles left
+run_remote: lane failed (rc=1)
+e2e rc=1
+
+# F6b/E10b/F20/F23 failure detail
+>> EXTRA[dx] FAULT-FAIL: F6b health recovers after link up
+   (from /tmp/extra-fault.log)
+failed: [workload-router] (item=10.42.1.2 → 10.42.1.1) => {"ansible_loop_var": "item", "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "2", "-W", "3", "-I", "10.42.1.2", "10.42.1.1"], "delta": "0:00:04.021452", "end": "2026-11-19 12:57:38.319712", "failed_when_result": true, "failed_when_suppressed_exception": "(traceback unavailable)", "item": {"cloud_gateway": "10.42.1.2", 
+failed: [workload-router] (item=10.42.2.2 → 10.42.2.1) => {"ansible_loop_var": "item", "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "2", "-W", "3", "-I", "10.42.2.2", "10.42.2.1"], "delta": "0:00:04.039512", "end": "2026-11-19 12:57:42.671817", "failed_when_result": true, "failed_when_suppressed_exception": "(traceback unavailable)", "item": {"cloud_gateway": "10.42.2.2", 
+failed: [workload-router] (item=10.42.3.2 → 10.42.3.1) => {"ansible_loop_var": "item", "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "2", "-W", "3", "-I", "10.42.3.2", "10.42.3.1"], "delta": "0:00:04.039036", "end": "2026-11-19 12:57:47.023423", "failed_when_result": true, "failed_when_suppressed_exception": "(traceback unavailable)", "item": {"cloud_gateway": "10.42.3.2", 
+fatal: [appliance-a]: FAILED! => {"attempts": 6, "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "3", "-W", "2", "-I", "10.44.44.1", "-M", "do", "-s", "1522", "10.200.0.1"], "delta": "0:00:04.081341", "end": "2026-11-19 12:58:48.230717", "msg": "The command exited with a non-zero return code.", "rc": 1, "start": "2026-11-19 12:58:44.149376", "stderr": "", "stderr_lines": [], 
+
+>> EXTRA[dx]: F7-F9 misconfiguration is rejected in the preflight play, before host changes
+
+>> EXTRA[dx] FAULT-FAIL: E10b health passes after the outage
+   (from /tmp/extra-fault.log)
+failed: [workload-router] (item=10.42.1.2 → 10.42.1.1) => {"ansible_loop_var": "item", "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "2", "-W", "3", "-I", "10.42.1.2", "10.42.1.1"], "delta": "0:00:04.060919", "end": "2026-11-19 13:33:18.927506", "failed_when_result": true, "failed_when_suppressed_exception": "(traceback unavailable)", "item": {"cloud_gateway": "10.42.1.2", 
+failed: [workload-router] (item=10.42.2.2 → 10.42.2.1) => {"ansible_loop_var": "item", "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "2", "-W", "3", "-I", "10.42.2.2", "10.42.2.1"], "delta": "0:00:04.018091", "end": "2026-11-19 13:33:23.279446", "failed_when_result": true, "failed_when_suppressed_exception": "(traceback unavailable)", "item": {"cloud_gateway": "10.42.2.2", 
+failed: [workload-router] (item=10.42.3.2 → 10.42.3.1) => {"ansible_loop_var": "item", "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "2", "-W", "3", "-I", "10.42.3.2", "10.42.3.1"], "delta": "0:00:04.052276", "end": "2026-11-19 13:33:27.631706", "failed_when_result": true, "failed_when_suppressed_exception": "(traceback unavailable)", "item": {"cloud_gateway": "10.42.3.2", 
+fatal: [appliance-a]: FAILED! => {"attempts": 6, "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "3", "-W", "2", "-I", "10.44.44.1", "-M", "do", "-s", "1522", "10.200.0.1"], "delta": "0:00:04.067306", "end": "2026-11-19 13:34:28.647337", "msg": "The command exited with a non-zero return code.", "rc": 1, "start": "2026-11-19 13:34:24.580031", "stderr": "", "stderr_lines": [], 
+
+>> EXTRA[dx]: E14 VTEP address conflict on the far side: health fails
+
+>> EXTRA[dx] FAULT-FAIL: F20 kernel VPC route refused (FRR owns them)
+   (from /tmp/extra-e.log)
+    "msg": "All assertions passed"
+fatal: [appliance-a]: FAILED! => {
+    "msg": "Direct Connect needs tunnel.next_hop 10.99.0.1, another host on a directly connected subnet, not the trunk, of at least 1550 bytes (most specific route: {'dst': '10.99.0.0/30', 'dev': 'eth1', 'protocol': 'kernel', 'scope': 'link', 'prefsrc': '10.99.0.2', 'metric': 101, 'flags': []}; MTU 8500), and no routes within the VPC CIDRs but FRR's, which owns them (found: ['10.100.0.0/16 proto b
+
+>> EXTRA[dx]: F21 next_hop not on-link: deploy refused in preflight
+>> EXTRA[dx] FAULT-PASS: F21 next_hop behind a gateway (last play: PLAY [Check the transport before deployment] ***********************************)
+
+>> EXTRA[dx] FAULT-FAIL: F23 FRR static routes for both VPCs
+   (from /tmp/extra-misconf.log)
+    "msg": "All assertions passed"
+fatal: [appliance-a]: FAILED! => {
+    "msg": "Direct Connect needs tunnel.next_hop 10.99.0.2, another host on a directly connected subnet, not the trunk, of at least 1550 bytes (most specific route: {'dst': '10.99.0.0/30', 'dev': 'eth1', 'protocol': 'kernel', 'scope': 'link', 'prefsrc': '10.99.0.2', 'metric': 101, 'flags': []}; MTU 8500), and no routes within the VPC CIDRs but FRR's, which owns them (found: [])."
+
+>> EXTRA[dx]: F10 health and deploy after all faults
+>> EXTRA[dx] FAULT-FAIL: F10 clean after faults
+
+>> EXTRA[dx] FAULT-FAIL: F10 clean after faults
+   (from /tmp/extra-final.log)
+    "msg": "All assertions passed"
+    "msg": "All assertions passed"
+    "msg": "All assertions passed"
+fatal: [appliance-a]: FAILED! => {"attempts": 6, "changed": false, "changed_when_result": false, "cmd": ["ping", "-c", "3", "-W", "2", "-I", "10.44.44.1", "-M", "do", "-s", "1522", "10.200.0.1"], "delta": "0:00:03.065811", "end": "2026-11-19 13:41:33.719029", "msg": "The command exited with a non-zero return code.", "rc": 1, "start": "2026-11-19 13:41:30.653218", "stderr": "ping: sendmsg: Message 
+
+>> EXTRA[dx]: teardown
+
+# F14c output
+>> EXTRA[dx] FAULT-PASS: F14a health fails with FRR stopped
+   10.100.0.1 via 10.99.0.1 dev eth1 src 10.99.0.2 uid 0 
+    cache 
+   remote VTEP fdb entries: 6
+>> EXTRA[dx] FAULT-PASS: F14c FRR stopped: no VXLAN path out mgmt (route fallback with remote FDB left)
+# gates
+86a98dd CORENET-7501: Add the read-only transport prefligh rc=0  sanity=24
+73756b5 CORENET-7708: Add the Direct Connect transport and rc=0 0 of 72 cases failed sanity=24
+b964eaa Merge commit 'refs/tmp/pr50' into HEAD rc=0 0 of 72 cases failed sanity=24

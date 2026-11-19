@@ -44,7 +44,10 @@ frr_up() { local i; for i in $(seq 1 $(( ${2:-90} / 5 ))); do
 	pm exec "clab-ega-evpn-$1" podman exec frr vtysh -c 'show bgp summary json' 2>/dev/null | grep -Eq '"state": ?"Established"' && return 0; sleep 5; done; return 1; }
 # Save/restore the appliance's kernel route for a prefix (empty before = delete after).
 kr_save() { _kr=$(pm exec clab-ega-evpn-appliance ip route show "$1" | head -1); }
-kr_restore() { pm exec clab-ega-evpn-appliance ip route del "$1" 2>/dev/null || true; [ -n "$_kr" ] && pm exec clab-ega-evpn-appliance sh -c "ip route add $_kr"; true; }
+# A saved FRR route (nhid, proto 196/186) can't be re-added by hand: restart FRR so zebra reinstalls it.
+kr_restore() { pm exec clab-ega-evpn-appliance ip route del "$1" 2>/dev/null || true
+	case "$_kr" in "") ;; *nhid*|*"proto 196"*|*"proto 186"*|*"proto static"*|*"proto bgp"*) pm exec clab-ega-evpn-appliance systemctl restart frr-container; frr_up appliance;;
+	*) pm exec clab-ega-evpn-appliance sh -c "ip route add $_kr";; esac; true; }
 # Overlay state on both EVPN ends, for diagnosing a failed recovery.
 evpn_diag() { for n in appliance relay; do echo "--- $n"; pm exec clab-ega-evpn-$n podman exec frr vtysh -c 'show evpn vni' -c 'show bgp l2vpn evpn summary' -c 'show bgp l2vpn evpn route type multicast' 2>&1 | head -60
 	pm exec clab-ega-evpn-$n sh -c 'bridge fdb show | grep 00:00:00:00:00:00; ip -d -br link show type vxlan; ip -d link show | grep -m3 -o "vxlan id [0-9]* local [0-9.]*"; podman ps --format "{{.Names}} {{.Status}}"' 2>&1 | head -30; done; }
@@ -180,7 +183,7 @@ if [ "$scenario" = dx ]; then
 	step "F20 kernel route shadowing an FRR-owned VPC route: deploy refused in preflight"
 	kr_save 10.100.0.0/16; pm exec clab-ega-evpn-appliance ip route replace 10.100.0.0/16 via 10.99.0.1
 	dep; r=$?; kr_restore 10.100.0.0/16
-	[ $r != 0 ] && inpre && grep -q 'FRR owns' /tmp/extra-e.log; fres $? "F20 kernel VPC route refused (FRR owns them)"
+	[ $r != 0 ] && inpre && grep -q 'which owns them' /tmp/extra-e.log; fres $? "F20 kernel VPC route refused (FRR owns them)"
 	step "F21 next_hop not on-link: deploy refused in preflight"
 	misconf "F21 next_hop behind a gateway" '{"tunnel":{"type":"direct-connect","mtu_mode":"safe","onprem_ip":"10.44.44.1","network_cidr":"10.44.44.0/24","next_hop":"10.200.0.1"}}' '10.200.0.1'
 	step "F22 kernel host route to next_hop (mtu 1400): deploy refused in preflight"
@@ -194,7 +197,7 @@ if [ "$scenario" = dx ]; then
 	step "F25 next_hop is the appliance's own uplink address: deploy refused in preflight"
 	misconf "F25 next_hop = own address" '{"tunnel":{"type":"direct-connect","mtu_mode":"safe","onprem_ip":"10.44.44.1","network_cidr":"10.44.44.0/24","next_hop":"10.99.0.2"}}' '10.99.0.2'
 	step "F23 FRR statics present for both VPC CIDRs"
-	pm exec clab-ega-evpn-appliance podman exec frr vtysh -c 'show ip route static' | grep -c '10\.\(100\|200\)\.0\.0/16' | grep -qx 2; fres $? "F23 FRR static routes for both VPCs"
+	pm exec clab-ega-evpn-appliance podman exec frr vtysh -c 'show ip route static' | grep -E '10\.(100|200)\.0\.0/16' | grep -c 'via 10\.99\.0\.1' | grep -qx 2; fres $? "F23 FRR static routes for both VPCs"
 	step "F10 health and deploy after all faults"
 	ee_playbook network.evpn_gateway.deploy > /tmp/extra-final.log 2>&1 && hc; fres $? "F10 clean after faults"
 fi
