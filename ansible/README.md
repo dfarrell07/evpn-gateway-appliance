@@ -70,8 +70,8 @@ The machine running these playbooks needs:
   containers.podman.
 - **Python** — 3.12 is the current CI-tested controller baseline. A supported
   ansible-core/Python/AAP matrix remains to be defined. Install `boto3`/`botocore`
-  for the amazon.aws modules and `netaddr` for the ansible.utils IP filters:
-  `pip install -r requirements.txt`.
+  for the amazon.aws modules, `awscli` for `evpn_aws_infra`'s `aws ec2` calls and
+  `netaddr` for the ansible.utils IP filters: `pip install -r requirements.txt`.
 - **System** — `wireguard-tools` (the WireGuard key pair is generated on the
   control node); see `bindep.txt`.
 - **AWS** — credentials available in your environment for
@@ -163,7 +163,6 @@ ownership):
   filtering) — only a defensive `maximum-prefix` backstop. Needs
   Networking to design the actual policy
   (source-audit.md §1, "No BGP policy or limits").
-- `evpn_aws_infra` requires the AWS CLI on the control node.
 - `frr_exporter`/`node_exporter` metrics endpoints are unauthenticated on
   every interface (`network: host`, no listen-address binding, no host
   firewall) — how this should be locked down in production is not yet
