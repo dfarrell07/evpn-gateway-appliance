@@ -95,14 +95,18 @@ These alerts do not detect:
 - Ethernet-segment designated-forwarder state;
 - WireGuard peer liveness: node-exporter has no WireGuard collector, and `wg0` carrier does
   not show it; BGP to the relay and the opt-in probe give indirect evidence;
+- appliance-side IPsec Child SA state: `ipsecN` carrier does not show it; BGP to each AWS
+  tunnel's inside address and EGAVpnTunnelDown give the evidence;
 - path latency beyond the opt-in probe's RTT to one overlay target, which no alert reads; AWS
   publishes no DX or VPN latency metric.
 
 ## Appliance, VLANs and tunnels
 
 `dashboards/appliance.json` shows node-exporter scrape status; the operstate, carrier and
-carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; the
-traffic, drops and errors of the non-bridge ones; and overlay path probe RTT.
+carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N`, `wg0` and `ipsecN` devices;
+the traffic, drops and errors of the non-bridge ones; and overlay path probe RTT. `ipsecN`
+devices count a few transmit drops when created and occasional single drops after (IPv6 router
+solicitations that no IPv4-only IPsec policy carries); only a sustained rate matters.
 
 The data comes from node-exporter. The bootc image runs it on `127.0.0.1:9100`, so scraping it
 from another host needs the access path from CORENET-7704. On other hosts `evpn_monitoring`
@@ -112,13 +116,13 @@ runs it in a container without a listen address, so it listens on every interfac
 To use it:
 
 1. Scrape node-exporter with any job name. The dashboard lists the jobs and instances that
-   report a `vxlanN` or `wg0` device, so it does not list an appliance with no stretch and no
-   tunnel, or a target that was down for the whole time range.
+   report a `vxlanN`, `wg0` or `ipsecN` device, so it does not list an appliance with no stretch
+   and no tunnel, or a target that was down for the whole time range.
 2. Import `dashboards/appliance.json` and select the Prometheus data source, jobs and
    instances.
 
-The carrier-changes panel counts per interval, as described under FRR and EVPN. VXLAN, WireGuard
-and `br-vniN` devices report carrier whenever they are administratively up, so
+The carrier-changes panel counts per interval, as described under FRR and EVPN. VXLAN, WireGuard,
+IPsec and `br-vniN` devices report carrier whenever they are administratively up, so
 their carrier does not show path loss; trunk loss shows on `trunk-br` and `trunk.N`. Traffic
 leaves out the bridges: `br-vniN` counters miss bridged frames, and `trunk.N` already counts
 the stretch traffic that `trunk-br` delivers.
@@ -131,7 +135,8 @@ the stretch traffic that `trunk-br` delivers.
 - `grafana/aws-transport-alerts.yaml`: three Grafana-managed alerts, one per state panel.
 
 A Direct Connect connection can end on a customer router and a VPN backup can keep EVPN BGP up,
-so FRR metrics cannot see these failures.
+so FRR metrics cannot see these failures. An EGA appliance that terminates the VPN itself also
+reports each tunnel's BGP session.
 
 To use them:
 

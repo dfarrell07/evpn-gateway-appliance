@@ -597,3 +597,43 @@ tests:
       - expr: ALERTS{alertname="EGABfdPeerFlapping",instance="df"}
         eval_time: 25m
         exp_samples: []
+
+  # The 1d lookback keeps a target that reported collector status earlier in the day alerting.
+  - name: A target down for hours still fires EGAFrrMetricsDown within the day
+    input_series:
+      - series: up{job="frr",instance="edge-a"}
+        values: 1+0x2 0+0x240
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="bgp"}
+        values: 1+0x2 stale
+    promql_expr_test:
+      - expr: count(ALERTS{alertname="EGAFrrMetricsDown",alertstate="firing"})
+        eval_time: 3h
+        exp_samples:
+          - value: 1
+
+  # EGAFrrMetricsDown matches on job and instance, so node-exporter down on an FRR host does not fire it.
+  - name: Another job down on the same instance does not fire EGAFrrMetricsDown
+    input_series:
+      - series: up{job="frr",instance="edge-a"}
+        values: 1+0x22
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="bgp"}
+        values: 1+0x22
+      - series: up{job="node",instance="edge-a"}
+        values: 0+0x22
+    promql_expr_test:
+      - expr: ALERTS{alertname="EGAFrrMetricsDown"}
+        eval_time: 10m
+        exp_samples: []
+
+  # A 10m window catches one gathering error every 7m; a 5m window would let it lapse.
+  - name: One gathering error every 7m keeps EGAFrrMetricsGatherErrors firing
+    input_series:
+      - series: frrk8s_scrape_success{job="frr",instance="edge-a",collector="bgp"}
+        values: 1+0x40
+      - series: promhttp_metric_handler_errors_total{job="frr",instance="edge-a",cause="gathering"}
+        values: 0 0 0 0 0 0 0 1 1 1 1 1 1 1 2 2 2 2 2 2 2 3 3 3 3 3 3 3 4 4 4 4 4 4 4 5 5 5 5 5 5
+    promql_expr_test:
+      - expr: count(ALERTS{alertname="EGAFrrMetricsGatherErrors",alertstate="firing"})
+        eval_time: 30m
+        exp_samples:
+          - value: 1

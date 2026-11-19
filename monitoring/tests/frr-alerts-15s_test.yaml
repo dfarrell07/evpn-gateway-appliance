@@ -27,3 +27,16 @@ tests:
               runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabfdsessiondown
               netobserv_io_network_health: '{}'
               description: 'frr/edge-a: peer peer-down in VRF blue reports BFD down for 30s.'
+
+  # The flapping window is 10m: one flap every 5m reaches 2 at most and never fires.
+  - name: One BGP or BFD flap every 5m never fires the flapping alerts
+    interval: 15s
+    input_series:
+      - series: frrk8s_bgp_opens_sent{job="frr",instance="edge-a",peer="p",vrf="default"}
+        values: 10+0x19 11+0x19 12+0x19 13+0x19 14+0x19 15+0x19 16+0x19 17+0x19
+      - series: frrk8s_bfd_session_down_events{job="frr",instance="edge-a",peer="p",vrf="default"}
+        values: 10+0x19 11+0x19 12+0x19 13+0x19 14+0x19 15+0x19 16+0x19 17+0x19
+    promql_expr_test:
+      - expr: max_over_time(ALERTS{alertstate="firing"}[40m])
+        eval_time: 40m
+        exp_samples: []
