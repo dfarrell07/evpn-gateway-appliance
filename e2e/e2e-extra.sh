@@ -40,6 +40,9 @@ fres() { if [ "$1" = 0 ]; then echo ">> EXTRA[$scenario] FAULT-PASS: $2"; else e
 # Wait (up to $2 s) until node $1 runs the frr container and has an Established BGP session.
 frr_up() { local i; for i in $(seq 1 $(( ${2:-90} / 5 ))); do
 	pm exec "clab-ega-evpn-$1" podman exec frr vtysh -c 'show bgp summary json' 2>/dev/null | grep -Eq '"state": ?"Established"' && return 0; sleep 5; done; return 1; }
+# Save/restore the appliance's kernel route for a prefix (empty before = delete after).
+kr_save() { _kr=$(pm exec clab-ega-evpn-appliance ip route show "$1" | head -1); }
+kr_restore() { pm exec clab-ega-evpn-appliance ip route del "$1" 2>/dev/null || true; [ -n "$_kr" ] && pm exec clab-ega-evpn-appliance sh -c "ip route add $_kr"; true; }
 # Overlay state on both EVPN ends, for diagnosing a failed recovery.
 evpn_diag() { for n in appliance relay; do echo "--- $n"; pm exec clab-ega-evpn-$n podman exec frr vtysh -c 'show evpn vni' -c 'show bgp l2vpn evpn summary' -c 'show bgp l2vpn evpn route type multicast' 2>&1 | head -60
 	pm exec clab-ega-evpn-$n sh -c 'bridge fdb show | grep 00:00:00:00:00:00; ip -d -br link show type vxlan; ip -d link show | grep -m3 -o "vxlan id [0-9]* local [0-9.]*"; podman ps --format "{{.Names}} {{.Status}}"' 2>&1 | head -30; done; }
@@ -110,9 +113,10 @@ if [ "$scenario" = dx ]; then
 	pm exec clab-ega-evpn-tgw ip link set eth2 mtu 9500; pm exec clab-ega-evpn-appliance ip route flush cache
 	hc; fres $? "F17c health passes after restore"
 	step "F18 route MTU metric 1400 toward the workload: deploy refused in preflight"
-	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 10.99.0.1 mtu 1400
-	ee_playbook network.evpn_gateway.deploy > /tmp/extra-f18.log 2>&1; r=$?; grep -q 'allows 1400' /tmp/extra-f18.log && [ $r != 0 ]; fres $? "F18 route mtu 1400 rejected"
-	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 10.99.0.1
+	kr_save 10.200.0.0/16; pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 10.99.0.1 mtu 1400
+	ee_playbook network.evpn_gateway.deploy > /tmp/extra-f18.log 2>&1; r=$?
+	[ $r != 0 ] && grep -E '^PLAY \[' /tmp/extra-f18.log | tail -1 | grep -q 'Check the transport before deployment'; fres $? "F18 kernel route with mtu 1400 refused in preflight"
+	kr_restore 10.200.0.0/16
 	# Round 10 chaos cases (E*): non-fatal, each restores what it changes.
 	dep() { ee_playbook network.evpn_gateway.deploy > /tmp/extra-e.log 2>&1; }
 	inpre() { grep -E '^PLAY \[' /tmp/extra-e.log | tail -1 | grep -q 'Check the transport before deployment'; }
@@ -142,8 +146,8 @@ if [ "$scenario" = dx ]; then
 	pm exec clab-ega-evpn-relay ip route del 10.44.44.0/24; hc; r=$?; pm exec clab-ega-evpn-relay ip route replace 10.44.44.0/24 via 10.100.0.2
 	[ $r != 0 ]; fres $? "E6 health fails one-way"; hc; fres $? "E6b health passes after restore"
 	step "E7 wrong egress (workload VPC via the 1500-byte mgmt network): deploy refused in preflight"
-	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 172.20.20.1; dep; r=$?
-	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 10.99.0.1
+	kr_save 10.200.0.0/16; pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 172.20.20.1; dep; r=$?
+	kr_restore 10.200.0.0/16
 	[ $r != 0 ] && inpre; fres $? "E7 wrong egress refused in preflight"
 	step "E10 DX outage during a health check: fails in bounded time, next passes"
 	t0=$(date +%s); ( sleep 5; pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 60; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2 ) & op=$!
