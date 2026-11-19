@@ -41,7 +41,6 @@ CASES = [
     # 0, the role default, means the operator did not declare it.
     ("undeclared MTU (0)", "play.yml", vars_(ttype="wireguard", evpn_health_check_workload_mtu=0, **ACK), "Set evpn_health_check_workload_mtu"),
     ("second host over the budget", "play.yml", vars_(ttype="ipsec", second_workload_mtu=1389, **ACK), "budget of"),
-    ("direct-connect rejected", "play.yml", vars_(ttype="direct-connect"), "must be one of"),
     # Provisioning runs the preflight on localhost, which may not see per-appliance addresses.
     ("provisioning on localhost", "play.yml", vars_(tunnel={"type": "wireguard"}, **ACK), None),
     # The health check's loss and RTT baseline on canned iputils summaries.

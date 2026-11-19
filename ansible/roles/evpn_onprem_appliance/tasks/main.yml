@@ -65,6 +65,46 @@
 - name: Configure on-prem networking
   ansible.builtin.include_tasks: nm_networking.yml
 
+# ── Direct Connect ─────────────────────────────────────────────
+# The static routes name the uplink, so they return after a carrier flap even when NetworkManager
+# installs the uplink's subnet route.
+- name: Find the Direct Connect uplink
+  ansible.builtin.command: ip -j route get {{ tunnel.next_hop }}
+  register: _evpn_onprem_appliance_dx_uplink
+  changed_when: false
+  check_mode: false
+  when: tunnel.type == 'direct-connect'
+
+# As the preflight requires: should the uplink lose its carrier since, the lookup falls through to another route,
+# and FRR would route the VPCs out of the wrong interface.
+- name: Require tunnel.next_hop directly connected on the uplink
+  ansible.builtin.assert:
+    that:
+      - _evpn_onprem_appliance_dx_route.type | default('unicast') == 'unicast'
+      - _evpn_onprem_appliance_dx_route.gateway is not defined
+      - _evpn_onprem_appliance_dx_route.dev is defined
+    fail_msg: >-
+      tunnel.next_hop {{ tunnel.next_hop }} is no longer directly connected on the uplink
+      ({{ _evpn_onprem_appliance_dx_route }}); check the uplink's carrier and address, then rerun the deploy.
+  vars:
+    _evpn_onprem_appliance_dx_route: "{{ (_evpn_onprem_appliance_dx_uplink.stdout | default('[{}]', true) | from_json)[0] }}"
+  when: tunnel.type == 'direct-connect'
+
+# Traffic to the VPCs leaves from tunnel.onprem_ip, which is not on the uplink's subnet. With the default
+# arp_announce 0 the ARP request for tunnel.next_hop would name it as the sender, which routers may ignore;
+# 2 names the uplink's own address.
+- name: Send ARP requests from the uplink's own address
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.arp_announce
+    value: "2"
+    sysctl_file: /etc/sysctl.d/99-ega-direct-connect.conf
+    reload: true
+  when: tunnel.type == 'direct-connect'
+
+- name: Undo the Direct Connect ARP setting
+  ansible.builtin.include_tasks: dx_arp_clear.yml
+  when: tunnel.type != 'direct-connect'
+
 # ── FRR ────────────────────────────────────────────────────────
 - name: Reconcile FRR configuration
   ansible.builtin.include_role:

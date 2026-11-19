@@ -5,3 +5,5 @@
 _evpn_health_check_workload_mtu_budget:
   wireguard: 1370
   ipsec: 1388
+  # The safe-mode contract: the path carries 1550 bytes (the on-premises MTU is the customer's).
+  direct-connect: 1500

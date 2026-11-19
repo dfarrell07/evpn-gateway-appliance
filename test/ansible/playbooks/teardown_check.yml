@@ -1,7 +1,9 @@
 ---
 # After network.evpn_gateway.teardown: the appliance keeps no IPsec kernel objects of the role's (XFRM states and
 # policies with if_id 1 or 2, and the ipsec1 and ipsec2 interfaces). Then, with Libreswan stopped, the role's IPsec
-# removal retries an if_id 1 leftover while its configuration remains, and leaves one alone once it is gone.
+# removal retries an if_id 1 leftover while its configuration remains, and leaves one alone once it is gone. No FRR
+# static routes (protocol 196) outlive the teardown, and undoing the Direct Connect ARP setting restores only that
+# key, from the host's own sysctl files.
 - name: Check the appliance teardown
   hosts: onprem_appliances
   become: true
@@ -12,6 +14,8 @@
       set -o pipefail; for kind in state policy; do
       ip xfrm $kind | awk '/^[[:space:]]*if_id 0x[12]([[:space:]]|$)/ {n++} END {print n+0}'; done
     leftover: src 192.0.2.10/32 dst 198.51.100.0/24 dir out if_id 1
+    arp_test_files: [/etc/sysctl.d/97-ega-test-arp.conf, /etc/sysctl.d/98-ega-test-arp.conf,
+                     /etc/sysctl.d/98-ega-test-unrelated.conf]
   tasks:
     - name: "TEARDOWN [onprem]: Count leftover IPsec XFRM states and policies"
       ansible.builtin.shell: "{{ count_owned }}"
@@ -96,3 +100,45 @@
     - name: "TEARDOWN [onprem]: Delete the if_id 1 policy"
       ansible.builtin.command: "ip xfrm policy delete {{ leftover }}"
       changed_when: true
+
+    - name: "TEARDOWN [onprem]: No FRR static routes remain"
+      ansible.builtin.command: ip -N -j route show proto 196
+      register: _ega_frr_routes
+      changed_when: false
+      failed_when: _ega_frr_routes.rc != 0 or _ega_frr_routes.stdout | from_json | length > 0
+
+    - name: "TEARDOWN [onprem]: Undoing the Direct Connect ARP setting touches no other key"
+      block:
+        # A Direct Connect host whose own files set arp_announce (last in the "-" and "/" form sysctl also takes),
+        # and a configured key whose running value differs.
+        - name: "TEARDOWN [onprem]: Plant the Direct Connect ARP file, a host ARP value and an unrelated key"
+          ansible.builtin.shell: >-
+            set -e;
+            echo 'net.ipv4.conf.all.arp_announce = 2' > /etc/sysctl.d/99-ega-direct-connect.conf;
+            echo 'net.ipv4.conf.all.arp_announce = 3' > /etc/sysctl.d/97-ega-test-arp.conf;
+            echo '-net/ipv4/conf/all/arp_announce = 1' > /etc/sysctl.d/98-ega-test-arp.conf;
+            echo 'net.ipv4.tcp_keepalive_probes = 5' > /etc/sysctl.d/98-ega-test-unrelated.conf;
+            sysctl -q -w net.ipv4.conf.all.arp_announce=2 net.ipv4.tcp_keepalive_probes=7
+          changed_when: true
+
+        - name: "TEARDOWN [onprem]: Undo the Direct Connect ARP setting"
+          ansible.builtin.include_role:
+            name: network.evpn_gateway.evpn_onprem_appliance
+            tasks_from: dx_arp_clear
+
+        - name: "TEARDOWN [onprem]: arp_announce is the host's 1 and the unrelated key keeps its running 7"
+          ansible.builtin.command: sysctl -n net.ipv4.conf.all.arp_announce net.ipv4.tcp_keepalive_probes
+          register: _ega_sysctl
+          changed_when: false
+          failed_when: _ega_sysctl.stdout_lines != ['1', '7']
+      always:
+        - name: "TEARDOWN [onprem]: Remove the planted files"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop: "{{ arp_test_files + ['/etc/sysctl.d/99-ega-direct-connect.conf'] }}"
+
+        # 0 and 9 are the kernel defaults.
+        - name: "TEARDOWN [onprem]: Restore both keys' defaults"
+          ansible.builtin.command: sysctl -q -w net.ipv4.conf.all.arp_announce=0 net.ipv4.tcp_keepalive_probes=9
+          changed_when: true

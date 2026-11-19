@@ -3,7 +3,8 @@
 # Usage: ansible-playbook playbooks/preflight.yml
 
 - name: Check the transport before deployment
-  # Every host in the run, including under --limit; the checks only read inventory.
+  # Every host in the run, including under --limit. The checks change nothing; direct-connect also reads the
+  # appliance's routes.
   hosts: all
   gather_facts: false
   any_errors_fatal: true
