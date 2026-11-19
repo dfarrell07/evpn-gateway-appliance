@@ -110,6 +110,10 @@ TGWs and instances; no association on GW. Real error text from AWS for malformed
 7. LPM experiment (round-8 design #1, decides a simplification): with the S2 association present, run
    `aws ec2 search-transit-gateway-routes --transit-gateway-route-table-id <rt> --filters Name=route-search.longest-prefix-match,Values=10.44.44.1/32 Name=state,Values=active,blackhole`
    and record whether AWS accepts the combined filters and what it returns with no covering route. If it behaves, dx_status can drop its Jinja longest-match.
+8. Overlap observation (round-9 LOW, deferred): while the S2 stack exists, try
+   `aws ec2 create-route --route-table-id <infra VPC rt> --destination-cidr-block 10.100.44.0/24 --transit-gateway-id $TGW`
+   (more specific than the VPC's local 10.100.0.0/16) and record whether AWS refuses it and with what text, then delete it if created.
+   If AWS refuses, a preflight check that tunnel.network_cidr doesn't overlap the VPC CIDRs is worth adding (every transport).
 
 ## Teardown and leak checks (always, also on failure)
 
