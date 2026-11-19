@@ -26,3 +26,6 @@ evpn_aws_infra_vpn_customer_gateway_asn: 65044
 evpn_aws_infra_vpn_tunnel_inside_cidrs:
   - 169.254.10.0/30
   - 169.254.11.0/30
+
+# tunnel.type direct-connect: the customer's existing DX gateway (see the role README).
+evpn_aws_infra_dx_gateway_id: ""

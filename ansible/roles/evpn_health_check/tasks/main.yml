@@ -42,7 +42,7 @@
   changed_when: false
   when:
     - "'cloud_infra' in group_names"
-    - tunnel.type != 'ipsec'
+    - tunnel.type == 'wireguard'
 
 - name: "HEALTH [infra]: EVPN prefixes relayed from on-prem"
   ansible.builtin.shell: >
@@ -114,6 +114,19 @@
     label: "{{ item.cloud_gateway }} → {{ item.onprem_gateway }}"
   when: "'cloud_workload' in group_names"
 
+# Echo replies leave with DF clear, so the appliance's ping (direct_connect.yml) proves only the forward path:
+# probe the return path the same way, 1522 bytes of ICMP payload + 28 bytes of headers.
+- name: "HEALTH [workload]: Direct Connect return path carries 1550-byte packets"
+  ansible.builtin.command: ping -c 3 -W 2 -I {{ private_ip }} -M do -s 1522 {{ tunnel.onprem_ip }}
+  changed_when: false
+  register: _evpn_health_check_dx_return_ping
+  until: _evpn_health_check_dx_return_ping.rc == 0
+  retries: 6
+  delay: 5
+  when:
+    - "'cloud_workload' in group_names"
+    - tunnel.type == 'direct-connect'
+
 # ═══════════════════════════════════════════════════════════════
 # On-prem appliance checks
 # ═══════════════════════════════════════════════════════════════
@@ -136,13 +149,19 @@
   changed_when: false
   when:
     - "'onprem_appliances' in group_names"
-    - tunnel.type != 'ipsec'
+    - tunnel.type == 'wireguard'
 
 - name: Check on-prem IPsec health
   ansible.builtin.include_tasks: ipsec.yml
   when:
     - "'onprem_appliances' in group_names"
     - tunnel.type == 'ipsec'
+
+- name: Check on-prem Direct Connect health
+  ansible.builtin.include_tasks: direct_connect.yml
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'direct-connect'
 
 - name: "HEALTH [onprem]: remote VTEP present per VNI"
   ansible.builtin.shell: >

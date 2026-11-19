@@ -66,13 +66,43 @@ without; inner TCP MSS 1348 for IPv4, 1328 for IPv6, at 1388); AWS VPN does not 
 ([VPN quotas](https://docs.aws.amazon.com/vpn/latest/s2svpn/vpn-limits.html)). There is no
 MTU/MSS/DF control yet (CORENET-7709).
 
+## AWS Direct Connect (`tunnel.type: direct-connect`)
+
+Not yet qualified on a real circuit (CORENET-7498). The customer's network
+carries the underlay: a customer router terminates the transit VIF's BGP session
+(AWS requires MD5, which FIPS-mode kernels disable), routes
+`tunnel.network_cidr` to the appliance and advertises it over the VIF; every hop
+from the appliance to the VIF carries 1550-byte packets unfragmented. Set
+`tunnel.next_hop` to that router's address on the appliance's uplink: FRR routes
+`infra_vpc_cidr` and `workload_vpc_cidr` to it, naming the uplink that reaches
+it; as for IPsec, policy rules drop VPC traffic while the uplink is down. Add no
+other routes or policy routing for those CIDRs (kernel, NetworkManager or
+another daemon); the preflight refuses any route in the main table that FRR did
+not install, so run `teardown.yml` before switching from another transport. As
+for IPsec, a change to a VPC CIDR, `tunnel.onprem_ip` or `tunnel.network_cidr`
+also needs `teardown.yml` first, since nmstate keeps the old policy rules, and a
+prefix change needs AWS reprovisioning too. The role does not configure the
+uplink, which must not be `trunk_interface`: give it an address on
+`tunnel.next_hop`'s subnet, outside `tunnel.network_cidr` and the VPC CIDRs, and
+an MTU of at least 1550. It sets `net.ipv4.conf.all.arp_announce` to 2, so
+ARP requests on the uplink carry the uplink's address rather than the VTEP's
+(teardown or another transport restores the host's own value). It
+configures no tunnel and no underlay BGP. As with
+IPsec, nmstate owns `ega-vtep` (`tunnel.onprem_ip/32`), and the EVPN neighbor is
+the relay's `private_ip`, with source `tunnel.onprem_ip` and only the `l2vpn
+evpn` address family; both ends use `ebgp-multihop 255`, since the customer's
+routed path has an unknown hop count. `tunnel.cloud_ip` and `tunnel.port` are
+not used. It serves one appliance without multihoming (CORENET-7502). VXLAN and
+the EVPN BGP session cross the customer network and the circuit unencrypted and
+unauthenticated. MACsec on the customer's dedicated connection covers only
+the cross-connect, not the appliance's link to the router; for encryption between
+the appliance and the TGW, use the IPsec transport.
+
 ## Known limitations (tracked, not fixed by this role)
 
 - The on-prem networking (nmstate, `tasks/nm_networking.yml`) is exercised by
   the Molecule lane against a veth stand-in trunk; it is not yet validated
   against actual hardware or a real tagged customer trunk (source-audit.md).
-- `direct-connect` is not implemented yet (CORENET-7708), so the argument specs reject it:
-  WireGuard's paths would add a TGW static route that overrides routes learned over Direct Connect.
 - WireGuard and EVPN have no inbound/outbound route policy beyond a
   defensive EVPN `maximum-prefix`; IPsec underlay IPv4 has the VPC/VTEP prefix
   lists described above. See the comment at the top of
