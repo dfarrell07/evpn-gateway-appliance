@@ -69,8 +69,24 @@ RUN tmp="$(mktemp -d)" && \
 # exports the base images to tarballs. iproute/iputils/tcpdump/nmap-ncat: dataplane probes.
 RUN dnf install -y podman-remote skopeo openssh-clients iproute iputils tcpdump nmap-ncat && dnf clean all
 
-# containerlab, pinned. 0.81.1 is the latest release as of 2026-10-19.
-RUN bash -c "$(curl -fsSL https://get.containerlab.dev)" -- -v 0.81.1
+# containerlab, pinned. 0.81.1 is the latest release as of 2026-10-19. This does what
+# get.containerlab.dev does for a tarball install (SUID binary, clab_admins group), but
+# checks the release checksum and fails the build if the download fails.
+RUN case "$(uname -m)" in \
+        x86_64) arch=amd64; sha256=3a257dc329774dff598c7f1277bb7c2723f76ff620cdab33f83a9f381f4e64ae ;; \
+        aarch64) arch=arm64; sha256=3a4c0188583d9a72b96a4eb0903a49d4bfa9e23e7d5b3f37355da815364ad334 ;; \
+        *) echo "unsupported containerlab architecture" >&2; exit 1 ;; \
+    esac && \
+    tmp="$(mktemp -d)" && \
+    curl -fsSL "https://github.com/srl-labs/containerlab/releases/download/v0.81.1/containerlab_0.81.1_linux_$arch.tar.gz" -o "$tmp/containerlab.tar.gz" && \
+    echo "$sha256  $tmp/containerlab.tar.gz" > "$tmp/sha256sum" && \
+    sha256sum -c "$tmp/sha256sum" && \
+    tar -xzf "$tmp/containerlab.tar.gz" -C "$tmp" containerlab && \
+    install -m 4755 "$tmp/containerlab" /usr/bin/containerlab && \
+    groupadd -r clab_admins && \
+    mkdir -p /etc/containerlab && touch /etc/containerlab/suid_setup_done && \
+    rm -rf "$tmp" && \
+    containerlab version
 
 # Python test toolchain. testinfra pinned to latest (10.2.2, 2026-10-19); pytest pinned
 # conservatively for broad testinfra compatibility. molecule drives the role suite
