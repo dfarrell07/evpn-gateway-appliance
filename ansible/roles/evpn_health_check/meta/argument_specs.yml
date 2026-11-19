@@ -52,6 +52,12 @@ argument_specs:
         description: >-
           Highest average round-trip time, in milliseconds, from the VTEP address to the workload VTEP that health
           checks accept; unset records the RTT without a limit.
+      evpn_health_check_dx_telemetry:
+        type: bool
+        default: false
+        description: >-
+          Run the controller-side Direct Connect checks (dx_status) for direct-connect; see the evpn_aws_infra README
+          for what they check and the credentials they need.
       evpn_health_check_vpn_telemetry:
         type: bool
         default: false
@@ -61,16 +67,17 @@ argument_specs:
         required: true
         required_if:
           - [type, wireguard, [cloud_ip]]
+          - [type, direct-connect, [next_hop]]
         description: >-
           Transport configuration parameters for the tunnel between on-prem and
-          cloud; WireGuard uses cloud_ip/onprem_ip, while IPsec checks the
-          two IPv4 underlay peers.
+          cloud; WireGuard uses cloud_ip/onprem_ip, IPsec checks the two IPv4
+          underlay peers, and the direct-connect preflight checks next_hop.
         options:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec]
-            description: Transport type. Determines which transport-specific checks run. direct-connect awaits CORENET-7708.
+            choices: [wireguard, ipsec, direct-connect]
+            description: Transport type. Determines which transport-specific checks run.
           cloud_ip:
             type: str
             description: WireGuard tunnel address of the infra relay. Checked as the on-prem appliance's BGP peer for wireguard.
@@ -83,17 +90,30 @@ argument_specs:
             description: WireGuard listen port. Part of the shared playbook configuration model; not used by this role.
           network_cidr:
             type: str
-            description: CIDR covering the tunnel addresses (onprem_ip and cloud_ip). Part of the shared playbook configuration model; not used by this role.
+            description: CIDR covering the tunnel addresses (onprem_ip and cloud_ip). The direct-connect preflight requires onprem_ip inside it.
+          next_hop:
+            type: str
+            description: >-
+              Direct Connect only; the customer router's address on the appliance's uplink: another host on a
+              directly connected subnet, outside network_cidr, as the preflight requires.
           mtu_mode:
             type: str
             choices: [safe, unsafe]
-            description: Intended underlay MTU regime. Part of the shared playbook configuration model; not used by this role.
+            description: Intended underlay MTU regime. The preflight requires safe for direct-connect until CORENET-7709.
   preflight:
     short_description: Read-only transport checks that block provisioning and deployment.
     description:
       - Run by provision-aws.yml before it creates anything, and by playbooks/preflight.yml, which deploy.yml imports first.
     options:
       tunnel: *tunnel
+      infra_vpc_cidr:
+        type: str
+        default: 10.100.0.0/16
+        description: CIDR of the infra VPC; for direct-connect, only FRR may route within it on the appliance.
+      workload_vpc_cidr:
+        type: str
+        default: 10.200.0.0/16
+        description: CIDR of the workload VPC; for direct-connect, only FRR may route within it on the appliance.
       evpn_health_check_accept_internet_mode_limits:
         type: bool
         default: false

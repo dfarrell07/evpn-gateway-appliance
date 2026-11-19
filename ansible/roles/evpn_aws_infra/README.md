@@ -54,6 +54,45 @@ Each VPN connection and its public IPv4 addresses bill hourly whether or not
 tunnels come up. After a failed or abandoned run, remove them with
 `ansible-playbook playbooks/teardown-aws.yml`.
 
+## AWS Direct Connect (`tunnel.type: direct-connect`)
+
+The customer provisions the DX connection, transit VIFs and DX gateway; the
+role never creates or deletes them. Set `evpn_aws_infra_dx_gateway_id` to an
+existing DX gateway whose Amazon-side ASN differs from the TGW's default `64512`,
+with only transit VIFs attached, each readable by this account at MTU 8500 (AWS
+can use any of them), and at least one `available` with every IPv4 BGP peer `up`.
+
+Before creating anything, `tasks/dx_preflight.yml` checks the gateway, its
+associations and the VIFs (the transport preflight checks `safe` MTU mode).
+Provisioning then associates the gateway with the TGW, allowing exactly the two
+VPC CIDRs (what AWS advertises to on-premises), and routes `tunnel.network_cidr`
+from the infra VPC through the TGW; the TGW's default route table propagates
+the routes the customer advertises over the VIFs. Rerunning provisioning fails
+at preflight until teardown removes the earlier association.
+
+`DescribeVirtualInterfaces` returns each VIF's BGP MD5 key; every call selects
+only the fields it needs, so the key is never registered or logged. Keep AWS
+CLI client-side history disabled: `cli_history=enabled` records the full response.
+
+Provisioning needs `directconnect:DescribeDirectConnectGatewayAttachments`,
+`directconnect:DescribeVirtualInterfaces`,
+`directconnect:DescribeDirectConnectGateways`,
+`directconnect:DescribeDirectConnectGatewayAssociations` and
+`directconnect:CreateDirectConnectGatewayAssociation`.
+
+## Read-only Direct Connect checks (`tasks_from: dx_status`)
+
+Rechecks the VIFs, then requires the project TGW's association to allow both VPC
+CIDRs and the most specific TGW route (active or blackhole) to
+`tunnel.onprem_ip` to use the DX attachment, which proves the customer router
+advertises `tunnel.network_cidr` or an aggregate covering it. Health checks run
+it on the controller with the `onprem_appliances` hosts' `evpn_aws_infra_*` and
+`tunnel` variables (set them in `group_vars/all.yml`, not with `-e` at
+provisioning); it needs `directconnect:DescribeDirectConnectGatewayAttachments`,
+`directconnect:DescribeVirtualInterfaces`,
+`directconnect:DescribeDirectConnectGatewayAssociations`,
+`ec2:DescribeTransitGateways` and `ec2:SearchTransitGatewayRoutes`.
+
 ## Read-only VPN handoff (`tasks_from: vpn_handoff`)
 
 Reads the existing **available** VPNs tagged `Project: <project>` and
@@ -124,13 +163,19 @@ The inside address assignment follows the AWS
 
 ## Teardown
 
-For every transport, `tasks/teardown.yml` first deletes the project's VPN
+For every transport, `tasks/teardown.yml` first deletes the project TGWs' Direct
+Connect gateway associations (above), then the project's VPN
 connections (by `Project` tag and `<project>-vpn-*` or `<project>-cgw-*` name) and waits for them, then its customer gateways
 with the AWS CLI (`amazon.aws` has no customer gateway module), before the
 instances, TGW attachments and gateways, regardless of the current `tunnel.type`.
 Teardown therefore needs the AWS CLI and `ec2:DescribeVpnConnections`,
 `ec2:DeleteVpnConnection`, `ec2:DescribeTransitGatewayAttachments` (it waits for the VPN attachments
-to go), `ec2:DescribeCustomerGateways` and `ec2:DeleteCustomerGateway` in every mode.
+to go and finds the Direct Connect associations), `ec2:DescribeCustomerGateways` and
+`ec2:DeleteCustomerGateway` in every mode, plus `directconnect:DescribeDirectConnectGatewayAssociations` and
+`directconnect:DeleteDirectConnectGatewayAssociation` when a Direct Connect
+association exists. If provisioning stopped before AWS created the TGW's DX
+attachment, teardown cannot find the association yet; when TGW deletion then
+fails, run teardown again.
 
 ## Known limitations (tracked, not fixed by this role)
 
@@ -138,3 +183,5 @@ to go), `ec2:DescribeCustomerGateways` and `ec2:DeleteCustomerGateway` in every 
   compatibility was the prototype's rationale); `tasks/teardown.yml` mostly
   uses `amazon.aws` modules (customer gateways use the CLI), so the two paths are inconsistent today.
 - VPN supports TGW only; a VGW would need provisioning, routing and handoff changes.
+- Direct Connect associates a DX gateway in the same account only; a gateway in
+  another account needs an association proposal its owner accepts.

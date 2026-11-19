@@ -27,7 +27,6 @@ check "exceeds the" '{"ttype": "wireguard", "evpn_health_check_accept_internet_m
 check "" '{"ttype": "ipsec", "evpn_health_check_accept_internet_mode_limits": true, "evpn_health_check_workload_mtu": 1388}'
 check "exceeds the" '{"ttype": "ipsec", "evpn_health_check_accept_internet_mode_limits": true, "evpn_health_check_workload_mtu": 1389}'
 check "exceeds the" '{"ttype": "ipsec", "evpn_health_check_accept_internet_mode_limits": true, "second_workload_mtu": 1389}'
-check "must be one of" '{"ttype": "direct-connect"}'
 # The health check's loss and RTT baseline on canned iputils summaries.
 play=baseline.yml
 BASELINE_DIR=$(mktemp -d) || exit 1

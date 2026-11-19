@@ -42,7 +42,7 @@
   changed_when: false
   when:
     - "'cloud_infra' in group_names"
-    - tunnel.type != 'ipsec'
+    - tunnel.type == 'wireguard'
 
 - name: "HEALTH [infra]: EVPN prefixes relayed from on-prem"
   ansible.builtin.shell: >
@@ -137,13 +137,19 @@
   changed_when: false
   when:
     - "'onprem_appliances' in group_names"
-    - tunnel.type != 'ipsec'
+    - tunnel.type == 'wireguard'
 
 - name: Check on-prem IPsec health
   ansible.builtin.include_tasks: ipsec.yml
   when:
     - "'onprem_appliances' in group_names"
     - tunnel.type == 'ipsec'
+
+- name: Check on-prem Direct Connect health
+  ansible.builtin.include_tasks: direct_connect.yml
+  when:
+    - "'onprem_appliances' in group_names"
+    - tunnel.type == 'direct-connect'
 
 - name: "HEALTH [onprem]: remote VTEP present per VNI"
   ansible.builtin.shell: >

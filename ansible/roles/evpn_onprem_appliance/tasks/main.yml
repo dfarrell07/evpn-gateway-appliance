@@ -105,6 +105,17 @@
     mode: "0644"
     content: "service integrated-vtysh-config\n"
 
+# The static routes name the uplink, so they return after a carrier flap even when NetworkManager
+# installs the uplink's subnet route.
+- name: Find the Direct Connect uplink
+  ansible.builtin.command: ip -j route get {{ tunnel.next_hop }}
+  register: _evpn_onprem_appliance_dx_uplink
+  changed_when: false
+  check_mode: false
+  # The transport preflight requires next_hop on a connected subnet; never route via a gateway's device.
+  failed_when: _evpn_onprem_appliance_dx_uplink.rc != 0 or (_evpn_onprem_appliance_dx_uplink.stdout | from_json)[0].gateway is defined
+  when: tunnel.type == 'direct-connect'
+
 - name: Deploy FRR config (on-prem VTEP)
   ansible.builtin.template:
     src: frr-onprem-appliance.conf.j2

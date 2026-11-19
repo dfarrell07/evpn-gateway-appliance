@@ -2,7 +2,7 @@
 #
 # Consumed by ansible-builder when building an execution environment, and recognized
 # by galaxy-importer. boto3/botocore back the amazon.aws modules.
-# netaddr backs the ansible.utils IP filters. awscli backs evpn_aws_infra's `aws ec2` calls.
+# netaddr backs the ansible.utils IP filters. awscli backs evpn_aws_infra's AWS CLI calls.
 awscli
 boto3
 botocore

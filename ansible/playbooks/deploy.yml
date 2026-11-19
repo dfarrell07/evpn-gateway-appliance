@@ -5,18 +5,28 @@
 - name: Run the read-only transport preflight
   ansible.builtin.import_playbook: preflight.yml
 
-- name: Check and load the IPsec handoff
+- name: Check the appliances and load the IPsec handoff
   hosts: onprem_appliances
   gather_facts: false
   any_errors_fatal: true
   tasks:
     # Before any host changes.
-    - name: Gate IPsec with multihoming on CORENET-7502
+    - name: Gate IPsec and Direct Connect with multihoming on CORENET-7502
       ansible.builtin.assert:
         that:
           - not (multihoming.enabled | default(false) | bool)
-        fail_msg: tunnel.type ipsec with multihoming is gated until CORENET-7502 qualifies active-active forwarding over it.
-      when: tunnel.type == 'ipsec'
+        fail_msg: >-
+          tunnel.type {{ tunnel.type }} with multihoming is gated until CORENET-7502 qualifies active-active
+          forwarding over it.
+      when: tunnel.type != 'wireguard'
+
+    # Direct Connect uses the one VTEP address (tunnel.onprem_ip) and one relay peering to it.
+    - name: Require one appliance for Direct Connect
+      ansible.builtin.assert:
+        that: groups['onprem_appliances'] | length == 1
+        fail_msg: tunnel.type direct-connect supports one on-premises appliance.
+      run_once: true
+      when: tunnel.type == 'direct-connect'
 
     # Each appliance advertises its own VTEP network to AWS, so the TGW routes each VTEP to its own VPN.
     # The workload imports EVPN routes for the shared onprem ASN only.

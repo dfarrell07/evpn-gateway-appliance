@@ -136,6 +136,11 @@ node runs Libreswan responders and FRR in place of the AWS VPN endpoint, with a 
 test-only handoff. It does not prove AWS telemetry, NAT-T, rekey or maintenance behavior,
 ECMP or route limits.
 
+`EGA_SCENARIO=dx EGA_TOPOLOGY=evpn-dx.clab.yml` runs the Direct Connect scenario: a plain
+routed 8500-byte link from the appliance to the TGW node stands in for the customer router,
+transit VIF and DX gateway, in `safe` MTU mode. It does not prove the AWS Direct Connect
+checks, VIF BGP, MD5, route limits or failover.
+
 ## run_remote.sh — remote target (or local, no target)
 
 ### Execution model

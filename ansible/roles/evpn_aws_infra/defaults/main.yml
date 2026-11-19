@@ -26,3 +26,7 @@ evpn_aws_infra_vpn_customer_gateway_asn: 65044
 evpn_aws_infra_vpn_tunnel_inside_cidrs:
   - 169.254.10.0/30
   - 169.254.11.0/30
+
+# AWS Direct Connect (tunnel.type: direct-connect). The customer provisions the connection,
+# transit VIFs and DX gateway; the role associates the gateway with its TGW.
+evpn_aws_infra_dx_gateway_id: ""
