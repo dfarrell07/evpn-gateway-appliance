@@ -172,7 +172,7 @@ if [ "$EGA_TOPOLOGY" = evpn-7503.clab.yml ]; then
 			fi
 			output="$(podman-remote --url "unix://${EGA_RUNTIME_SOCK}" exec \
 				"clab-ega-7503-${side}" "${command[@]}" 2>&1 || true)"
-			if ! grep -qE '0([.]0)?% packet loss' <<<"$output"; then
+			if ! grep -qE '[[:space:]]0([.]0+)?% packet loss([[:space:]]|$)' <<<"$output"; then
 				echo "ERROR: ${side}/${namespace:-workload} cannot reach ${address} with ${relay} FRR down" >&2
 				echo "$output" >&2
 				failed=1
