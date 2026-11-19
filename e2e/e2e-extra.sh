@@ -63,6 +63,9 @@ fi
 if [ "$scenario" = dx ]; then
 	step "F5 DX link flap (10 s down): health recovers"
 	pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 10; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2; hc; fres $? "F5 DX link flap (REGRESSION: FRR-owned VPC routes)"
+	step "F5b short DX link flaps (3 s, x3; shorter than NetworkManager's carrier grace): health recovers"
+	for i in 1 2 3; do pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 3; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2; sleep 20; done
+	hc; r=$?; fres $r "F5b short flaps (REGRESSION: interface-qualified FRR statics)"; [ $r = 0 ] || evpn_diag
 	step "F6 DX link down: health must fail"
 	pm exec clab-ega-evpn-tgw ip link set eth3 down; hc; r=$?; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2
 	[ $r != 0 ]; fres $? "F6 health fails with DX link down"; grep -m2 'fatal:' /tmp/extra-fault.log | cut -c1-240
