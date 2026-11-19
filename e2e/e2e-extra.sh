@@ -1,5 +1,5 @@
 # Test-only extra steps (DX laptop), inserted into entrypoint_e2e.sh before its final `exit 0`.
-pm() { podman-remote --url "unix://${EGA_RUNTIME_SOCK}" "$@"; }
+pm() { if [ -n "${EGA_RUNTIME_SOCK:-}" ] && command -v podman-remote >/dev/null; then podman-remote --url "unix://${EGA_RUNTIME_SOCK}" "$@"; else podman "$@"; fi; }
 step() { echo; echo ">> EXTRA[$scenario]: $*"; }
 xfail() { echo ">> EXTRA[$scenario] FAIL: $*"; exit 1; }
 # A collection playbook FQCN can't contain "-", so health-check.yml runs by its path in the EE.
@@ -116,6 +116,8 @@ if [ "$scenario" = dx ]; then
 	[ -z "$(pm exec clab-ega-evpn-appliance nmcli -g NAME con show | grep '^ega-')" ]; fres $? "F19b no ega- NM profiles left"
 fi
 step "redeploy after teardown"
+# Lane hook (Mac FCOS VM re-mask) if defined; the sleep clears frr-container's 10 s start limit (known on main; #51 removes the unit).
+type fixvar >/dev/null 2>&1 && fixvar; sleep 15
 if ! ee_playbook network.evpn_gateway.deploy; then relay_journal; xfail "redeploy after teardown failed"; fi
 ee_playbook network.evpn_gateway_test.healthcheck
 echo ">> EXTRA[$scenario]: all extra steps passed"
