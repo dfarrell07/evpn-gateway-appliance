@@ -2,16 +2,18 @@
 pm() { podman-remote --url "unix://${EGA_RUNTIME_SOCK}" "$@"; }
 step() { echo; echo ">> EXTRA[$scenario]: $*"; }
 xfail() { echo ">> EXTRA[$scenario] FAIL: $*"; exit 1; }
+# A collection playbook FQCN can't contain "-", so health-check.yml runs by its path in the EE.
+HCPB=/usr/share/ansible/collections/ansible_collections/network/evpn_gateway/playbooks/health-check.yml
 relay_journal() { pm exec clab-ega-evpn-relay journalctl -u frr-container --no-pager -n 60 || true; }
 step "rerun deploy (idempotence report)"
 ee_playbook network.evpn_gateway.deploy | tee /tmp/extra-rerun.log
 grep -A8 'PLAY RECAP' /tmp/extra-rerun.log || true
 step "health-check playbook"
-ee_playbook network.evpn_gateway.health-check
+ee_playbook "$HCPB"
 step "deploy and health-check under --check (must pass on a deployed fabric)"
 saved_args=("${scenario_args[@]}"); scenario_args+=(--check)
 if ! ee_playbook network.evpn_gateway.deploy > /tmp/extra-check.log 2>&1; then echo ">> EXTRA[$scenario] CHECKMODE-FAIL: deploy --check"; grep -E "fatal:|PLAY \[" /tmp/extra-check.log | tail -6 | cut -c1-300; else echo ">> EXTRA[$scenario] CHECKMODE-PASS: deploy --check"; fi
-if ! ee_playbook network.evpn_gateway.health-check >> /tmp/extra-check.log 2>&1; then echo ">> EXTRA[$scenario] CHECKMODE-FAIL: health-check --check"; grep -E "fatal:|PLAY \[" /tmp/extra-check.log | tail -6 | cut -c1-300; else echo ">> EXTRA[$scenario] CHECKMODE-PASS: health-check --check"; fi
+if ! ee_playbook "$HCPB" >> /tmp/extra-check.log 2>&1; then echo ">> EXTRA[$scenario] CHECKMODE-FAIL: health-check --check"; grep -E "fatal:|PLAY \[" /tmp/extra-check.log | tail -6 | cut -c1-300; else echo ">> EXTRA[$scenario] CHECKMODE-PASS: health-check --check"; fi
 scenario_args=("${saved_args[@]}")
 grep -A8 'PLAY RECAP' /tmp/extra-check.log | tail -9 || true
 if [ "$scenario" = dx ]; then
@@ -27,14 +29,14 @@ if [ "$scenario" = dx ]; then
 	pm exec clab-ega-evpn-appliance ip link set eth1 mtu 8500
 	step "TGW loses the on-prem VTEP route: health must fail, then pass once restored"
 	pm exec clab-ega-evpn-tgw ip route del 10.44.44.0/24 via 10.99.0.2
-	if ee_playbook network.evpn_gateway.health-check > /tmp/extra-route.log 2>&1; then xfail "health passed without the route"; fi
+	if ee_playbook "$HCPB" > /tmp/extra-route.log 2>&1; then xfail "health passed without the route"; fi
 	grep -E 'fatal:' /tmp/extra-route.log | head -2 | cut -c1-200
 	pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2
-	ee_playbook network.evpn_gateway.health-check
+	ee_playbook "$HCPB"
 fi
 # Round 8 fault cases: non-fatal, each prints FAULT-PASS/FAULT-FAIL so later steps still run.
 fres() { if [ "$1" = 0 ]; then echo ">> EXTRA[$scenario] FAULT-PASS: $2"; else echo ">> EXTRA[$scenario] FAULT-FAIL: $2"; fi; }
-hc() { ee_playbook network.evpn_gateway.health-check > /tmp/extra-fault.log 2>&1; }
+hc() { ee_playbook "$HCPB" > /tmp/extra-fault.log 2>&1; }
 step "F1 restart frr-container on the appliance, health recovers"
 pm exec clab-ega-evpn-appliance systemctl restart frr-container; hc; fres $? "F1 appliance FRR restart"
 step "F2 restart frr-container on the relay, health recovers"
