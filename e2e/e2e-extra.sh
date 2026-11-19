@@ -106,6 +106,50 @@ if [ "$scenario" = dx ]; then
 	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 10.99.0.1 mtu 1400
 	ee_playbook network.evpn_gateway.deploy > /tmp/extra-f18.log 2>&1; r=$?; grep -q 'allows 1400' /tmp/extra-f18.log && [ $r != 0 ]; fres $? "F18 route mtu 1400 rejected"
 	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 10.99.0.1
+	# Round 10 chaos cases (E*): non-fatal, each restores what it changes.
+	dep() { ee_playbook network.evpn_gateway.deploy > /tmp/extra-e.log 2>&1; }
+	inpre() { grep -E '^PLAY \[' /tmp/extra-e.log | tail -1 | grep -q 'Check the transport before deployment'; }
+	mtu2() { pm exec clab-ega-evpn-tgw ip link set eth3 mtu "$1"; pm exec clab-ega-evpn-appliance ip link set eth1 mtu "$2"; }
+	step "E1 MTU boundary: 1549 refused in preflight, 1550 accepted"
+	mtu2 1549 1549; dep; r=$?; [ $r != 0 ] && inpre; fres $? "E1a 1549-byte DX link refused in preflight"
+	mtu2 1550 1550; dep; fres $? "E1b 1550-byte DX link accepted"
+	mtu2 8500 8500
+	step "E2 one-sided MTU (customer side 1500, appliance 8500): health fails, restore passes"
+	mtu2 1500 8500; hc; r=$?; [ $r != 0 ]; fres $? "E2 health fails with a 1500-byte far side"
+	mtu2 8500 8500; pm exec clab-ega-evpn-appliance ip route flush cache; hc; fres $? "E2b health passes after restore"
+	if pm exec clab-ega-evpn-tgw sh -c 'command -v iptables' >/dev/null 2>&1; then
+		ipt() { pm exec clab-ega-evpn-tgw iptables "$@"; }
+		step "E3 PMTU black hole (1500 hop, ICMP frag-needed dropped): health fails"
+		pm exec clab-ega-evpn-tgw ip link set eth2 mtu 1500; ipt -I FORWARD -p icmp --icmp-type fragmentation-needed -j DROP
+		hc; r=$?; [ $r != 0 ]; fres $? "E3 health fails through a PMTU black hole"
+		ipt -D FORWARD -p icmp --icmp-type fragmentation-needed -j DROP; pm exec clab-ega-evpn-tgw ip link set eth2 mtu 9500; pm exec clab-ega-evpn-appliance ip route flush cache
+		step "E4 large frames dropped, small pass: health fails (probe really sends 1550)"
+		ipt -I FORWARD -m length --length 1400:65535 -j DROP; hc; r=$?; ipt -D FORWARD -m length --length 1400:65535 -j DROP
+		[ $r != 0 ]; fres $? "E4 health fails when only large frames are dropped"
+		step "E5 VXLAN blocked, ICMP allowed: health fails"
+		ipt -I FORWARD -p udp --dport 4789 -j DROP; hc; r=$?; ipt -D FORWARD -p udp --dport 4789 -j DROP
+		[ $r != 0 ]; fres $? "E5 health fails with VXLAN blocked"
+		hc; fres $? "E3-E5 health passes after restore"
+	else echo ">> EXTRA[$scenario] FAULT-SKIP: E3-E5 iptables unavailable on the tgw node"; fi
+	step "E6 one-way path (relay loses its route to the on-prem VTEP network): health fails"
+	pm exec clab-ega-evpn-relay ip route del 10.44.44.0/24; hc; r=$?; pm exec clab-ega-evpn-relay ip route replace 10.44.44.0/24 via 10.100.0.2
+	[ $r != 0 ]; fres $? "E6 health fails one-way"; hc; fres $? "E6b health passes after restore"
+	step "E7 wrong egress (workload VPC via the 1500-byte mgmt network): deploy refused in preflight"
+	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 172.20.20.1; dep; r=$?
+	pm exec clab-ega-evpn-appliance ip route replace 10.200.0.0/16 via 10.99.0.1
+	[ $r != 0 ] && inpre; fres $? "E7 wrong egress refused in preflight"
+	step "E10 DX outage during a health check: fails in bounded time, next passes"
+	t0=$(date +%s); ( sleep 5; pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 60; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2 ) & op=$!
+	hc; r=$?; wait $op; el=$(( $(date +%s) - t0 ))
+	echo ">> EXTRA[$scenario] E10 health rc=$r in ${el}s (report: pass or fail, bounded)"; [ $el -lt 900 ]; fres $? "E10 health bounded (<900 s) during an outage"
+	hc; fres $? "E10b health passes after the outage"
+	step "E14 VTEP address conflict on the far side: health fails"
+	pm exec clab-ega-evpn-tgw ip addr add 10.44.44.1/32 dev lo; hc; r=$?; pm exec clab-ega-evpn-tgw ip addr del 10.44.44.1/32 dev lo
+	[ $r != 0 ]; fres $? "E14 health fails with a VTEP address conflict"
+	step "E15 strict rp_filter on the appliance: health and 1472 DF workload ping pass"
+	pm exec clab-ega-evpn-appliance sysctl -qw net.ipv4.conf.all.rp_filter=1 net.ipv4.conf.eth1.rp_filter=1
+	hc && pm exec clab-ega-evpn-appliance ip netns exec vm-production ping -c 3 -W 2 -M do -s 1472 10.42.1.2 >/dev/null; fres $? "E15 strict rp_filter"
+	pm exec clab-ega-evpn-appliance sysctl -qw net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.eth1.rp_filter=0
 	step "F10 health and deploy after all faults"
 	ee_playbook network.evpn_gateway.deploy > /tmp/extra-final.log 2>&1 && hc; fres $? "F10 clean after faults"
 fi
