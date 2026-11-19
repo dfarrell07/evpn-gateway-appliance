@@ -30,6 +30,7 @@ roles/
 playbooks/
 ├── deploy.yml                      Full deploy, idempotent
 ├── health-check.yml                Validation only
+├── preflight.yml                   Read-only transport checks (deploy.yml runs them first)
 ├── provision-aws.yml               Provision AWS infra, update inventory
 ├── teardown.yml                    Remove appliance/relay/VTEP configuration
 └── teardown-aws.yml                Destroy AWS infrastructure (irreversible)
@@ -132,6 +133,10 @@ ones (`tunnel`, `bgp`, `stretches`) are normally set once in
   (disposable labs only). See that role's README.
 - **`evpn_aws_infra_aws_region`** — cross-check it matches the region you intend to
   provision in.
+- **`evpn_health_check_accept_internet_mode_limits`** must be `true` for WireGuard or
+  IPsec: `provision-aws.yml` and `deploy.yml` first run the read-only transport
+  preflight, which fails without it and lists the limits.
+  See the [`evpn_health_check` README](roles/evpn_health_check/README.md#transport-preflight-tasks_from-preflight).
 
 ## Known limitations (tracked, not all fixed here)
 

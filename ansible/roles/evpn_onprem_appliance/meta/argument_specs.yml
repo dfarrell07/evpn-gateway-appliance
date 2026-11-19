@@ -60,7 +60,6 @@ argument_specs:
         required: true
         required_if:
           - [type, wireguard, [port, cloud_ip]]
-          - [type, direct-connect, [cloud_ip]]
         description: >-
           Transport configuration parameters for the tunnel between on-prem and
           cloud; type, onprem_ip, cloud_ip, port and network_cidr are used to
@@ -69,7 +68,7 @@ argument_specs:
           type:
             type: str
             required: true
-            choices: [wireguard, ipsec, direct-connect]
+            choices: [wireguard, ipsec]
             description: Transport type. Determines which transport-specific configuration is applied.
           onprem_ip:
             type: str
