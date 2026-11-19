@@ -39,7 +39,7 @@ fres() { if [ "$1" = 0 ]; then echo ">> EXTRA[$scenario] FAULT-PASS: $2"; else e
 	local l; l=$(ls -t /tmp/extra-*.log 2>/dev/null | head -1); [ -n "$l" ] && { echo "   (from $l)"; grep -m4 -E 'fatal:|FAILED!|"msg"' "$l" | cut -c1-400; }; fi; }
 # Wait (up to $2 s) until node $1 runs the frr container and has an Established BGP session.
 frr_up() { local i; for i in $(seq 1 $(( ${2:-90} / 5 ))); do
-	pm exec "clab-ega-evpn-$1" podman exec frr vtysh -c 'show bgp summary json' 2>/dev/null | grep -q '"state":"Established"' && return 0; sleep 5; done; return 1; }
+	pm exec "clab-ega-evpn-$1" podman exec frr vtysh -c 'show bgp summary json' 2>/dev/null | grep -Eq '"state": ?"Established"' && return 0; sleep 5; done; return 1; }
 # Overlay state on both EVPN ends, for diagnosing a failed recovery.
 evpn_diag() { for n in appliance relay; do echo "--- $n"; pm exec clab-ega-evpn-$n podman exec frr vtysh -c 'show evpn vni' -c 'show bgp l2vpn evpn summary' -c 'show bgp l2vpn evpn route type multicast' 2>&1 | head -60
 	pm exec clab-ega-evpn-$n sh -c 'bridge fdb show | grep 00:00:00:00:00:00; ip -d -br link show type vxlan; ip -d link show | grep -m3 -o "vxlan id [0-9]* local [0-9.]*"; podman ps --format "{{.Names}} {{.Status}}"' 2>&1 | head -30; done; }
