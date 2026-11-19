@@ -66,6 +66,12 @@ if [ "$scenario" = dx ]; then
 	step "F5b short DX link flaps (3 s, x3; shorter than NetworkManager's carrier grace): health recovers"
 	for i in 1 2 3; do pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 3; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2; sleep 20; done
 	hc; r=$?; fres $r "F5b short flaps (REGRESSION: interface-qualified FRR statics)"; [ $r = 0 ] || evpn_diag
+	step "F5c no mgmt leak: during an uplink outage, VPC-bound traffic must not route via eth0"
+	pm exec clab-ega-evpn-tgw ip link set eth3 down; sleep 5
+	leak=$(pm exec clab-ega-evpn-appliance ip route get 10.100.0.1 2>&1; pm exec clab-ega-evpn-appliance ip route get 10.200.0.1 2>&1)
+	pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2
+	echo "$leak" | sed 's/^/   /'; ! echo "$leak" | grep -q 'dev eth0'; fres $? "F5c VPC routes do not fall back to mgmt during an outage"
+	sleep 20; hc; fres $? "F5c health passes after the outage"
 	step "F6 DX link down: health must fail"
 	pm exec clab-ega-evpn-tgw ip link set eth3 down; hc; r=$?; pm exec clab-ega-evpn-tgw ip link set eth3 up; pm exec clab-ega-evpn-tgw ip route replace 10.44.44.0/24 via 10.99.0.2
 	[ $r != 0 ]; fres $? "F6 health fails with DX link down"; grep -m2 'fatal:' /tmp/extra-fault.log | cut -c1-240
