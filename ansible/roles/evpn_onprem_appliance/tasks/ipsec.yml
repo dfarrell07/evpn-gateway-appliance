@@ -68,7 +68,7 @@
     _evpn_onprem_appliance_ipsec_peers: >-
       {%- set peers = [] -%}
       {%- for t in evpn_onprem_appliance_ipsec.tunnels | sort(attribute='inside_cidr') -%}
-      {%- set _ = peers.append({'aws_inside_ip': t.inside_cidr | ansible.utils.ipmath(1),
+      {%- set _ = peers.append({'aws_inside_ip': t.inside_cidr | ansible.utils.ipmath(1), 'outside_ip': t.outside_ip,
                                'cgw_inside_ip': t.inside_cidr | ansible.utils.ipmath(2), 'aws_bgp_asn': t.aws_bgp_asn}) -%}
       {%- endfor -%}
       {{ peers }}
