@@ -201,13 +201,18 @@ EOF
 # lane.sh: run the selected lane (repo-default image tags, so no EGA_* image overrides). Pin each
 # scenario's work and artifact directory so sequential scenarios cannot reuse stale state. Pass the
 # entrypoint through so run.sh runs the e2e or the molecule in-container script.
+lane_topology="${EGA_TOPOLOGY}"
+if [[ "${lane_topology}" == evpn.clab.yml ]]; then lane_topology=""; fi
+lane_inventory="${EGA_INVENTORY}"
+if [[ "${lane_inventory}" == inventory ]]; then lane_inventory=""; fi
 cat > "${WORK}/lane.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd /tmp/ega/build
 scenarios="${EGA_SCENARIOS:-}"
 if [ -z "\$scenarios" ]; then
-    scenarios="${EGA_SCENARIO:-base}:${EGA_TOPOLOGY:-evpn.clab.yml}:${EGA_INVENTORY:-inventory}"
+    # Empty fields (the defaults) take the scenario's own topology and inventory.
+    scenarios="${EGA_SCENARIO:-base}:${lane_topology}:${lane_inventory}"
 fi
 
 rc=0
@@ -219,8 +224,8 @@ for entry in "\${entries[@]}"; do
     scenario="\${entry%%:*}"
     rest="\${entry#*:}"
     if [ "\$rest" = "\$entry" ]; then
-        # A bare scenario uses the normal topology and its scenario-specific inventory.
-        topology="evpn.clab.yml"
+        # A bare scenario uses its scenario-specific topology and inventory.
+        topology=""
         inventory=""
     elif [[ "\$rest" == *:* ]]; then
         # A three-field entry explicitly selects scenario, topology, and inventory.
@@ -231,6 +236,12 @@ for entry in "\${entries[@]}"; do
         # scenario-specific inventory default.
         topology="\$rest"
         inventory=""
+    fi
+    if [ -z "\$topology" ]; then
+        case "\$scenario" in
+            relay-ha) topology="evpn-7503.clab.yml" ;;
+            *) topology="evpn.clab.yml" ;;
+        esac
     fi
     if [ -z "\$inventory" ]; then
         case "\$scenario" in
