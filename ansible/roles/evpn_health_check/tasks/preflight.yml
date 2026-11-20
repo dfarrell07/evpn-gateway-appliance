@@ -100,17 +100,22 @@
           - _evpn_health_check_dx_link.protocol | default('') == 'kernel'
           - _evpn_health_check_dx_link.scope | default('') == 'link'
           # A unicast host: not one of the appliance's own addresses or the subnet's broadcast address.
-          - (_evpn_health_check_dx_nh_get.stdout | default('[{}]', true) | from_json)[0].type | default('unicast') == 'unicast'
+          - _evpn_health_check_dx_get.type | default('unicast') == 'unicast'
+          # Deploy names the device of the kernel's full lookup, which policy rules can send elsewhere.
+          - _evpn_health_check_dx_get.dev | default('') == _evpn_health_check_dx_link.dev | default('')
+          - _evpn_health_check_dx_get.gateway is not defined
           # nmstate enslaves the trunk to trunk-br, which would drop the uplink's address.
           - _evpn_health_check_dx_link.dev | default('') not in [trunk_interface | default(''), 'trunk-br']
           - _evpn_health_check_dx_mtu.stdout | default(0) | int >= 1550
           - _evpn_health_check_dx_foreign_routes | length == 0
         fail_msg: >-
           Direct Connect needs tunnel.next_hop {{ tunnel.next_hop }} to be another host on a directly connected uplink
-          (not the trunk) with an MTU of at least 1550 (most specific route: {{ _evpn_health_check_dx_link }}; MTU
+          (not the trunk) with an MTU of at least 1550 (most specific route: {{ _evpn_health_check_dx_link }};
+          route get: {{ _evpn_health_check_dx_get }}; MTU
           {{ _evpn_health_check_dx_mtu.stdout | default('unknown') }}), and no routes within the VPC CIDRs except FRR's
           (found: {{ _evpn_health_check_dx_foreign_routes }}).
       vars:
+        _evpn_health_check_dx_get: "{{ (_evpn_health_check_dx_nh_get.stdout | default('[{}]', true) | from_json)[0] }}"
         # FRR's static and BGP routes are protocols 196 and 186; ip omits the protocol for boot.
         _evpn_health_check_dx_foreign_routes: >-
           {%- set found = [] -%}
