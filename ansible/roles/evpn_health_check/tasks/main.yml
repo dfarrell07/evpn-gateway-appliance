@@ -183,8 +183,8 @@
     that:
       # A dead path always fails; partial loss fails only above a set limit.
       - _evpn_health_check_loss | float < 100
-      - evpn_health_check_max_loss_percent is not defined or _evpn_health_check_loss | float <= evpn_health_check_max_loss_percent | float
-      - evpn_health_check_max_rtt_ms is not defined or _evpn_health_check_rtt | float <= evpn_health_check_max_rtt_ms | float
+      - evpn_health_check_max_loss_percent | default(none) is none or _evpn_health_check_loss | float <= evpn_health_check_max_loss_percent | float
+      - evpn_health_check_max_rtt_ms | default(none) is none or _evpn_health_check_rtt | float <= evpn_health_check_max_rtt_ms | float
     fail_msg: >-
       Ping from {{ tunnel.onprem_ip }} to the workload VTEP {{ hostvars[workload_vtep_host].private_ip }}: loss
       {{ _evpn_health_check_loss }}%, average RTT {{ _evpn_health_check_rtt }} ms; limits: loss

@@ -11,7 +11,6 @@
       no MSS clamping until CORENET-7709), and latency and loss follow the internet path.
       {{ 'WireGuard is for development and test only. ' if tunnel.type == 'wireguard' else '' }}Set
       evpn_health_check_accept_internet_mode_limits to true to accept these limits.
-  run_once: true
   when: tunnel.type in ['wireguard', 'ipsec']
 
 - name: "PREFLIGHT: Require the workload MTU to fit the transport"
@@ -20,5 +19,4 @@
     fail_msg: >-
       evpn_health_check_workload_mtu {{ evpn_health_check_workload_mtu }} exceeds the {{ tunnel.type }} budget of
       {{ _evpn_health_check_workload_mtu_budget[tunnel.type] }} bytes (the transport's inner MTU minus 50 bytes of VXLAN).
-  run_once: true
   when: evpn_health_check_workload_mtu | int > 0

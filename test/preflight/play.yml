@@ -1,8 +1,7 @@
 ---
 # The transport preflight's internet-mode checks against inline inputs; run by run.sh.
 - name: Transport preflight
-  hosts: localhost
-  connection: local
+  hosts: all
   gather_facts: false
   vars:
     tunnel:
