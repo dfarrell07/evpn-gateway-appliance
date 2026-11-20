@@ -98,6 +98,7 @@ if [ "$EGA_TOPOLOGY" = evpn-7503.clab.yml ]; then
 				fi
 				sleep 1
 			done
+			ip link show "eth${i}" | grep -q "master br-underlay" || { echo "error: eth${i} not attached to br-underlay" >&2; exit 1; }
 		done'
 fi
 
