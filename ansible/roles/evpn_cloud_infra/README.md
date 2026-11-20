@@ -16,9 +16,9 @@ schema (`tunnel`, `bgp`, `frr_image`, `stretches`).
 
 The relay peers with every host in the `cloud_workload` inventory group,
 reading `private_ip` from each host's vars. Unless `skip_frr_discovery` is
-set, the role reads running frr-k8s pods and the workload ASN from
-`FRRConfiguration` on the Ansible controller, then adds those nodes to
-`cloud_workload`. `frr_k8s_ns` defaults to `openshift-frr-k8s` and
+set, the role reads running frr-k8s pods on the Ansible controller, then
+adds those nodes to `cloud_workload`. The workload ASN is always
+`bgp.workload_asn`. `frr_k8s_ns` defaults to `openshift-frr-k8s` and
 `frr_k8s_lbl` defaults to `app=frr-k8s`.
 
 ## Requirements
