@@ -92,8 +92,14 @@ interfaces:
 {# While neither tunnel provides a route to a VPC, drop its traffic instead of sending cleartext VXLAN by the
    default route or any shorter covering route; the AWS routes match the VPC CIDRs exactly. Kernel policy rules,
    not FRR routes, so BGP next-hop tracking and FRR restarts are unaffected.
-   nmstate stores them on an ega-* profile in this state, so teardown removes them; a VPC CIDR change already
-   requires teardown. #}
+   nmstate stores rules on an interface with a desired route in their table, so a route to ega-vtep's own address
+   keeps them on its profile: on a bridge's, removing that stretch would delete them and fail the apply. Teardown
+   and other transports remove ega-vtep and its rules; a VPC CIDR change already requires teardown. #}
+routes:
+  config:
+    - destination: {{ tunnel.onprem_ip }}/32
+      next-hop-interface: ega-vtep
+      table-id: 254
 route-rules:
   config:
 {% for cidr in [infra_vpc_cidr | default('10.100.0.0/16'), workload_vpc_cidr | default('10.200.0.0/16')] %}
