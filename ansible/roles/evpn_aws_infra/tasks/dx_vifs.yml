@@ -46,7 +46,7 @@
       - "{{ item.id }}"
       - --query
       - "virtualInterfaces[0].{id: virtualInterfaceId, state: virtualInterfaceState, mtu: mtu,
-        bgp: bgpPeers[?bgpPeerState!='deleted' && addressFamily=='ipv4'].bgpStatus || `[]`}"
+        bgp: bgpPeers[?bgpPeerState!='deleted' && addressFamily!='ipv6'].not_null(bgpStatus, 'unknown') || `[]`}"
       - --output
       - json
   register: _evpn_aws_infra_dx_vif_reads

@@ -219,6 +219,9 @@ CASES = [
     ("every VIF down", lambda s: [vif_down(i)(s) for i in (0, 1)], {}, USABLE),
     ("BGP down on every VIF", lambda s: [bgp_down(i)(s) for i in (0, 1)], {}, USABLE),
     ("no BGP peers", lambda s: [edit(("vifs", i), bgpPeers=[])(s) for i in (0, 1)], {}, USABLE),
+    # AWS may omit any member; a peer without a status or an address family is not known to be up.
+    ("BGP peer without status or address family", lambda s: [v["bgpPeers"].append(
+        {"bgpPeerState": "pending", "authKey": KEY}) for v in s["vifs"]], {}, USABLE),
     ("VIF owned by another account", edit(("vifs", 1), foreign=True), {}, READABLE),
     ("1500-byte VIF, even when down", lambda s: [edit(("vifs", 1), mtu=1500)(s), vif_down(1)(s)], {}, READABLE),
     ("private VIF", edit(("vifs", 0), virtualInterfaceType="private"), {}, ATTACHED),
