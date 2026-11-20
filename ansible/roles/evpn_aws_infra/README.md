@@ -17,7 +17,7 @@ the infra EC2 instance apply only to WireGuard.
 | Input (host variables override per appliance) | Default | Contract for `ipsec` |
 | --- | --- | --- |
 | `evpn_aws_infra_vpn_customer_gateway_ip` | Empty | Required on-premises static public IPv4 address; validated before any AWS resource is created. |
-| `evpn_aws_infra_vpn_customer_gateway_asn` | `65044` | Customer gateway BGP ASN; source inventory maps `bgp.onprem_asn` explicitly. Keep it distinct from the TGW's default Amazon-side ASN (`64512`) and any VPC Route Server ASN reachable through the TGW, or BGP drops the routes as AS-path loops. |
+| `evpn_aws_infra_vpn_customer_gateway_asn` | `65044` | Customer gateway BGP ASN; source inventory maps `bgp.onprem_asn` explicitly. Keep it distinct from the TGW's default Amazon-side ASN (`64512`) and any VPC Route Server ASN reachable through the TGW, or BGP drops the routes as AS-path loops; preflight also rejects AWS's reserved 7224, 9059, 10124 and 17943. |
 | `evpn_aws_infra_vpn_tunnel_inside_cidrs` | `[169.254.10.0/30, 169.254.11.0/30]` | Exactly two distinct canonical /30 networks in `169.254.0.0/16`, excluding AWS reserved ranges. |
 
 AWS generates both PSKs (32 alphanumeric characters by default). Keys are handled with `no_log`, kept in memory, and never
