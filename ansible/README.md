@@ -117,7 +117,7 @@ under `onprem_appliances`; provisioning keeps them. In
 full copy of `tunnel` whose `onprem_ip` lies in its own `network_cidr` inside
 the shared one in `group_vars/all.yml`. Keep other per-host settings there too:
 provisioning keeps only each appliance's `ansible_host`, `ansible_connection`
-and `trunk_interface`. With a shared `bgp.onprem_asn`, appliances do not learn
+and `trunk_interface`. Appliances share `bgp.onprem_asn`, so they do not learn
 each other's EVPN routes. IPsec with multihoming is gated until CORENET-7502.
 
 ## Required variables
