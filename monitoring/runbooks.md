@@ -9,8 +9,7 @@ Where to run the commands:
 - **FRR (`vtysh`)**: on an appliance, `vtysh -c '...'` as root where FRR runs as `frr.service`,
   or `podman exec frr vtysh -c '...'` where it runs in the `frr` container.
 - **The `frr-metrics` exporter**: the FRR alerts read its series. On an appliance it runs as
-  `frr-metrics.service` once it replaces the legacy exporter (see the
-  [metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)); read its log with
+  `frr-metrics.service`, which restarts with FRR; read its log with
   `journalctl -u frr-metrics.service`.
 - **Probe and node checks**: on the appliance as root.
 - **AWS**: the `aws` CLI with `--region` set to the alert rule's region. An AWS alert clears at
@@ -59,13 +58,14 @@ without a successful scrape the alert clears even though nothing recovered. Turn
 - Check that the appliance is up and reachable from Prometheus.
 - On the appliance: `systemctl status frr-metrics.service` and
   `journalctl -u frr-metrics.service -n 50`; read it locally with
-  `curl -ksS --max-time 10 https://127.0.0.1:7573/metrics`.
+  `curl -ksS --max-time 10 https://127.0.0.1:7573/metrics` (this alert needs an image with
+  metallb/frr-k8s#528; those builds serve HTTPS).
 - A scrape slower than `scrape_timeout` also fails: compare `scrape_duration_seconds` with it.
   Scrape time grows by about 20ms per VRF (about 4s at 200 VRFs), so size `scrape_timeout` for
   hosts with hundreds of VRFs.
   If the local `curl` times out while `frr-metrics.service` is active, an FRR daemon or `vtysh`
   is usually hung, and restarting `frr-metrics` does not help. A hang stalls every collector, so
-  find the daemon with `timeout 5 vtysh -d DAEMON -c 'show version'` for `zebra`, `bgpd` and
+  find the daemon with `podman exec frr timeout 5 vtysh -d DAEMON -c 'show version'` for `zebra`, `bgpd` and
   `bfdd`, then restart the router as for EGAFrrCollectorFailed.
 
 ## EGAFrrMetricsGatherErrors

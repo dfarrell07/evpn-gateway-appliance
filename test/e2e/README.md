@@ -277,6 +277,3 @@ as new assertions land; pytest fixtures and per-scenario JUnit evidence remain f
   lane provides the internet-mode (WireGuard) topology hook.
 - VNI isolation: the appliance currently routes between tenant subnets; the isolation
   test will be authored as `xfail` pending an isolation-model decision.
-- `frr_exporter` + metrics: the image ships no `frr-exporter` Quadlet (would hit the podman
-  fallback), so it's off here and its metrics validation is deferred to CORENET-7504.
-  `node_exporter` is enabled (it has a matching Quadlet).
