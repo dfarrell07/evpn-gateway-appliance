@@ -13,12 +13,13 @@ The dashboards were import-tested, and the Grafana alerts provisioning-tested, w
 The data comes from frr-k8s `frr-metrics`, the FRR metrics exporter, with the per-family BGP,
 EVPN and per-collector `frrk8s_scrape_success` (`bgp`, `bfd`, `evpn`) series that
 metallb/frr-k8s#528 adds. `frrk8s-metrics.txt` lists the series as of #528 at `5a41233`;
-`make check-monitoring` fails if a rule or panel names any other `frrk8s_*` series. EGA
-appliances still run the legacy FRR exporter, whose `frr_*` series these files do not read, so
-these alerts and the FRR dashboard stay inactive on appliances until `frr-metrics` replaces it
-([metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)). The collector, metrics-down,
-gather-error, EVPN prefix and remote-VTEP alerts stay inactive until the image's frr-k8s pin
-includes metallb/frr-k8s#528.
+`make check-monitoring` fails if a rule or panel names any other `frrk8s_*` series. On appliances,
+the image's `frr-metrics.service` runs the embedded FRR image's `frr-metrics`, which serves
+`http://127.0.0.1:7573/metrics`, unauthenticated and loopback only until CORENET-7704 provides
+remote access; `monitoring.frr_exporter` controls it
+(see the [role](../ansible/roles/evpn_monitoring/README.md)). The FRR dashboard's per-family, EVPN
+and collector panels and the collector, metrics-down, gather-error, EVPN prefix and remote-VTEP
+alerts stay empty or inactive until the pinned FRR image's `frr-metrics` includes metallb/frr-k8s#528.
 
 These are appliance-side FRR signals, meant for the appliances' frr-metrics; the rules carry no
 target scoping (see below). They do not replace OVN-Kubernetes control-plane health on the

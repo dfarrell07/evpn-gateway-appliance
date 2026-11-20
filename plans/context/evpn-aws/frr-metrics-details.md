@@ -28,8 +28,9 @@ reviews its privileges and access path. #528's series arrive with a pinned `frr-
 
 ## Proposed units, ownership and e2e checks
 
-[#53](https://github.com/openshift/evpn-gateway-appliance/pull/53) (open) adds `frr-metrics.service` and its e2e
-covers the switch. FRR crash and reboot on RHEL 10 with SELinux enforcing is not yet tested.
+[#53](https://github.com/openshift/evpn-gateway-appliance/pull/53) adds `frr-metrics.service` and its e2e
+covers the switch and an FRR crash. The unit restarts with FRR; FRR restarts and crashes were tested on
+systemd with SELinux enforcing outside the image, and a reboot of the RHEL 10 image is not yet tested.
 
 ## Scrape-path evidence
 
