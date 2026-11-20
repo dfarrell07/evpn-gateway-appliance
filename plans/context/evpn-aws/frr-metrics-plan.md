@@ -7,7 +7,7 @@ and alerts. Refreshed 2026-11-24; [details](frr-metrics-details.md) hold source 
 
 | 7504 criterion | Delivered by |
 | --- | --- |
-| 1. Replace the legacy FRR exporter with the frr-k8s metrics binary | Chunk A (EGA #53, open) |
+| 1. Replace the legacy FRR exporter with the frr-k8s metrics binary | Chunk A (EGA #53) |
 | 2. Expose required EVPN metrics in the frr-k8s metrics binary | frr-k8s #528 (merged); ES/DF series: CORENET-7502 (chunk E, proposed) |
 | 3. Appliance, VLAN and tunnel status views | EGA #44 (interfaces, AWS VPN tunnel state). Appliance-side per-tunnel IPsec status, proposed to stay in 7504 ([decision 16](kickoff-decisions.md#gate-c-stage--trial-publication)), is unassigned: no status source is selected, and #44's dashboard does not match the `ipsecN` devices [#52](https://github.com/openshift/evpn-gateway-appliance/pull/52) adds |
 | 4. BGP sessions, prefix counts and route churn | #528 (per-family prefixes, merged) and EGA #44 (sessions, prefixes, churn) |
@@ -34,7 +34,7 @@ route churn (row 4) and MAC learning (row 5); #44's FRR dashboard plots both, an
 Proposed, not decided: the deployment's own Prometheus and Grafana, with EGA shipping rule files
 and dashboards but no monitoring stack. Packaging and publishing them is CORENET-7522's. OpenShift user-workload monitoring, the Cluster
 Observability Operator or ACM remain open until [ask 2](#asks-and-upstream-order) is answered. The image's node-exporter binds
-loopback, and #53's frr-metrics would too; remote scraping needs an access path, which CORENET-7704 owns;
+loopback, and so does frr-metrics; remote scraping needs an access path, which CORENET-7704 owns;
 [evidence](frr-metrics-details.md#scrape-path-evidence).
 
 ## Rules and dashboards
@@ -52,7 +52,7 @@ proposed to move to CORENET-7502 (S: days; M: one to three weeks).
 
 ### A. Run frr-metrics instead of the legacy exporter (S)
 
-- Build: EGA [#53](https://github.com/openshift/evpn-gateway-appliance/pull/53) proposes running the pinned FRR image's `frr-metrics` as `frr-metrics.service`;
+- Build: EGA [#53](https://github.com/openshift/evpn-gateway-appliance/pull/53) runs the pinned FRR image's `frr-metrics` as `frr-metrics.service`;
   `evpn_monitoring` drives it from the `frr_exporter` switch and removes `tynany/frr_exporter`.
 - Depends: a pinned `frr-rhel9` whose `frr-metrics` carries #519 and #528. ART's 5.x builds
   replace the image's FRR stage with `openshift5/frr-rhel9`

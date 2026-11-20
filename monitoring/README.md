@@ -13,12 +13,12 @@ The dashboards were import-tested, and the Grafana alerts provisioning-tested, w
 The data comes from frr-k8s `frr-metrics`, the FRR metrics exporter, with the per-family BGP,
 EVPN and per-collector `frrk8s_scrape_success` (`bgp`, `bfd`, `evpn`) series that
 metallb/frr-k8s#528 adds. `frrk8s-metrics.txt` lists the series as of #528 at `5a41233`;
-`make check-monitoring` fails if a rule or panel names any other `frrk8s_*` series. EGA
-appliances still run the legacy FRR exporter, whose `frr_*` series these files do not read, so
-these alerts and the FRR dashboard stay inactive on appliances until `frr-metrics` replaces it
-([metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)). The collector, metrics-down,
-gather-error, EVPN prefix and remote-VTEP alerts stay inactive until the image's frr-k8s pin
-includes metallb/frr-k8s#528.
+`make check-monitoring` fails if a rule or panel names any other `frrk8s_*` series. On appliances,
+the image's `frr-metrics.service` serves them (see the [role](../ansible/roles/evpn_monitoring/README.md)). The FRR dashboard's per-family, EVPN
+and collector panels and the collector, metrics-down, gather-error, EVPN prefix and remote-VTEP
+alerts stay empty or inactive until the unit runs an FRR image whose `frr-metrics` includes
+metallb/frr-k8s#528; moving to it also needs `--disable-metrics-auth` and HTTPS in the unit,
+readiness check and e2e.
 
 These are appliance-side FRR signals, meant for the appliances' frr-metrics; the rules carry no
 target scoping (see below). They do not replace OVN-Kubernetes control-plane health on the
@@ -53,7 +53,8 @@ twice.
 
 To use them:
 
-1. Scrape `frr-metrics`. Any job name works; keep the scrape-added `job` and `instance` labels
+1. Scrape `frr-metrics`. The image serves it on `127.0.0.1:7573`, so scraping it from another host
+   needs the access path from CORENET-7704. Any job name works; keep the scrape-added `job` and `instance` labels
    unique per exporter within the Prometheus that evaluates the rules.
 2. Add `rules/frr-alerts.yaml` to Prometheus's `rule_files`. Do not load `tests/`. With the
    Prometheus Operator or OpenShift monitoring, put its `groups` under a `PrometheusRule`'s

@@ -9,8 +9,7 @@ Where to run the commands:
 - **FRR (`vtysh`)**: on an appliance, `vtysh -c '...'` as root where FRR runs as `frr.service`,
   or `podman exec frr vtysh -c '...'` where it runs in the `frr` container.
 - **The `frr-metrics` exporter**: the FRR alerts read its series. On an appliance it runs as
-  `frr-metrics.service` once it replaces the legacy exporter (see the
-  [metrics plan](../plans/context/evpn-aws/frr-metrics-plan.md)); read its log with
+  `frr-metrics.service`, which restarts with FRR; read its log with
   `journalctl -u frr-metrics.service`.
 - **Probe and node checks**: on the appliance as root.
 - **AWS**: the `aws` CLI with `--region` set to the alert rule's region. An AWS alert clears at

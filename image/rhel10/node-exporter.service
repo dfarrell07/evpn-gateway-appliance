@@ -14,6 +14,7 @@ ExecStart=/usr/bin/podman run \
     --name node_exporter \
     --network host \
     --rm \
+    --init \
     -v /proc:/host/proc:ro \
     -v /sys:/host/sys:ro \
     -v /:/rootfs:ro \
@@ -26,6 +27,8 @@ ExecStart=/usr/bin/podman run \
     --web.listen-address=127.0.0.1:9100 \
     --no-collector.accelerator
 ExecStop=/usr/bin/podman stop node_exporter
+# --init keeps node_exporter off PID 1, where it exits 2 on SIGTERM; podman run then exits 143.
+SuccessExitStatus=143
 
 [Install]
 WantedBy=multi-user.target

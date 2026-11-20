@@ -20,6 +20,8 @@ ExecStart=/usr/bin/podman run --pull=never --name frr --rm \
     --security-opt=no-new-privileges \
     -v /etc/frr:/etc/frr:Z -v /var/run/frr:/var/run/frr:Z frr:embedded
 ExecStop=/usr/bin/podman stop frr
+# podman run exits 143 when podman stop ends the container's init.
+SuccessExitStatus=143
 
 [Install]
 WantedBy=multi-user.target

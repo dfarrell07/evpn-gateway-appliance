@@ -6,8 +6,8 @@ evidence that the sections below link to.
 
 ## Source baseline and repository boundaries
 
-Merged EGA #6 (2026-10-23) embeds FRR and node-exporter; `frr-metrics.service` is
-not installed ([revisions checked](https://github.com/openshift/evpn-gateway-appliance/blob/a7739d046379655fa628808ccb72d971cc0cc4c3/plans/context/evpn-aws/frr-metrics-details.md#source-baseline-and-repository-boundaries)).
+Merged EGA #6 (2026-10-23) embeds FRR and node-exporter but not
+`frr-metrics.service` ([revisions checked](https://github.com/openshift/evpn-gateway-appliance/blob/a7739d046379655fa628808ccb72d971cc0cc4c3/plans/context/evpn-aws/frr-metrics-details.md#source-baseline-and-repository-boundaries)).
 
 The prototype's relay check on EVPN `pfxRcd` maps to #528's per-family accepted-prefix gauge:
 FRR uses the same count for summary `pfxRcd` and neighbor `acceptedPrefixCounter`
@@ -15,7 +15,7 @@ FRR uses the same count for summary `pfxRcd` and neighbor `acceptedPrefixCounter
 
 ## Runtime shape of `frr-metrics`
 
-`frr-metrics.service` ([#53](https://github.com/openshift/evpn-gateway-appliance/pull/53), open) runs the
+`frr-metrics.service` ([#53](https://github.com/openshift/evpn-gateway-appliance/pull/53)) runs the
 pinned `frr-rhel9` image's own `/frr-metrics` as a second container from the embedded FRR image,
 serving HTTP on `127.0.0.1:7573` ([4.22 exporter](https://github.com/openshift/evpn-gateway-appliance/blob/a7739d046379655fa628808ccb72d971cc0cc4c3/plans/context/evpn-aws/frr-metrics-details.md#interim-exporter-from-the-embedded-422-image)).
 It shares `/var/run/frr` with the FRR container and runs as `frr` with no capabilities and
@@ -25,8 +25,9 @@ reviews its privileges and access path.
 
 ## Proposed units, ownership and e2e checks
 
-[#53](https://github.com/openshift/evpn-gateway-appliance/pull/53) (open) rewrites and installs the unused `frr-metrics.service`, and its e2e
-covers the switch. FRR crash and reboot on RHEL 10 with SELinux enforcing is not yet tested.
+[#53](https://github.com/openshift/evpn-gateway-appliance/pull/53) installs `frr-metrics.service`, and its e2e
+covers the switch and an FRR crash. The unit restarts with FRR; FRR restarts and crashes were tested on
+systemd with SELinux enforcing outside the image, and a reboot of the RHEL 10 image is not yet tested.
 
 ## Scrape-path evidence
 
