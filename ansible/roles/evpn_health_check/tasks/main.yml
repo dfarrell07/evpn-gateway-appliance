@@ -13,6 +13,17 @@
 # ═══════════════════════════════════════════════════════════════
 # Infra relay checks
 # ═══════════════════════════════════════════════════════════════
+# An empty group would make the per-peer checks below loop zero times and pass.
+- name: "HEALTH [infra]: cloud_workload has peers"
+  ansible.builtin.assert:
+    that:
+      - groups['cloud_workload'] | default([]) | length > 0
+    fail_msg: >-
+      The cloud_workload inventory group is empty, so no workload peer would be
+      checked. Run frr-k8s discovery first or list the peers in the inventory.
+    quiet: true
+  when: "'cloud_infra' in group_names"
+
 - name: "HEALTH [infra]: WireGuard interface is up"
   ansible.builtin.command: wg show wg0
   register: _evpn_health_check_wg_show
