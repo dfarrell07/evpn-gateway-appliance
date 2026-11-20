@@ -66,10 +66,10 @@ To use them:
 | EGABgpSessionDown | critical | A BGP session is not Established for 1m | Up, or absent for 4m |
 | EGABgpEvpnNoPrefixesAccepted | warning | An Established peer accepts zero l2vpn/evpn prefixes for 5m | Nonzero, absent for 4m, or session not up |
 | EGABgpEvpnNoPrefixesAnnounced | warning | An Established peer is sent zero l2vpn/evpn prefixes for 5m | Nonzero, absent for 4m, or session not up |
-| EGABgpPeerFlapping | warning | 3 or more OPENs sent to a peer in 10m, for 5m | Fewer, or counter absent |
+| EGABgpPeerFlapping | warning | 3 or more OPENs sent to a peer in 15m, for 5m | Fewer, or counter absent |
 | EGAEvpnVniNoRemoteVteps | warning | An L2 VNI has zero remote VTEPs for 15m | Nonzero, or absent for 4m |
 | EGABfdSessionDown | critical | A BFD session is down for 30s | Up, or absent for 4m |
-| EGABfdPeerFlapping | warning | 3 or more BFD down events for a peer in 10m, for 5m | Fewer, or counter absent |
+| EGABfdPeerFlapping | warning | 3 or more BFD down events for a peer in 15m, for 5m | Fewer, or counter absent |
 
 The base appliance configuration has no BFD peers, so there its BFD panels stay empty and the
 BFD alerts stay quiet. A failed collector emits none of its series, so its other alerts cannot
@@ -93,14 +93,15 @@ These alerts do not detect:
 - a target that never reported FRR collector status, or none in the last day;
 - Ethernet-segment designated-forwarder state;
 - WireGuard peer liveness: node-exporter has no WireGuard collector, and `wg0` carrier does
-  not show it; BGP to the relay gives indirect evidence;
-- path latency; AWS publishes no DX or VPN latency metric.
+  not show it; BGP to the relay and the opt-in probe give indirect evidence;
+- path latency beyond the opt-in probe's RTT to one overlay target, which no alert reads; AWS
+  publishes no DX or VPN latency metric.
 
 ## Appliance, VLANs and tunnels
 
 `dashboards/appliance.json` shows node-exporter scrape status; the operstate, carrier and
-carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; and the
-traffic, drops and errors of the non-bridge ones.
+carrier changes of the `vxlanN`, `br-vniN`, `trunk-br`, `trunk.N` and `wg0` devices; the
+traffic, drops and errors of the non-bridge ones; and overlay path probe RTT.
 
 The data comes from node-exporter. The bootc image runs it on `127.0.0.1:9100`, so scraping it
 from another host needs the access path from CORENET-7704. On other hosts `evpn_monitoring`
@@ -164,6 +165,40 @@ while others still do, Grafana resolves its alert after two evaluations; when no
 more, an alert keeps its last state until the rule is paused or deleted in the provisioning file
 and Grafana reloads it.
 
+## Overlay path probe
+
+BGP and EVPN membership can stay up while VXLAN forwarding fails. On an
+`onprem_appliances` host with `monitoring.node_exporter` on, setting
+`evpn_monitoring_path_probe_target` to a stretch's `cloud_gateway` makes
+`evpn_monitoring` install a timer that pings it every 30s and writes the result through
+node-exporter's textfile collector. A probe fails unless 3 echo replies arrive within 5s (up to 5 requests). It samples one overlay
+path and does not identify the failed component: it tests the path from the appliance to the
+cloud VTEP's bridge, not the on-prem trunk, tenant workloads or other stretches. Its pings are
+default-size, so a path that drops only large packets (an MTU black hole) passes. Something on the
+cloud side must hold the stretch's `cloud_gateway` and answer ICMP echo, as the lab's cloud VTEP
+bridge does; a missing or filtering target fails the probe with the path healthy.
+The appliance dashboard's RTT panel shows fresh samples.
+
+The probe is opt-in. It complements OVN-Kubernetes's cluster conditions and NetObserv's drop
+and latency rules and replaces none of them, so one incident can fire several alerts. Both
+alerts carry the FRR alerts' `netobserv: "true"` label.
+
+- `rules/path-probe-alerts.yaml`: two alerts, tested by `tests/path-probe-alerts_test.yaml`. Add
+  it to `rule_files` with the FRR rules.
+
+| Alert | Severity | Fires when | Silent when |
+| --- | --- | --- | --- |
+| EGAEvpnPathProbeFailed | warning | Over a quarter of the probe results that were fresh when scraped in the last 5m failed, for 3m | Three quarters succeed, or no fresh result in the last 5m |
+| EGAEvpnPathProbeUnavailable | warning | For 5m: the probe file is older than 60s, or over 60s ahead after a clock step back; or, on a host that reported the probe in the last day and was not disabled by the role, the probe series is gone while node-exporter is scraped | A fresh probe file; node-exporter not scraped; the probe removed by the role; or no probe series in the last day |
+
+The image's node-exporter must read `/var/lib/node_exporter/textfile`
+(`--collector.textfile.directory`); the role fails otherwise, or when the probe fails locally.
+Missing echo replies record `ega_path_probe_success 0` and do not fail the role.
+
+A deploy without a target (including after clearing it), turning off `monitoring.node_exporter` or
+running `teardown.yml` removes any probe and, if the textfile directory exists, writes
+`ega_path_probe_disabled 1` there, which keeps `EGAEvpnPathProbeUnavailable` quiet on that host.
+
 ## Runbooks
 
 Every alert's `runbook_url` links to its section of [runbooks.md](runbooks.md), which says what the
@@ -173,5 +208,5 @@ alert means, what to check on the appliance or in AWS, and what to do.
 
 Run `make check-monitoring` from the repository root for promtool rule lint and tests,
 dashboard panel and variable PromQL compilation, frr-k8s metric-name checks, Grafana alert-rule
-and runbook-link checks, and unit tests. Host runs (`USE_IMAGE=0`) need `promtool` 3.5.0 on PATH
-and PyYAML.
+and runbook-link checks, and unit tests for the checker and the overlay probe script. Host runs
+(`USE_IMAGE=0`) need `promtool` 3.5.0 on PATH and PyYAML.
