@@ -42,11 +42,12 @@
       # Invalidate the record first: from here pluto may hold keys or connections no file matches.
       rm -f /etc/ipsec.d/ega-aws.applied
       ipsec rereadsecrets
-      # Ready: tunnel N is up and FRR has its AWS BGP session Established.
+      # Ready: tunnel N has a Child SA with its own AWS endpoint (not one left from before a renumbering) and FRR
+      # has its AWS BGP session Established.
       ready() {
-        if [ "$1" = 1 ]; then peer={{ _evpn_onprem_appliance_ipsec_peers[0].aws_inside_ip }}
-        else peer={{ _evpn_onprem_appliance_ipsec_peers[1].aws_inside_ip }}; fi
-        case "$(ipsec trafficstatus)" in *"\"ega-aws-$1\""*) ;; *) return 1 ;; esac
+        if [ "$1" = 1 ]; then peer={{ _evpn_onprem_appliance_ipsec_peers[0].aws_inside_ip }}; aws={{ _evpn_onprem_appliance_ipsec_peers[0].outside_ip }}
+        else peer={{ _evpn_onprem_appliance_ipsec_peers[1].aws_inside_ip }}; aws={{ _evpn_onprem_appliance_ipsec_peers[1].outside_ip }}; fi
+        ipsec trafficstatus | grep -F "\"ega-aws-$1\"" | grep -qF "id='$aws'" || return 1
         case "$(podman exec frr vtysh -c "show bgp neighbors $peer" 2>/dev/null)" in *"BGP state = Established"*) ;; *) return 1 ;; esac
       }
       # A tunnel that is already down goes first, and each must be back within 90 s before the next, so a bad
@@ -86,5 +87,5 @@
         done
       done
       # Record what is applied; deploy replaces the tunnels again until this matches (see tasks/ipsec.yml).
-      sha256sum /etc/ipsec.d/ega-aws.conf /etc/ipsec.d/ega-aws.secrets > /etc/ipsec.d/ega-aws.applied
+      (umask 077; sha256sum /etc/ipsec.d/ega-aws.conf /etc/ipsec.d/ega-aws.secrets > /etc/ipsec.d/ega-aws.applied)
   changed_when: true
