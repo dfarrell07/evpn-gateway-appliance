@@ -45,6 +45,7 @@ host changes (CORENET-7501):
 - If `evpn_health_check_workload_mtu` is set, it must fit the transport's budget
   (Direct Connect: 1500, the `safe` mode contract).
 - For `direct-connect`: `tunnel.mtu_mode: safe`, `tunnel.onprem_ip` inside
-  `tunnel.network_cidr` and `tunnel.next_hop` outside it; on the appliance,
-  `tunnel.next_hop` on a directly connected uplink (not the trunk) of at least
+  `tunnel.network_cidr`, which must lie outside the VPC CIDRs, and
+  `tunnel.next_hop` outside it; on the appliance, `tunnel.next_hop` reached
+  without a gateway on a directly connected uplink (not the trunk) of at least
   1550 bytes, and no routes within the VPC CIDRs except FRR's.

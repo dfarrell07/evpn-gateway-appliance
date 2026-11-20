@@ -18,8 +18,8 @@
     name: frr
     state: absent
 
-# FRR leaves its static routes in the kernel when it stops. Direct Connect's run over the uplink,
-# which teardown keeps, so remove them (protocol 196) or VPC traffic still goes to tunnel.next_hop.
+# FRR leaves its static routes in the kernel when it stops. Direct Connect's use the uplink, which
+# teardown keeps, so remove them (protocol 196) or VPC traffic still goes to tunnel.next_hop.
 - name: Remove FRR's static routes to the VPCs
   ansible.builtin.command: ip route del {{ item }} proto 196
   loop:

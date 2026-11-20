@@ -109,7 +109,7 @@
           - _evpn_health_check_dx_foreign_routes | length == 0
         fail_msg: >-
           Direct Connect needs tunnel.next_hop {{ tunnel.next_hop }} to be another host on a directly connected uplink
-          (not the trunk) with an MTU of at least 1550 (most specific route: {{ _evpn_health_check_dx_link }};
+          (not the trunk), reached over it without a gateway, with an MTU of at least 1550 (most specific route: {{ _evpn_health_check_dx_link }};
           route get: {{ _evpn_health_check_dx_get }}; MTU
           {{ _evpn_health_check_dx_mtu.stdout | default('unknown') }}), and no routes within the VPC CIDRs except FRR's
           (found: {{ _evpn_health_check_dx_foreign_routes }}).

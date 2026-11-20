@@ -127,7 +127,7 @@ each other's EVPN routes. IPsec with multihoming is gated until CORENET-7502.
 
 For Direct Connect, set `tunnel.type: direct-connect`, `tunnel.mtu_mode: safe`,
 `tunnel.next_hop` and `evpn_aws_infra_dx_gateway_id` in `group_vars/all.yml` before
-provisioning; the appliance and customer-router requirements are in the
+provisioning. Direct Connect supports one appliance; the appliance and customer-router requirements are in the
 [`evpn_onprem_appliance` README](roles/evpn_onprem_appliance/README.md#aws-direct-connect-tunneltype-direct-connect).
 To tear down, run `teardown.yml` before `teardown-aws.yml`.
 
