@@ -44,7 +44,6 @@
       to be the customer router's IPv4 address on the appliance's uplink, outside tunnel.network_cidr. Found mtu_mode
       {{ tunnel.mtu_mode | default('safe') }}, onprem_ip {{ tunnel.onprem_ip }}, network_cidr
       {{ tunnel.network_cidr | default('10.44.44.0/24') }}, next_hop {{ tunnel.next_hop }}.
-  run_once: true
   when: tunnel.type == 'direct-connect'
 
 # Direct Connect: FRR owns the routes to the VPCs (see the evpn_onprem_appliance README).
