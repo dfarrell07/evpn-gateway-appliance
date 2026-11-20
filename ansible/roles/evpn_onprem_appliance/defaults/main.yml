@@ -1,7 +1,7 @@
 ---
 # FRR installs its own capability set at startup and exits if that fails, so grant
 # its daemons' set plus what watchfrr needs. Mirrors image/rhel10/frr-container.service.
-frr_container_caps:
+evpn_onprem_appliance_frr_container_caps:
   - NET_ADMIN
   - SYS_ADMIN
   - NET_RAW

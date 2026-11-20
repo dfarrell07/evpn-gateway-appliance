@@ -109,7 +109,7 @@
     privileged: false
     cap_drop:
       - ALL
-    cap_add: "{{ frr_container_caps }}"
+    cap_add: "{{ evpn_cloud_infra_frr_container_caps }}"
     security_opt:
       - no-new-privileges
     network: host
