@@ -19,7 +19,14 @@ EGA_INVENTORY="${EGA_INVENTORY:-inventory}"
 EGA_WORK_DIR="${EGA_WORK_DIR:-/tmp/ega/work}"
 
 case "$scenario" in
-	base|relay-ha) ;;
+	base) ;;
+	relay-ha)
+		# Only the 7503 topology has two relays; anything else would skip the failover check.
+		if [ "$EGA_TOPOLOGY" != evpn-7503.clab.yml ]; then
+			echo "error: EGA_SCENARIO=relay-ha requires EGA_TOPOLOGY=evpn-7503.clab.yml" >&2
+			exit 2
+		fi
+		;;
 	*)
 		echo "error: unsupported EGA_SCENARIO=$scenario" >&2
 		exit 2
@@ -143,7 +150,7 @@ ee_playbook network.evpn_gateway_test.healthcheck
 # Exercise relay HA independently of the collection's deploy health check.  The 7503
 # topology uses two relays with the same EVPN VNIs, so stopping FRR on either relay must
 # leave all three stretched networks reachable through the other relay.
-if [ "$EGA_TOPOLOGY" = evpn-7503.clab.yml ]; then
+if [ "$scenario" = relay-ha ]; then
 	assert_relay_failover() {
 		local relay="$1"
 		local failed=0
