@@ -43,6 +43,22 @@
           keys. Check the controller credentials, the region and ec2:DescribeVpnConnections/DeleteVpnConnection, then
           rerun teardown-aws.yml.
 
+# AWS refuses to delete a TGW with attachments, and a deleted VPN's TGW attachment can lag behind it.
+- name: Wait for the project VPN connections' TGW attachments to be deleted
+  ansible.builtin.command: >
+    aws ec2 describe-transit-gateway-attachments --region {{ evpn_aws_infra_aws_region }}
+    --filters Name=resource-type,Values=vpn
+    "Name=resource-id,Values={{ _evpn_aws_infra_vpn_teardown_lookup.vpn_connections | map(attribute='vpn_connection_id') | join(',') }}"
+    --query "TransitGatewayAttachments[?State!='deleted'].TransitGatewayAttachmentId" --output json
+  register: _evpn_aws_infra_vpn_attach_state
+  until: _evpn_aws_infra_vpn_attach_state.rc == 0 and _evpn_aws_infra_vpn_attach_state.stdout | from_json | length == 0
+  retries: 60
+  delay: 10
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - _evpn_aws_infra_vpn_teardown_lookup.vpn_connections | length > 0
+
 # ec2_customer_gateway is only in community.aws; use the CLI rather than add that dependency.
 - name: Find project VPN customer gateways
   ansible.builtin.command: >
