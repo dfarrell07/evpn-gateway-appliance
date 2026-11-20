@@ -24,7 +24,8 @@
 # Reduced-MTU controls (MSS clamping, DF handling) are CORENET-7709; until then Direct Connect
 # must carry 1550-byte packets.
 # The AWS routes and security groups cover tunnel.network_cidr, so the VTEP must be inside it and
-# the customer router outside it. AWS refuses a VPC route more specific than the VPC's local route.
+# the customer router outside it. AWS refuses a VPC route more specific than the VPC's local route,
+# and a network_cidr holding a VPC CIDR lets the VTEP sit inside the VPC.
 - name: "PREFLIGHT: Require safe MTU mode, the VTEP inside tunnel.network_cidr and tunnel.next_hop outside it"
   ansible.builtin.assert:
     that:
@@ -38,6 +39,8 @@
       - not (tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.network_in_network(tunnel.next_hop))
       - not (infra_vpc_cidr | default('10.100.0.0/16') | ansible.utils.network_in_network(tunnel.network_cidr | default('10.44.44.0/24')))
       - not (workload_vpc_cidr | default('10.200.0.0/16') | ansible.utils.network_in_network(tunnel.network_cidr | default('10.44.44.0/24')))
+      - not (tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.network_in_network(infra_vpc_cidr | default('10.100.0.0/16')))
+      - not (tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.network_in_network(workload_vpc_cidr | default('10.200.0.0/16')))
     fail_msg: >-
       tunnel.type direct-connect requires tunnel.mtu_mode safe (8500-byte transit VIFs) until CORENET-7709;
       tunnel.onprem_ip to be a plain IPv4 address inside tunnel.network_cidr (an IPv4 network outside the VPC CIDRs); and tunnel.next_hop

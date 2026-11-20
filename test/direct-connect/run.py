@@ -252,6 +252,8 @@ PREFLIGHT = [
     ("direct-connect next_hop inside tunnel.network_cidr", {"next_hop": "10.44.44.9"}, "next_hop 10.44.44.9"),
     ("direct-connect network_cidr inside a VPC", {"network_cidr": "10.100.44.0/24", "onprem_ip": "10.100.44.1"},
      "network_cidr 10.100.44.0/24"),
+    ("direct-connect network_cidr holding a VPC", {"network_cidr": "10.200.0.0/15", "onprem_ip": "10.200.44.1"},
+     "network_cidr 10.200.0.0/15"),
     ("direct-connect without next_hop", {"tunnel": {"type": "direct-connect", "onprem_ip": "10.44.44.1"}},
      "following are missing: next_hop"),
     ("direct-connect over its MTU budget", {"evpn_health_check_workload_mtu": 1501}, BUDGET),
