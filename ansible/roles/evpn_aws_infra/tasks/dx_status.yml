@@ -102,7 +102,10 @@
       - --output
       - json
   register: _evpn_aws_infra_dx_status_routes
-  until: "'direct-connect-gateway' in _evpn_aws_infra_dx_status_best.types | default([])"
+  # The CLI retries throttling and connection errors itself; stop on any error it returns.
+  until: >-
+    _evpn_aws_infra_dx_status_routes.rc != 0 or
+    'direct-connect-gateway' in _evpn_aws_infra_dx_status_best.types | default([])
   # The assert below reports a missing route.
   failed_when: _evpn_aws_infra_dx_status_routes.rc != 0
   vars: &_evpn_aws_infra_dx_status_best

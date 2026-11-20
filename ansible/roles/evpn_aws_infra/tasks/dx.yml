@@ -43,8 +43,10 @@
       - text
   register: _evpn_aws_infra_dx_assoc_state
   # A rejected association ends disassociated, with its error printed. A read right after the
-  # create can miss it (None), so None ends the wait only after 6 reads.
+  # create can miss it (None), so None ends the wait only after 6 reads. The CLI retries
+  # throttling and connection errors itself, so any error it returns ends the wait.
   until: >-
+    _evpn_aws_infra_dx_assoc_state.rc != 0 or
     _evpn_aws_infra_dx_assoc_state.stdout is match('(associated|disassociated)(\\s|$)') or
     (_evpn_aws_infra_dx_assoc_state.stdout is match('None') and _evpn_aws_infra_dx_assoc_state.attempts | default(1) > 6)
   # The assert below reports a failed association.

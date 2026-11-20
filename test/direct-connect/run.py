@@ -53,6 +53,21 @@ def fake_aws(argv):
         st = json.load(f)
     gw = opts.get("--direct-connect-gateway-id")
     cmd = argv[1]
+
+    def fail(code, message):
+        """Exit as the CLI does on an AWS error, keeping the state."""
+        with open(os.environ["DX_STUB_STATE"], "w") as f:
+            json.dump(st, f)
+        print("\nAn error occurred (%s) when calling the %s operation: %s" % (
+            code, "".join(w.title() for w in cmd.split("-")), message), file=sys.stderr)
+        sys.exit(254)
+
+    # errors[cmd] lists what its next calls fail with (None: the call succeeds).
+    errors = st.get("errors", {}).get(cmd)
+    if errors and errors[0] is None:
+        errors.pop(0)
+    elif errors:
+        fail(*errors.pop(0))
     # hold[name] > 0 delays an AWS change by that many reads of it.
     hold = st.setdefault("hold", {})
 
@@ -92,19 +107,18 @@ def fake_aws(argv):
             a for a in st["assocs"] if a["directConnectGatewayId"] == gw
             and opts.get("--association-id") in (None, a.get("associationId"))
             and opts.get("--associated-gateway-id") in (None, a["associatedGateway"]["id"])]}
-    elif cmd == "create-direct-connect-gateway-association" and st.get("create_error"):
-        sys.exit("An error occurred (DirectConnectClientException): " + st["create_error"])
     elif cmd == "create-direct-connect-gateway-association":
         a = assoc([c.split("=", 1)[1] for c in argv[argv.index("--add-allowed-prefixes-to-direct-connect-gateway") + 1:]
                    if c.startswith("cidr=")], state="associating", gw=opts["--gateway-id"])
         a["associationId"] = "assoc-%d" % len(st["assocs"])
         st["assocs"].append(a)
         out = {"directConnectGatewayAssociation": a}
-    elif cmd == "delete-direct-connect-gateway-association" and st.get("deny_delete"):
-        sys.exit("An error occurred (AccessDeniedException) when calling the DeleteDirectConnectGatewayAssociation"
-                 " operation: TEST denied")
     elif cmd == "delete-direct-connect-gateway-association":
-        a = next(a for a in live if a.get("associationId") == opts["--association-id"])
+        a = next((a for a in live if a.get("associationId") == opts["--association-id"]), None)
+        if a and st.pop("vanish", False):  # deleted by someone else since teardown found it
+            a["associationState"], a = "disassociated", None
+        if not a:
+            fail("DirectConnectClientException", "Association ID %s does not exist" % opts["--association-id"])
         # AWS refuses to delete an association still being created; it is associated by the next call.
         if a["associationState"] != "associated":
             a["associationState"] = "associated"
@@ -379,7 +393,8 @@ LIFECYCLE = [
             (p.returncode == 0 or "ended as" not in p.stdout or "None" not in p.stdout, "rc=%d" % p.returncode),
             (sum(x[1] == "describe-direct-connect-gateway-associations" for x in c) > 8, "kept polling"))),
     lifecycle_case("a refused create shows AWS's error and waits for nothing", ["dx"],
-        dict(copy.deepcopy(BASE), create_error="TEST quota"),
+        dict(copy.deepcopy(BASE), errors={"create-direct-connect-gateway-association": [
+            ("DirectConnectClientException", "TEST quota")]}),
         check=lambda p, c, st: problems(
             (p.returncode == 0 or "TEST quota" not in p.stdout, "rc=%d" % p.returncode),
             (not c or c[-1][1] != "create-direct-connect-gateway-association", "calls: %s" % c))),
@@ -401,10 +416,29 @@ LIFECYCLE = [
         check=lambda p, c, st: problems(
             (p.returncode != 0, "rc=%d" % p.returncode),
             (mutations(c) != ["delete-direct-connect-gateway-association"] * 2, "calls: %s" % mutations(c)))),
-    lifecycle_case("teardown stops at once on a denied delete", ["teardown_dx"],
-        dict(project_assocs("associated"), deny_delete=True), check=lambda p, c, st: problems(
-            (p.returncode == 0 or "TEST denied" not in p.stdout, "rc=%d" % p.returncode),
+    *[lifecycle_case("teardown stops at once on " + name, ["teardown_dx"],
+        dict(project_assocs("associated"), errors={"delete-direct-connect-gateway-association": [(code, "TEST")] * 3}),
+        check=lambda p, c, st, code=code: problems(
+            (p.returncode == 0 or code not in p.stdout, "rc=%d" % p.returncode),
+            (mutations(c) != ["delete-direct-connect-gateway-association"], "calls: %s" % mutations(c))))
+      for name, code in (("a denied delete", "AccessDeniedException"), ("an expired token", "ExpiredTokenException"))],
+    lifecycle_case("teardown takes an association deleted since it was found as gone", ["teardown_dx"],
+        dict(project_assocs("associated"), vanish=True), check=lambda p, c, st: problems(
+            (p.returncode != 0, "rc=%d" % p.returncode),
             (mutations(c) != ["delete-direct-connect-gateway-association"], "calls: %s" % mutations(c)))),
+    # The CLI has already retried throttling and connection errors; polling on cannot clear the rest.
+    lifecycle_case("teardown stops waiting on an AWS error", ["teardown_dx"],
+        dict(project_assocs("associated"), errors={"describe-transit-gateway-attachments": [
+            None, ("ExpiredTokenException", "TEST expired"), ("ExpiredTokenException", "TEST expired")]}),
+        check=lambda p, c, st: problems(
+            (p.returncode == 0 or "TEST expired" not in p.stdout, "rc=%d" % p.returncode),
+            (sum(x[1] == "describe-transit-gateway-attachments" for x in c) != 2, "kept polling"))),
+    lifecycle_case("an AWS error ends the association wait", ["dx"],
+        dict(copy.deepcopy(BASE), errors={"describe-direct-connect-gateway-associations": [
+            ("ExpiredTokenException", "TEST expired")] * 2}),
+        check=lambda p, c, st: problems(
+            (p.returncode == 0 or "TEST expired" not in p.stdout, "rc=%d" % p.returncode),
+            (sum(x[1] == "describe-direct-connect-gateway-associations" for x in c) != 1, "kept polling"))),
     lifecycle_case("teardown under --check changes nothing", ["teardown_dx"], project_assocs("associated"),
         args=["--check"], check=lambda p, c, st: problems(
             (p.returncode != 0, "rc=%d" % p.returncode), (mutations(c), "calls: %s" % mutations(c)))),
