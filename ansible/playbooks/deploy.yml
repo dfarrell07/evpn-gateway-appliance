@@ -16,23 +16,27 @@
       when: tunnel.type == 'ipsec'
 
     # Each appliance advertises its own VTEP network to AWS, so the TGW routes each VTEP to its own VPN.
-    - name: Require distinct VTEP addresses and networks across IPsec appliances
+    # The workload imports EVPN routes for the shared onprem ASN only.
+    - name: Require IPsec appliances to share the transport and ASN and to have their own VTEPs
       ansible.builtin.assert:
         that:
+          - _tunnels | map(attribute='type') | unique | length == 1
+          - _hosts | map(attribute='bgp.onprem_asn') | unique | length == 1
           - _tunnels | map(attribute='onprem_ip') | unique | length == _tunnels | length
           # Merging the networks shrinks their total size only if two overlap.
           - _nets | map('ansible.utils.ipaddr', 'size') | sum == _nets | ansible.utils.cidr_merge | map('ansible.utils.ipaddr', 'size') | sum
           # AWS routes and security groups use the shared (localhost) tunnel.network_cidr.
           - _nets | reject('ansible.utils.subnet_of', _shared) | list | length == 0
         fail_msg: >-
-          With several IPsec appliances, set tunnel per host with its own onprem_ip and its own network_cidr
-          containing it, within the shared tunnel.network_cidr.
+          With several IPsec appliances, give them the same tunnel.type and bgp.onprem_asn, and set tunnel per host
+          with its own onprem_ip and its own network_cidr containing it, within the shared tunnel.network_cidr.
       vars:
-        _tunnels: "{{ groups['onprem_appliances'] | map('extract', hostvars, 'tunnel') | list }}"
+        _hosts: "{{ groups['onprem_appliances'] | map('extract', hostvars) | list }}"
+        _tunnels: "{{ _hosts | map(attribute='tunnel') | list }}"
         _nets: "{{ _tunnels | map(attribute='network_cidr', default='10.44.44.0/24') | list }}"
         _shared: "{{ (hostvars['localhost'].tunnel | default(tunnel)).network_cidr | default('10.44.44.0/24') }}"
       run_once: true
-      when: tunnel.type == 'ipsec'
+      when: _tunnels | selectattr('type', 'equalto', 'ipsec') | list | length > 0
 
     - name: Load missing IPsec handoff from AWS
       delegate_to: localhost
