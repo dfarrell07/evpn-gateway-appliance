@@ -481,12 +481,48 @@ def appliance_job(name, mutator, want):
     return job
 
 
+# deploy.yml's checks on two appliances of the given transports; they must stop it before any host change.
+ONE = "supports one on-premises appliance"
+DEPLOY = [
+    ("two direct-connect appliances", ["direct-connect", "direct-connect"], ONE),
+    ("wireguard appliance listed before a direct-connect one", ["wireguard", "direct-connect"], ONE),
+]
+
+
+def deploy_job(name, types, want):
+    def job(tmp):
+        for cmd in ("ip", "cat"):
+            os.symlink(os.path.join(HERE, "run.py"), os.path.join(tmp, cmd))
+        tunnels = {"wireguard": {"cloud_ip": "10.44.44.2", "port": 51820}, "direct-connect": {"next_hop": "10.99.0.1"}}
+        hosts = {"appliance-%d" % i: {"tunnel": dict(tunnels[t], type=t, mtu_mode="safe", onprem_ip="10.44.44.%d" % (
+            1 + 128 * i), network_cidr="10.44.44.%d/25" % (128 * i))} for i, t in enumerate(types)}
+        inventory = os.path.join(tmp, "hosts.json")
+        with open(inventory, "w") as f:
+            # become always fails, so a deploy past the checks stops there.
+            json.dump({"onprem_appliances": {"hosts": hosts, "vars": {
+                "ansible_connection": "local", "ansible_become_exe": "false", "trunk_interface": "eth9",
+                "evpn_health_check_accept_internet_mode_limits": True}}}, f)
+        with open(os.path.join(tmp, "state.json"), "w") as f:
+            json.dump(BASE, f)
+        ansible = os.path.join(HERE, "..", "..", "ansible")
+        env = dict(os.environ, PATH=tmp + os.pathsep + os.environ["PATH"], DX_STUB_STATE=os.path.join(tmp, "state.json"),
+                   ANSIBLE_NOCOLOR="1", ANSIBLE_ROLES_PATH=os.path.join(ansible, "roles"))
+        p = subprocess.run(["ansible-playbook", "--check", "-i", inventory, os.path.join(ansible, "playbooks", "deploy.yml")],
+                           env=env, capture_output=True, text=True)
+        out = p.stdout + p.stderr
+        found = problems((want not in out, "did not fail with: %s" % want),
+                         ("Gather service facts" in out, "ran past the checks"))
+        yield name, found + ([out[-3000:]] if found else [])
+    return job
+
+
 JOBS = [*[check_job(n, ["dx_preflight"], [m], x, w) for n, m, x, w in CASES],
         *[check_job(n, ["preflight"], [], x, w) for n, x, w in PREFLIGHT],
         *[check_job(n, ["dx_status"], [status_base, m], FAST, w) for n, m, w in STATUS],
         check_job("dx_status rejects a wildcard project name", ["dx_status"], [status_base],
                   dict(FAST, evpn_aws_infra_project_name="ega-*"), "letters, digits"),
         *[appliance_job(n, m, w) for n, m, w in APPLIANCE],
+        *[deploy_job(n, t, w) for n, t, w in DEPLOY],
         *LIFECYCLE]
 
 

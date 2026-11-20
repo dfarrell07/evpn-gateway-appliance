@@ -21,11 +21,11 @@
       when: tunnel.type != 'wireguard'
 
     # Direct Connect uses the one VTEP address (tunnel.onprem_ip) and one relay peering to it.
+    # Not run_once: its condition would be read from the first appliance only.
     - name: Require one appliance for Direct Connect
       ansible.builtin.assert:
         that: groups['onprem_appliances'] | length == 1
         fail_msg: tunnel.type direct-connect supports one on-premises appliance.
-      run_once: true
       when: tunnel.type == 'direct-connect'
 
     # Each appliance advertises its own VTEP network to AWS, so the TGW routes each VTEP to its own VPN.
