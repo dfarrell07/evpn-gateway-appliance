@@ -42,7 +42,7 @@
       ready() {
         if [ "$1" = 1 ]; then peer={{ _evpn_onprem_appliance_ipsec_peers[0].aws_inside_ip }}; aws={{ _evpn_onprem_appliance_ipsec_peers[0].outside_ip }}
         else peer={{ _evpn_onprem_appliance_ipsec_peers[1].aws_inside_ip }}; aws={{ _evpn_onprem_appliance_ipsec_peers[1].outside_ip }}; fi
-        ipsec trafficstatus | grep -F "\"ega-aws-$1\"" | grep -qF "id='$aws'" || return 1
+        grep -qE "\"ega-aws-$1\".*id='$aws'" <<< "$(ipsec trafficstatus)" || return 1
         case "$(podman exec frr vtysh -c "show bgp neighbors $peer" 2>/dev/null)" in *"BGP state = Established"*) ;; *) return 1 ;; esac
       }
       # A tunnel that is already down goes first, and each must be back within 90 s before the next, so a bad
