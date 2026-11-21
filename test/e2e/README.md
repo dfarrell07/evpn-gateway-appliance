@@ -150,6 +150,16 @@ sudo EGA_SCENARIOS=emulated EGA_STAGE=deploy test/e2e/run.sh
 sudo EGA_SCENARIOS=emulated EGA_STAGE=destroy test/e2e/run.sh
 ```
 
+## Transport scenarios
+
+`emulated` runs the WireGuard transport and `ipsec` the IPsec one. The `ipsec` inventory
+links the `emulated` inventory and adds `group_vars/all/ipsec.yml`. Its TGW node runs
+Libreswan responders and FRR in place of the AWS VPN endpoint, with a public test-only
+handoff. It does not prove IKE/ESP proposal compatibility with AWS (the simulator copies
+the appliance's), AWS telemetry, NAT-T, rekey or maintenance behavior, ECMP or route
+limits. It ends with the product teardown, which `EGA_STAGE=deploy` skips (as it does any
+`*.teardown` or `*.teardown_check` playbook) so the lab stays deployed for inspection.
+
 ## run_remote.sh — remote target (or local, no target)
 
 ### Execution model

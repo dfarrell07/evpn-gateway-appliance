@@ -5,7 +5,7 @@ argument_specs:
     description:
       - Terminates the transport from the on-prem appliance and configures FRR
         as a route relay (not a VTEP) between the on-prem appliance and the
-        workload-VPC VTEP, using next-hop-unchanged so VTEP IPs are preserved
+        workload-VPC VTEP; eBGP keeps EVPN next hops, so VTEP IPs are preserved
         end-to-end.
     options:
       workload_vtep_host:

@@ -95,7 +95,9 @@ takes over.
   advertisements or raise the limit, then `clear bgp vrf VRF PEER`.
 - For the appliance's relay peer, `wg show wg0`: a `latest handshake` older than about 3
   minutes means the tunnel is down. Check the underlay route and UDP reachability to the
-  WireGuard endpoint, then `ping` the peer address over the tunnel.
+  WireGuard endpoint, then `ping` the peer address over the tunnel. With `tunnel.type: ipsec`,
+  check `ipsec trafficstatus` for both `ega-aws-1` and `ega-aws-2`, and that both AWS underlay
+  peers are Established (`show bgp summary`).
 
 Otherwise fix the tunnel or underlay; BGP re-establishes on its own once the peer is reachable.
 
@@ -141,8 +143,8 @@ host's VNIs or MACs.
 no OPEN has been sent for about 10m (the rule's window), so it outlasts the fix.
 
 - `show bgp vrf VRF neighbors PEER` for the last reset reason and error.
-- For the appliance's relay peer, `wg show wg0` and the underlay path, as for
-  EGABgpSessionDown.
+- For the appliance's relay peer, the transport (`wg show wg0`, or `ipsec trafficstatus` with
+  IPsec) and the underlay path, as for EGABgpSessionDown.
 - A maximum-prefix shutdown with a restart timer, mismatched timers, MTU problems or packet loss
   on the path can each cause repeated resets; with BFD, loss resets the session through BFD and
   EGABfdPeerFlapping fires too.
