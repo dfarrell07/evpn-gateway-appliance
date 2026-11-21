@@ -129,8 +129,8 @@ connections (by `Project` tag and `<project>-vpn-*` or `<project>-cgw-*` name) a
 with the AWS CLI (`amazon.aws` has no customer gateway module), before the
 instances, TGW attachments and gateways, regardless of the current `tunnel.type`.
 Teardown therefore needs the AWS CLI and `ec2:DescribeVpnConnections`,
-`ec2:DeleteVpnConnection`, `ec2:DescribeCustomerGateways` and
-`ec2:DeleteCustomerGateway` in every mode.
+`ec2:DeleteVpnConnection`, `ec2:DescribeTransitGatewayAttachments` (it waits for the VPN attachments
+to go), `ec2:DescribeCustomerGateways` and `ec2:DeleteCustomerGateway` in every mode.
 
 ## Known limitations (tracked, not fixed by this role)
 

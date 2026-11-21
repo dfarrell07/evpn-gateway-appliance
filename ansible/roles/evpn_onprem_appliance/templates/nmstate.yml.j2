@@ -94,7 +94,7 @@ interfaces:
    not FRR routes, so BGP next-hop tracking and FRR restarts are unaffected.
    nmstate stores rules on an interface with a desired route in their table, so a route to ega-vtep's own address
    keeps them on its profile: on a bridge's, removing that stretch would delete them and fail the apply. Teardown
-   and other transports remove ega-vtep and its rules; a VPC CIDR change already requires teardown. #}
+   and other transports remove ega-vtep and its rules; a VPC CIDR or onprem_ip change already requires teardown. #}
 routes:
   config:
     - destination: {{ tunnel.onprem_ip }}/32
