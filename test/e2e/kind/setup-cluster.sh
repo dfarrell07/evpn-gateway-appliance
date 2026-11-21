@@ -24,11 +24,12 @@ kind create cluster \
 	--image kindest/node:v1.36.1 \
 	--config "${self_dir}/kind.yaml"
 
+nodes="$(kind get nodes --name "$EGA_KIND_CLUSTER")"
 while IFS= read -r node; do
 	[ -n "$node" ] || continue
 	podman exec "$node" sysctl --ignore net.ipv6.conf.all.disable_ipv6=0
 	podman exec "$node" sysctl --ignore net.ipv6.conf.all.forwarding=1
-done < <(kind get nodes --name "$EGA_KIND_CLUSTER")
+done <<< "$nodes"
 
 archive_dir="$(mktemp -d)"
 trap 'rm -rf "${archive_dir}"' EXIT
@@ -96,10 +97,12 @@ rollout() {
 	return 1
 }
 
+objs="$(kubectl -n ovn-kubernetes get daemonset,deployment -o name)"
+[ -n "$objs" ] || { echo "setup-cluster: the chart created no ovn-kubernetes workloads" >&2; exit 1; }
 while IFS= read -r obj; do
 	[ -n "$obj" ] || continue
 	rollout ovn-kubernetes "$obj" 300s
-done < <(kubectl -n ovn-kubernetes get daemonset,deployment -o name)
+done <<< "$objs"
 
 echo ">> frr-k8s"
 # Upstream starts bgpd with -p 0, so the node never accepts the relay's dial.
