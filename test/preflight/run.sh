@@ -19,6 +19,9 @@ check() {
 }
 check "crosses the internet" '{"ttype": "wireguard"}'
 check "crosses the internet" '{"ttype": "ipsec"}'
+# -e key=value passes strings.
+check "crosses the internet" 'ttype=wireguard evpn_health_check_accept_internet_mode_limits=false'
+check "" 'ttype=ipsec evpn_health_check_accept_internet_mode_limits=true evpn_health_check_workload_mtu=1388'
 check "" '{"ttype": "wireguard", "evpn_health_check_accept_internet_mode_limits": true, "evpn_health_check_workload_mtu": 1370}'
 check "exceeds the" '{"ttype": "wireguard", "evpn_health_check_accept_internet_mode_limits": true, "evpn_health_check_workload_mtu": 1371}'
 check "" '{"ttype": "ipsec", "evpn_health_check_accept_internet_mode_limits": true, "evpn_health_check_workload_mtu": 1388}'
