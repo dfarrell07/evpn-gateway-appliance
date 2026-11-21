@@ -26,6 +26,8 @@ topology:
     appliance:
       mgmt-ipv4: 172.20.20.11
       exec:
+        - bash -c 'for d in eth1; do for i in $(seq 1 60); do nmcli dev set "$d" managed no 2>/dev/null &&
+            nmcli -g GENERAL.STATE dev show "$d" 2>/dev/null | grep -q unmanaged && break; sleep 1; done; done'
         - ip addr add 10.44.44.1/24 dev eth1
         - ip link set eth1 up
         - ip route replace 10.200.0.0/24 via 10.44.44.2
@@ -35,9 +37,10 @@ topology:
     relay-a:
       mgmt-ipv4: 172.20.20.12
       exec:
-        - bash -c 'for i in $(seq 1 10); do systemctl is-active --quiet NetworkManager && break; sleep 1; done'
-        - nmcli dev set eth1 managed no
-        - nmcli dev set eth2 managed no
+        # Retry until NetworkManager reports each link unmanaged; a single early attempt can lose the race with
+        # NetworkManager start-up, which then takes the link and flushes the addresses set below.
+        - bash -c 'for d in eth1 eth2; do for i in $(seq 1 60); do nmcli dev set "$d" managed no 2>/dev/null &&
+            nmcli -g GENERAL.STATE dev show "$d" 2>/dev/null | grep -q unmanaged && break; sleep 1; done; done'
         - ip addr add 10.44.44.2/24 dev eth1
         - ip addr add 10.100.1.1/30 dev eth2
         - ip link set eth1 up
@@ -46,9 +49,10 @@ topology:
     relay-b:
       mgmt-ipv4: 172.20.20.15
       exec:
-        - bash -c 'for i in $(seq 1 10); do systemctl is-active --quiet NetworkManager && break; sleep 1; done'
-        - nmcli dev set eth1 managed no
-        - nmcli dev set eth2 managed no
+        # Retry until NetworkManager reports each link unmanaged; a single early attempt can lose the race with
+        # NetworkManager start-up, which then takes the link and flushes the addresses set below.
+        - bash -c 'for d in eth1 eth2; do for i in $(seq 1 60); do nmcli dev set "$d" managed no 2>/dev/null &&
+            nmcli -g GENERAL.STATE dev show "$d" 2>/dev/null | grep -q unmanaged && break; sleep 1; done; done'
         - ip addr add 10.44.44.3/24 dev eth1
         - ip addr add 10.100.2.1/30 dev eth2
         - ip link set eth1 up
@@ -59,10 +63,10 @@ topology:
       exec:
         - sysctl -w net.ipv4.ip_forward=1
         - sysctl -w net.ipv4.conf.all.forwarding=1
-        - bash -c 'for i in $(seq 1 10); do systemctl is-active --quiet NetworkManager && break; sleep 1; done'
-        - nmcli dev set eth1 managed no
-        - nmcli dev set eth2 managed no
-        - nmcli dev set eth3 managed no
+        # Retry until NetworkManager reports each link unmanaged; a single early attempt can lose the race with
+        # NetworkManager start-up, which then takes the link and flushes the addresses set below.
+        - bash -c 'for d in eth1 eth2 eth3; do for i in $(seq 1 60); do nmcli dev set "$d" managed no 2>/dev/null &&
+            nmcli -g GENERAL.STATE dev show "$d" 2>/dev/null | grep -q unmanaged && break; sleep 1; done; done'
         - ip addr add 10.100.1.2/30 dev eth1
         - ip addr add 10.200.0.2/24 dev eth2
         - ip addr add 10.100.2.2/30 dev eth3
@@ -74,8 +78,10 @@ topology:
     workload:
       mgmt-ipv4: 172.20.20.14
       exec:
-        - bash -c 'for i in $(seq 1 10); do systemctl is-active --quiet NetworkManager && break; sleep 1; done'
-        - nmcli dev set eth1 managed no
+        # Retry until NetworkManager reports each link unmanaged; a single early attempt can lose the race with
+        # NetworkManager start-up, which then takes the link and flushes the addresses set below.
+        - bash -c 'for d in eth1; do for i in $(seq 1 60); do nmcli dev set "$d" managed no 2>/dev/null &&
+            nmcli -g GENERAL.STATE dev show "$d" 2>/dev/null | grep -q unmanaged && break; sleep 1; done; done'
         - ip addr add 10.200.0.1/24 dev eth1
         - ip link set eth1 up
         - ip route replace 10.44.44.0/24 via 10.200.0.2
