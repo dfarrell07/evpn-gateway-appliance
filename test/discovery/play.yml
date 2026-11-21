@@ -1,0 +1,20 @@
+---
+# Discovery on the relay; run.sh sets role (the whole relay role, which must stop at
+# discovery) or out (discover, then render the relay config there).
+- name: Relay discovery
+  hosts: cloud_infra
+  gather_facts: false
+  tasks:
+    - name: Run the relay role
+      ansible.builtin.include_role:
+        name: evpn_cloud_infra
+      when: role is defined
+    - name: Discover the peers
+      ansible.builtin.include_role:
+        name: evpn_cloud_infra
+        tasks_from: discover_peers.yml
+    - name: Render the relay config
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../ansible/roles/evpn_cloud_infra/templates/frr-infra-relay.conf.j2"
+        dest: "{{ out }}"
+        mode: "0644"
