@@ -189,9 +189,10 @@ ownership):
 
 ## Feedback and contributing
 
-Report bugs and request features in
-[issues](https://github.com/openshift/evpn-gateway-appliance/issues) until the
-tracker moves to a Jira project; report vulnerabilities privately to
+Report bugs in [OCPBUGS](https://redhat.atlassian.net/browse/OCPBUGS) under the
+`Networking / evpn-gateway-appliance` component, request features in
+[issues](https://github.com/openshift/evpn-gateway-appliance/issues), and report
+vulnerabilities privately to
 [Red Hat Product Security](https://access.redhat.com/security/team/contact).
 Contribute by pull request to the
 [source repository](https://github.com/openshift/evpn-gateway-appliance): sign
