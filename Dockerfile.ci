@@ -70,7 +70,12 @@ RUN tmp="$(mktemp -d)" && \
 RUN dnf install -y podman-remote skopeo openssh-clients iproute iputils tcpdump nmap-ncat && dnf clean all
 
 # containerlab, pinned. 0.81.1 is the latest release as of 2026-10-19.
-RUN bash -c "$(curl -fsSL https://get.containerlab.dev)" -- -v 0.81.1
+# Download the installer first: in bash -c "$(curl ...)", a failed curl yields an empty script
+# that exits 0 and leaves the image without containerlab.
+RUN curl -fsSL -o /tmp/get-containerlab.sh https://get.containerlab.dev && \
+    bash /tmp/get-containerlab.sh -v 0.81.1 && \
+    rm -f /tmp/get-containerlab.sh && \
+    containerlab version
 
 # Python test toolchain. testinfra pinned to latest (10.2.2, 2026-10-19); pytest pinned
 # conservatively for broad testinfra compatibility. molecule drives the role suite
