@@ -50,7 +50,7 @@ OpenShift qualification (IPI lanes and a second cluster) belongs to 7708/7515 ([
 
 | Lane | Fixture | Coverage and limits |
 | --- | --- | --- |
-| Local IPsec scenario in the existing e2e lane (AC6) | The 7508 e2e stack, proposed in #52: opt-in via `EGA_SCENARIO=ipsec` with `evpn-ipsec.clab.yml`, with IPsec in place of WireGuard for that run: the TGW node terminates both tunnels (Libreswan and FRR as the AWS endpoint), the relay carries only EVPN BGP, and VXLAN goes directly to the workload VTEP; credential-free, no OpenShift; enable in the shared job once CI owners agree | No managed VPN, TGW routing, AWS ECMP or route limits; no production FIPS qualification. |
+| Local IPsec scenario in the existing e2e lane (AC6) | The 7508 e2e stack, added by #52: the `ipsec` scenario (`test/e2e/scenarios/ipsec.env`), with IPsec in place of WireGuard for that run: the TGW node terminates both tunnels (Libreswan and FRR as the AWS endpoint), the relay carries only EVPN BGP, and VXLAN goes directly to the workload VTEP; credential-free, no OpenShift; runs in the shared e2e job (the entrypoint runs every scenario), and keeping it there is the CI owners' call | No managed VPN, TGW routing, AWS ECMP or route limits; no production FIPS qualification. |
 
 The AWS canary (outside 7500, decision 20) plans its own fixtures, cost, Test Platform approvals and cancellation.
 
