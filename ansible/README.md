@@ -87,7 +87,7 @@ The machine running these playbooks needs:
   see [VPN handoff and status](roles/evpn_aws_infra/README.md#read-only-vpn-handoff-tasks_from-vpn_handoff).
   Direct Connect health checks need AWS read access unless `evpn_health_check_dx_telemetry` is false;
   see [Direct Connect checks](roles/evpn_aws_infra/README.md#read-only-direct-connect-checks-tasks_from-dx_status).
-  `teardown-aws.yml` also needs `ec2:DescribeTransitGatewayAttachments` in every mode, to find Direct Connect associations.
+  `teardown-aws.yml` also needs `ec2:DescribeTransitGatewayAttachments` in every mode, to find VPN attachments and Direct Connect associations.
 - **SSH** — the EC2 key pair named by `evpn_aws_infra_ssh_key_name` must exist in AWS, with
   its private key available to your environment (e.g. loaded into ssh-agent).
 
