@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Fake-AWS-CLI tests for the Direct Connect tasks and preflight: run.py plays play.yml per case, and the
-`aws` symlink it creates runs this file as the fake (API-shaped state, --query via jmespath, writes only in
-lifecycle cases). Bad inputs and states must fail with their check's message, and no case may print a VIF BGP key.
+"""Fake-AWS-CLI tests for the Direct Connect tasks and preflight: run.py plays play.yml (render.yml for the
+templates) per case, and the `aws` symlink it creates runs this file as the fake (API-shaped state, --query via
+jmespath, writes only in lifecycle and render cases). Bad inputs and states must fail with their check's message,
+and no case may print a VIF BGP key.
 """
 
 import copy
@@ -18,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def fake_host(name, argv):
-    """The appliance's `ip` and `cat` for the preflight: only the reads it makes, answered from the case's state.
+    """The appliance's `ip` and `cat`: only the reads the preflight and deploy make, answered from the case's state.
     Protocols are stored as numbers; like iproute2, ip names the stock ones unless -N is given."""
     with open(os.environ["DX_STUB_STATE"]) as f:
         st = json.load(f)["host"]
@@ -32,6 +33,8 @@ def fake_host(name, argv):
         return 0
     numeric = argv[0] == "-N"
     args = argv[1:] if numeric else argv
+    if args[:2] == ["-j", "route"] and not numeric and args[-1] != st["addr"]:
+        sys.exit("fake ip: no state for %s" % argv)
     if args[:4] == ["-j", "route", "show", "match"] and not numeric:
         routes = st["match"]
     elif args[:3] == ["-j", "route", "get"] and not numeric:
@@ -163,6 +166,10 @@ def fake_aws(argv):
                  State="blackhole" if t is None else "active",
                  **({} if t is None else {"TransitGatewayAttachments": [{"ResourceType": t}]}))
             for c, t in st["routes"] if ("blackhole" if t is None else "active") in states]}
+    elif cmd in ("create-route", "create-transit-gateway-route"):
+        out = {"Return": True}
+    elif cmd == "describe-instances":
+        out = {"Reservations": [{"Instances": [{"NetworkInterfaces": [{"NetworkInterfaceId": "eni-0001"}]}]}]}
     else:
         sys.exit("fake aws: refusing %s %s" % (argv[0], cmd))
     with open(os.environ["DX_STUB_STATE"], "w") as f:
@@ -195,7 +202,7 @@ BASE = {"vifs": [vif("dxvif-aaaa1111"), vif("dxvif-bbbb2222")], "assocs": [], "r
                            {"dst": "10.99.0.0/30", "dev": "eth1", "protocol": "2", "scope": "link",
                             "prefsrc": "10.99.0.2"}],
                  "get": {"dst": "10.99.0.1", "dev": "eth1", "prefsrc": "10.99.0.2"}, "root": {},
-                 "mtu": {"eth0": 1500, "eth1": 8500}}}
+                 "mtu": {"eth0": 1500, "eth1": 8500}, "addr": "10.99.0.1"}}  # match and get answer for addr only
 
 
 def edit(path, **kw):
@@ -333,7 +340,7 @@ STATUS = [
 ]
 
 
-def run(tmp, steps, st, extra=None, write=False, args=()):
+def run(tmp, steps, st, extra=None, write=False, args=(), play="play.yml"):
     """Play the task files in steps on state st; return (process, calls as argv lists, new state)."""
     state, log = os.path.join(tmp, "state.json"), os.path.join(tmp, "calls.log")
     with open(state, "w") as f:
@@ -344,7 +351,7 @@ def run(tmp, steps, st, extra=None, write=False, args=()):
     if write:
         env["DX_STUB_WRITE"] = "1"
     extra = dict(extra or {}, steps=steps)
-    p = subprocess.run(["ansible-playbook", "-v", os.path.join(HERE, "play.yml"), "-e", json.dumps(extra), *args],
+    p = subprocess.run(["ansible-playbook", "-v", os.path.join(HERE, play), "-e", json.dumps(extra), *args],
                        env=env, capture_output=True, text=True)
     with open(log) as f, open(state) as g:
         return p, [json.loads(line) for line in f], json.load(g)
@@ -605,6 +612,61 @@ def deploy_job(name, types, want):
     return job
 
 
+# What deploy renders for each transport, and the routes provisioning adds toward the on-premises network.
+# (role, tasks of its main.yml run before rendering)
+RENDER_STEPS = {"evpn_onprem_appliance": ["Find the Direct Connect uplink"],
+                "evpn_aws_infra": ["Route the on-premises network through the TGW",
+                                   "Add TGW static route for on-prem CIDR", "Add on-prem WG CIDR route to Infra RT via ENI"]}
+DX_LINES = {
+    "frr-onprem-appliance.conf.j2": [
+        "ip route 10.100.0.0/16 10.99.0.1 eth1 onlink", "ip route 10.200.0.0/16 10.99.0.1 eth1 onlink",
+        " neighbor 10.100.1.10 ebgp-multihop 255", " neighbor 10.100.1.10 update-source 10.44.44.1"],
+    "nmstate.yml.j2": ["  - name: ega-vtep", "    type: dummy", "        - ip: 10.44.44.1",
+                       "    - ip-to: 10.100.0.0/16", "      suppress-prefix-length: 15",
+                       "    - ip-to: 10.200.0.0/16", "      action: blackhole"],
+    "frr-infra-relay.conf.j2": [" neighbor 10.44.44.1 ebgp-multihop 255"]}
+# Only wireguard has the appliance and the relay peer with each other for IPv4 unicast: text in that block.
+IPV4 = {"frr-onprem-appliance.conf.j2": " activate", "frr-infra-relay.conf.j2": " neighbor 10.44.44.1 "}
+ROUTES = {"direct-connect": [["create-route", "rtb-infra", "10.44.44.0/24", "tgw-0001"]],
+          "wireguard": [["create-transit-gateway-route", "tgw-rtb-0001", "10.44.44.0/24", "tgw-attach-infra"],
+                        ["create-route", "rtb-infra", "10.44.44.0/24", "eni-0001"]]}
+
+
+def ipv4(lines):
+    """The lines of FRR config's IPv4 unicast address family."""
+    block = lines[lines.index(" address-family ipv4 unicast"):] if " address-family ipv4 unicast" in lines else []
+    return block[:block.index(" exit-address-family")] if block else []
+
+
+def render_job(ttype):
+    def job(tmp):
+        os.symlink(os.path.join(HERE, "run.py"), os.path.join(tmp, "ip"))
+        p, calls, _ = run(tmp, RENDER_STEPS, BASE, {"ttype": ttype, "out": tmp}, write=True, play="render.yml")
+        out = {}
+        for t in DX_LINES:
+            if os.path.exists(os.path.join(tmp, t)):
+                with open(os.path.join(tmp, t)) as f:
+                    out[t] = f.read().split("\n")
+
+        def opt(c, *names):
+            return next((c[c.index(o) + 1] for o in names if o in c), None)
+        # (command, route table, destination, target) of each route created
+        routes = [[c[1], opt(c, "--route-table-id", "--transit-gateway-route-table-id"),
+                   opt(c, "--destination-cidr-block"), opt(c, "--transit-gateway-id", "--transit-gateway-attachment-id",
+                                                           "--network-interface-id")]
+                  for c in calls if c[1].startswith("create-")]
+        dx = ttype == "direct-connect"
+        found = problems(
+            (p.returncode != 0, "rc=%d\n%s" % (p.returncode, p.stdout[-3000:])),
+            *[((line in out.get(t, [])) != dx, "%s: %s %r" % (t, "missing" if dx else "has", line))
+              for t, lines in DX_LINES.items() for line in lines],
+            *[(any(text in line for line in ipv4(out.get(t, []))) == dx, "%s: IPv4 unicast %s %r" % (
+                t, "has" if dx else "lacks", text)) for t, text in IPV4.items()],
+            (routes != ROUTES[ttype], "routes: %s" % routes))
+        yield "%s renders and routes as expected" % ttype, found
+    return job
+
+
 JOBS = [*[check_job(n, ["dx_preflight"], [m], x, w) for n, m, x, w in CASES],
         *[check_job(n, ["preflight"], [], x, w) for n, x, w in PREFLIGHT],
         *[check_job(n, ["dx_status"], [status_base, m], FAST, w) for n, m, w in STATUS],
@@ -614,6 +676,7 @@ JOBS = [*[check_job(n, ["dx_preflight"], [m], x, w) for n, m, x, w in CASES],
                     "require local execution") for k, v in (("ansible_become", True), ("ansible_connection", "ssh"))],
         *[appliance_job(n, m, w) for n, m, w in APPLIANCE],
         *[deploy_job(n, t, w) for n, t, w in DEPLOY],
+        *[render_job(t) for t in ("direct-connect", "wireguard")],
         *LIFECYCLE]
 
 

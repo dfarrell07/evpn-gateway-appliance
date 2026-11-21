@@ -90,7 +90,9 @@ argument_specs:
             description: WireGuard listen port. Part of the shared playbook configuration model; not used by this role.
           network_cidr:
             type: str
-            description: CIDR covering the tunnel addresses (onprem_ip and cloud_ip). The direct-connect preflight requires onprem_ip inside it and it outside the VPC CIDRs.
+            description: >-
+              CIDR covering the tunnel addresses (onprem_ip and cloud_ip). The direct-connect preflight requires
+              onprem_ip inside it and it outside the VPC CIDRs.
           next_hop:
             type: str
             description: >-
