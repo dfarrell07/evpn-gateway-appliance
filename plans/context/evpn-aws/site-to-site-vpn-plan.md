@@ -4,7 +4,7 @@ Proposed packet path: IPsec from the appliance to the AWS gateway, VXLAN directl
 
 The posted [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500) acceptance criteria are the requirements; this plan proposes how to meet them:
 
-- AC1: create and delete the customer gateway and two-tunnel VPN on the TGW (decision 20); reruns fail safely before creating anything, and a customer gateway left by a failed run is reused; teardown, in every transport mode, leaves no VPN, customer gateway or Elastic IP.
+- AC1: create and delete the customer gateway and two-tunnel VPN on the TGW (decision 20); a rerun with a project VPN present fails before creating anything (after any failed run, run `teardown-aws.yml` first), and a customer gateway left by a failed run is reused; teardown, in every transport mode, leaves no VPN, customer gateway or Elastic IP.
 - AC2: explicit FIPS-compatible tunnel options (IKEv2, AES256-GCM-16, SHA2-256, DH14); hand per-tunnel parameters and keys to the appliance and configure Libreswan and FRR there, without writing keys to logs or artifacts.
 - AC3: EVPN BGP from an advertised on-premises address, separate from underlay BGP; VXLAN reachability asserted; accept only VPC prefixes and advertise only the VTEP network.
 - AC4: document the MTU budget as a limit (controls are CORENET-7709).
