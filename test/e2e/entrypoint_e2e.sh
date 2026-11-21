@@ -150,12 +150,38 @@ ee_playbook network.evpn_gateway_test.healthcheck
 
 # Exercise relay HA independently of the collection's deploy health check.  The 7503
 # topology uses two relays with the same EVPN VNIs, so stopping FRR on either relay must
-# leave all three stretched networks reachable through the other relay.
+# leave all three stretched networks reachable through the other relay. This checks EVPN
+# control-plane failover: the topology's static routes keep forwarding through both relays.
 if [ "$scenario" = relay-ha ]; then
+	# The appliance's EVPN session state with a relay address; Established counts only once it carries prefixes.
+	evpn_state() {
+		podman-remote --url "unix://${EGA_RUNTIME_SOCK}" exec clab-ega-7503-appliance \
+			podman exec frr vtysh -c "show bgp l2vpn evpn summary json" 2>/dev/null |
+			python3 -c '
+import json, sys
+p = json.load(sys.stdin).get("peers", {}).get(sys.argv[1], {})
+state = p.get("state", "Missing")
+print("NoPrefixes" if state == "Established" and not int(p.get("pfxRcd", 0)) else state)' "$1" ||
+			echo Missing
+	}
+	# wait_evpn <address> up|down <seconds>
+	wait_evpn() {
+		local i state
+		for ((i = 0; i < $3; i += 2)); do
+			state="$(evpn_state "$1")"
+			if [ "$2" = up ] && [ "$state" = Established ]; then return 0; fi
+			if [ "$2" = down ] && [ "$state" != Established ]; then return 0; fi
+			sleep 2
+		done
+		echo "ERROR: EVPN session with $1 not $2 after $3 s (state: ${state})" >&2
+		return 1
+	}
 	assert_relay_failover() {
 		local relay="$1"
 		local failed=0
 		local node="clab-ega-7503-${relay}"
+		local relay_ip other_ip
+		if [ "$relay" = relay-a ]; then relay_ip=10.44.44.2 other_ip=10.44.44.3; else relay_ip=10.44.44.3 other_ip=10.44.44.2; fi
 		local targets=(
 			"appliance vm-production 10.42.1.2"
 			"appliance vm-staging 10.42.2.2"
@@ -169,7 +195,8 @@ if [ "$scenario" = relay-ha ]; then
 		podman-remote --url "unix://${EGA_RUNTIME_SOCK}" exec "$node" \
 			systemctl stop frr-container.service
 		trap 'podman-remote --url "unix://${EGA_RUNTIME_SOCK}" exec "$node" systemctl start frr-container.service >/dev/null 2>&1 || true' RETURN
-		sleep 8
+		wait_evpn "$relay_ip" down 60 || failed=1
+		wait_evpn "$other_ip" up 30 || failed=1
 
 		for target in "${targets[@]}"; do
 			read -r side namespace address <<<"$target"
@@ -188,9 +215,9 @@ if [ "$scenario" = relay-ha ]; then
 		done
 
 		podman-remote --url "unix://${EGA_RUNTIME_SOCK}" exec "$node" \
-			systemctl start frr-container.service
+			systemctl start frr-container.service || failed=1
 		trap - RETURN
-		sleep 15
+		wait_evpn "$relay_ip" up 120 || failed=1
 		[ "$failed" -eq 0 ] || return "$failed"
 	}
 
