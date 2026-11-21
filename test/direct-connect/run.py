@@ -25,13 +25,18 @@ def fake_host(name, argv):
     if name == "cat":
         if not argv[0].startswith("/sys/class/net/"):
             os.execv("/bin/cat", ["cat", *argv])
-        print(st["mtu"].get(argv[0].split("/")[4], 1500))
+        dev = argv[0].split("/")[4]
+        if dev not in st["mtu"]:
+            sys.exit("cat: %s: No such file or directory" % argv[0])
+        print(st["mtu"][dev])
         return 0
     numeric = argv[0] == "-N"
     args = argv[1:] if numeric else argv
     if args[:4] == ["-j", "route", "show", "match"] and not numeric:
         routes = st["match"]
     elif args[:3] == ["-j", "route", "get"] and not numeric:
+        if not st["get"]:
+            sys.exit("RTNETLINK answers: Network is unreachable")
         routes = [st["get"]]
     elif args[:4] == ["-j", "route", "show", "root"] and numeric:
         routes = st["root"].get(args[4], [])
@@ -128,16 +133,22 @@ def fake_aws(argv):
         a["associationState"] = "disassociating"
         out = {"directConnectGatewayAssociation": a}
     elif cmd == "describe-transit-gateway-attachments":
+        # AWS lists a deleted attachment for a while, and each TGW has VPC attachments.
         filt = dict(f[5:].split(",Values=", 1) for f in argv if f.startswith("Name="))
+        gone = "available" if held("attachment") else "deleted"
         out = {"TransitGatewayAttachments": [{"TransitGatewayId": a["associatedGateway"]["id"],
-                                              "ResourceId": a["directConnectGatewayId"], "State": "failed"}
+                                              "ResourceId": a["directConnectGatewayId"],
+                                              "State": a["failed_attachment"]}
                                              for a in st["assocs"] if a.get("failed_attachment")] + [
                                             {"TransitGatewayId": a["associatedGateway"]["id"],
-                                              "ResourceId": a["directConnectGatewayId"], "State": "available"}
-                                             for a in (st["assocs"] if held("attachment") else live)
+                                              "ResourceId": a["directConnectGatewayId"],
+                                              "State": "available" if a in live else gone}
+                                             for a in st["assocs"]
                                              if a["associatedGateway"]["type"] == "transitGateway"
                                              and filt.get("transit-gateway-id") in (None, a["associatedGateway"]["id"])
-                                             and filt.get("resource-id") in (None, a["directConnectGatewayId"])]}
+                                             and filt.get("resource-id") in (None, a["directConnectGatewayId"])] + [
+                                            {"TransitGatewayId": t, "ResourceId": "vpc-" + t, "State": "available"}
+                                             for t in st["tgws"] if filt.get("resource-type") in (None, "vpc")]}
     elif cmd == "describe-transit-gateways":
         project = opts["--filters"].split("Values=", 1)[1]
         available = "Name=state,Values=available" in argv
@@ -183,7 +194,8 @@ BASE = {"vifs": [vif("dxvif-aaaa1111"), vif("dxvif-bbbb2222")], "assocs": [], "r
         "host": {"match": [{"dst": "default", "gateway": "172.20.20.1", "dev": "eth0", "protocol": "4"},
                            {"dst": "10.99.0.0/30", "dev": "eth1", "protocol": "2", "scope": "link",
                             "prefsrc": "10.99.0.2"}],
-                 "get": {"dst": "10.99.0.1", "dev": "eth1", "prefsrc": "10.99.0.2"}, "root": {}, "mtu": {"eth1": 8500}}}
+                 "get": {"dst": "10.99.0.1", "dev": "eth1", "prefsrc": "10.99.0.2"}, "root": {},
+                 "mtu": {"eth0": 1500, "eth1": 8500}}}
 
 
 def edit(path, **kw):
@@ -216,6 +228,8 @@ CASES = [
     ("valid transit VIFs", None, {}, None),
     ("detached private VIF ignored", lambda s: s["vifs"].append(
         vif("dxvif-cccc3333", virtualInterfaceType="private", attachmentState="detached")), {}, None),
+    ("attaching 1500-byte VIF", lambda s: s["vifs"].append(
+        vif("dxvif-dddd4444", mtu=1500, attachmentState="attaching")), {}, "must be readable by this account"),
     ("detaching 1500-byte VIF ignored", lambda s: s["vifs"].append(
         vif("dxvif-dddd4444", mtu=1500, attachmentState="detaching")), {}, None),
     ("VIF in another Region", edit(("vifs", 1), region="us-east-1"), {}, None),
@@ -244,11 +258,15 @@ CASES = [
     ("DX gateway missing", lambda s: s["dxgws"].clear(), {}, GATEWAY),
     ("DX gateway deleting", edit(("dxgws", 0), directConnectGatewayState="deleting"), {}, GATEWAY),
     ("DX gateway ASN equals the TGW's", edit(("dxgws", 0), amazonSideAsn=64512), {}, GATEWAY),
+    ("DX gateway has five TGWs", lambda s: s["assocs"].extend(
+        assoc(["10.%d.0.0/16" % i], gw="tgw-%d" % i) for i in range(5)), {}, None),
     ("DX gateway has six TGWs", lambda s: s["assocs"].extend(
         assoc(["10.%d.0.0/16" % i], gw="tgw-%d" % i) for i in range(6)), {}, SLOT),
     ("DX gateway associated with a VGW", lambda s: s["assocs"].append(
         assoc([], gw_type="virtualPrivateGateway")), {}, SLOT),
     ("allowed prefix covers a VPC", lambda s: s["assocs"].append(assoc(["10.0.0.0/8"])), {}, SLOT),
+    ("updating association allowing a VPC prefix", lambda s: s["assocs"].append(
+        assoc(["10.100.0.0/16"], state="updating")), {}, SLOT),
     ("allowed prefix inside a VPC", lambda s: s["assocs"].append(assoc(["10.200.5.0/24"])), {}, SLOT),
 ]
 
@@ -270,6 +288,12 @@ PREFLIGHT = [
      "network_cidr 10.200.0.0/15"),
     ("direct-connect without next_hop", {"tunnel": {"type": "direct-connect", "onprem_ip": "10.44.44.1"}},
      "following are missing: next_hop"),
+    ("direct-connect network_cidr inside the workload VPC",
+     {"network_cidr": "10.200.44.0/24", "onprem_ip": "10.200.44.1"}, "network_cidr 10.200.44.0/24"),
+    ("direct-connect network_cidr holding the infra VPC",
+     {"network_cidr": "10.100.0.0/15", "onprem_ip": "10.101.44.1"}, "network_cidr 10.100.0.0/15"),
+    ("direct-connect with only the required tunnel keys",
+     {"tunnel": {"type": "direct-connect", "onprem_ip": "10.44.44.1", "next_hop": "10.99.0.1"}}, None),
     ("direct-connect over its MTU budget", {"evpn_health_check_workload_mtu": 1501}, BUDGET),
 ]
 
@@ -296,6 +320,8 @@ STATUS = [
     ("only an IPv6 default route over DX", lambda s: s.update(routes=[("::/0", "direct-connect-gateway")]), ROUTE),
     ("only IPv6 allowed prefixes", edit(("assocs", 0), allowedPrefixesToDirectConnectGateway=[{"cidr": "::/0"}]), COVER),
     ("on-premises network not advertised", lambda s: s["routes"].clear(), ROUTE),
+    ("association disassociated", edit(("assocs", 0), associationState="disassociated"), COVER),
+    ("every VIF down", lambda s: [vif_down(i)(s) for i in (0, 1)], USABLE),
     ("association missing the workload VPC", edit(("assocs", 0), allowedPrefixesToDirectConnectGateway=[
         {"cidr": "10.100.0.0/16"}]), COVER),
     ("association missing the infra VPC", edit(("assocs", 0), allowedPrefixesToDirectConnectGateway=[
@@ -347,6 +373,7 @@ def associate(tmp):
         (p.returncode != 0, "rc=%d\n%s" % (p.returncode, p.stdout[-3000:])),
         (mutations(calls) != ["create-direct-connect-gateway-association"], "calls: %s" % mutations(calls)),
         (len(mine) != 1 or mine[0]["associationState"] != "associated", "project association: %s" % mine),
+        (sum(c[1] == "describe-direct-connect-gateway-associations" for c in calls) != 3, "kept polling"),
         (mine and [c["cidr"] for c in mine[0]["allowedPrefixesToDirectConnectGateway"]] != vpcs, "prefixes"))
     for name in ("teardown deletes only the project TGW's association",
                  "teardown again makes no directconnect call"):
@@ -370,9 +397,9 @@ def lifecycle_case(name, steps, st, extra=FAST, write=True, args=(), check=None)
     return job
 
 
-def failed_attachment(st):
-    """The first association was rejected, leaving its TGW attachment failed."""
-    st["assocs"][0]["failed_attachment"] = True
+def failed_attachments(st):
+    """The first two associations were rejected, leaving their TGW attachments failed and rejected."""
+    st["assocs"][0]["failed_attachment"], st["assocs"][1]["failed_attachment"] = "failed", "rejected"
     return st
 
 
@@ -387,7 +414,8 @@ LIFECYCLE = [
     associate,
     lifecycle_case("a rejected association fails with its error", ["dx"], dict(copy.deepcopy(BASE), reject=True),
         check=lambda p, c, st: problems(
-            (p.returncode == 0 or "TEST rejected" not in p.stdout, "rc=%d" % p.returncode))),
+            (p.returncode == 0 or "TEST rejected" not in p.stdout, "rc=%d" % p.returncode),
+            (sum(x[1] == "describe-direct-connect-gateway-associations" for x in c) != 1, "kept polling"))),
     lifecycle_case("an association never readable fails promptly", ["dx"],
         dict(copy.deepcopy(BASE), hold={"assoc_read": 99}), check=lambda p, c, st: problems(
             (p.returncode == 0 or "ended as" not in p.stdout or "None" not in p.stdout, "rc=%d" % p.returncode),
@@ -439,17 +467,25 @@ LIFECYCLE = [
         check=lambda p, c, st: problems(
             (p.returncode == 0 or "TEST expired" not in p.stdout, "rc=%d" % p.returncode),
             (sum(x[1] == "describe-direct-connect-gateway-associations" for x in c) != 1, "kept polling"))),
+    lifecycle_case("an AWS error ends the route wait", ["dx_status"],
+        dict(copy.deepcopy(BASE), assocs=[assoc(["10.100.0.0/16", "10.200.0.0/16"], gw="tgw-0001")],
+             errors={"search-transit-gateway-routes": [("ExpiredTokenException", "TEST expired")] * 2}), write=False,
+        check=lambda p, c, st: problems(
+            (p.returncode == 0 or "TEST expired" not in p.stdout, "rc=%d" % p.returncode),
+            (sum(x[1] == "search-transit-gateway-routes" for x in c) != 1, "kept polling"))),
     lifecycle_case("teardown under --check changes nothing", ["teardown_dx"], project_assocs("associated"),
         args=["--check"], check=lambda p, c, st: problems(
             (p.returncode != 0, "rc=%d" % p.returncode), (mutations(c), "calls: %s" % mutations(c)))),
-    lifecycle_case("teardown ignores a failed DX attachment", ["teardown_dx"],
-        failed_attachment(project_assocs("disassociated")), check=lambda p, c, st: problems(
-            (p.returncode != 0, "rc=%d" % p.returncode),
-            (any(x[0] != "ec2" for x in c), "calls: %s" % [x[1] for x in c]))),
-    lifecycle_case("teardown does not wait on a failed DX attachment", ["teardown_dx"],
-        failed_attachment(project_assocs("disassociated", "associated", dxgws=(DXGW, DXGW))),
+    lifecycle_case("teardown ignores failed and rejected DX attachments", ["teardown_dx"],
+        failed_attachments(project_assocs("disassociated", "disassociated", dxgws=(DXGW,) * 2)),
         check=lambda p, c, st: problems(
             (p.returncode != 0, "rc=%d" % p.returncode),
+            (any(x[0] != "ec2" for x in c), "calls: %s" % [x[1] for x in c]))),
+    lifecycle_case("teardown does not wait on failed and rejected DX attachments", ["teardown_dx"],
+        failed_attachments(project_assocs("disassociated", "disassociated", "associated", dxgws=(DXGW,) * 3)),
+        check=lambda p, c, st: problems(
+            (p.returncode != 0, "rc=%d" % p.returncode),
+            (mutations(c) != ["delete-direct-connect-gateway-association"], "calls: %s" % mutations(c)),
             (sum(x[1] == "describe-transit-gateway-attachments" for x in c) > 3, "waited on it"))),
 ]
 
@@ -486,17 +522,24 @@ APPLIANCE = [
         "10.200.0.0/16": [{"dst": "10.200.0.0/16", "protocol": "186"}]}), None),
     ("host route to next_hop", lambda s: s["host"]["match"].append(
         {"dst": "10.99.0.1", "dev": "eth1", "scope": "link"}), UPLINK),
+    ("broader route listed first", lambda s: s["host"]["match"].insert(0, {
+        "dst": "10.96.0.0/12", "gateway": "172.20.20.1", "dev": "eth0", "protocol": "4"}), None),
     ("next_hop only via the default route", lambda s: s["host"]["match"].pop(), UPLINK),
+    ("no route to next_hop", host(match=[], get=None), UPLINK),
     ("next_hop is the appliance's own address", host(get={"dst": "10.99.0.1", "dev": "lo", "type": "local"}), UPLINK),
     ("next_hop is the uplink's broadcast address", host(get={"dst": "10.99.0.3", "dev": "eth1", "type": "broadcast"}),
      UPLINK),
     ("uplink is the trunk", lambda s: [s["host"]["match"][1].update(dev="eth9"), s["host"]["get"].update(dev="eth9"),
                                        s["host"]["mtu"].update(eth9=8500)], UPLINK),
+    ("uplink is the trunk bridge", lambda s: [s["host"]["match"][1].update(dev="trunk-br"),
+                                              s["host"]["get"].update(dev="trunk-br"),
+                                              s["host"]["mtu"].update({"trunk-br": 8500})], UPLINK),
     # Deploy uses the kernel's lookup, which a policy rule can send past the main table's connected route.
     ("route get picks another 1500-byte device", lambda s: [s["host"]["get"].update(dev="eth2"),
                                                            s["host"]["mtu"].update(eth2=1500)], UPLINK),
     ("route get goes via a gateway", lambda s: s["host"]["get"].update(gateway="10.99.0.1"), UPLINK),
-    ("1500-byte uplink", host(mtu={"eth1": 1500}), UPLINK),
+    ("1550-byte uplink", host(mtu={"eth1": 1550}), None),
+    ("1549-byte uplink", host(mtu={"eth1": 1549}), UPLINK),
     ("boot route within a VPC CIDR", host(root={"10.100.0.0/16": [{"dst": "10.100.5.0/24"}]}),
      "10.100.5.0/24 proto boot"),
     ("kernel route within a VPC CIDR", host(root={"10.200.0.0/16": [{"dst": "10.200.0.0/16", "protocol": "2"}]}),
@@ -524,11 +567,13 @@ def appliance_job(name, mutator, want):
     return job
 
 
-# deploy.yml's checks on two appliances of the given transports; they must stop it before any host change.
+# deploy.yml's checks on two appliances of the given transports; they must stop it before any host change
+# (None: they pass, and deploy reaches the hosts).
 ONE = "supports one on-premises appliance"
 DEPLOY = [
     ("two direct-connect appliances", ["direct-connect", "direct-connect"], ONE),
     ("wireguard appliance listed before a direct-connect one", ["wireguard", "direct-connect"], ONE),
+    ("two wireguard appliances", ["wireguard", "wireguard"], None),
 ]
 
 
@@ -553,8 +598,9 @@ def deploy_job(name, types, want):
         p = subprocess.run(["ansible-playbook", "--check", "-i", inventory, os.path.join(ansible, "playbooks", "deploy.yml")],
                            env=env, capture_output=True, text=True)
         out = p.stdout + p.stderr
-        found = problems((want not in out, "did not fail with: %s" % want),
-                         ("Gather service facts" in out, "ran past the checks"))
+        found = problems((want is not None and want not in out, "did not fail with: %s" % want),
+                         (("PLAY [Deploy on-prem appliance" in out) != (want is None),
+                          "ran past the checks" if want else "stopped at the checks"))
         yield name, found + ([out[-3000:]] if found else [])
     return job
 
@@ -564,6 +610,8 @@ JOBS = [*[check_job(n, ["dx_preflight"], [m], x, w) for n, m, x, w in CASES],
         *[check_job(n, ["dx_status"], [status_base, m], FAST, w) for n, m, w in STATUS],
         check_job("dx_status rejects a wildcard project name", ["dx_status"], [status_base],
                   dict(FAST, evpn_aws_infra_project_name="ega-*"), "letters, digits"),
+        *[check_job("dx_status refuses " + k, ["dx_status"], [status_base], dict(FAST, **{k: v}),
+                    "require local execution") for k, v in (("ansible_become", True), ("ansible_connection", "ssh"))],
         *[appliance_job(n, m, w) for n, m, w in APPLIANCE],
         *[deploy_job(n, t, w) for n, t, w in DEPLOY],
         *LIFECYCLE]
