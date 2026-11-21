@@ -4,6 +4,22 @@
     name: wg-quick@wg0
     state: restarted
 
+# Apply frr.conf in place so sessions to peers the change leaves alone stay up: a restart would
+# drop every appliance's EVPN routes when one peer's settings change. Handlers run right after
+# FRR starts or restarts, so retry until vtysh answers. If the reload still fails (it can
+# leave a partly applied diff) or hangs on a stuck daemon (timeout's 124), fall back to a
+# restart, which reads the whole file.
+- name: Reload FRR
+  ansible.builtin.command: timeout 60 podman exec frr /usr/lib/frr/frr-reload.py --reload /etc/frr/frr.conf
+  register: _evpn_cloud_infra_frr_reload
+  until: _evpn_cloud_infra_frr_reload.rc in [0, 124]
+  retries: 10
+  delay: 3
+  failed_when: false
+  # "changed" means the reload failed, which notifies the restart.
+  changed_when: _evpn_cloud_infra_frr_reload.rc != 0
+  notify: Restart FRR
+
 # On the bootc image FRR runs as its own systemd unit (the embedded image); restart that.
 # Fall back to podman-direct only when the unit isn't present (non-bootc host).
 - name: Restart FRR via systemd (bootc image)

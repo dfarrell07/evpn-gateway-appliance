@@ -11,6 +11,23 @@
   loop_control:
     label: "vm-{{ item.name }} → {{ item.cloud_gateway }}"
 
+# The emulated AWS side also advertises 192.0.2.0/24: the appliance must receive it from each AWS peer but keep it
+# out of BGP and the kernel, and must advertise only its tunnel.network_cidr (AC3).
+- name: "HEALTH [onprem-sim]: AWS underlay prefix policy"
+  ansible.builtin.shell: |
+    set -eu
+    vt() { podman exec frr vtysh -c "$1"; }
+    for peer in {{ evpn_onprem_appliance_ipsec.tunnels | map(attribute='inside_cidr') | map('ansible.utils.ipmath', 1) | join(' ') }}; do
+      vt "show bgp ipv4 unicast neighbors $peer received-routes json" | grep -q '"192.0.2.0/24"' || { echo "$peer: test prefix not received"; exit 1; }
+      adv=$(vt "show bgp ipv4 unicast neighbors $peer advertised-routes json" |
+        python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin).get("advertisedRoutes", {}))))')
+      [ "$adv" = "{{ tunnel.network_cidr | default('10.44.44.0/24') }}" ] || { echo "$peer: advertised [$adv]"; exit 1; }
+    done
+    ! vt "show bgp ipv4 unicast 192.0.2.0/24 json" | grep -q '"paths"' || { echo "test prefix accepted into BGP"; exit 1; }
+    [ -z "$(ip route show 192.0.2.0/24)" ] || { echo "test prefix in the kernel"; exit 1; }
+  changed_when: false
+  when: tunnel.type | default('wireguard') == 'ipsec'
+
 # DISABLED pending the isolation-model decision — destined for the pytest/testinfra
 # layer as an xfail (see test/e2e/README.md). Carried over from evpn_health_check:
 # it fails today because prod reaches staging via L3 routing (ttl=63, one routed

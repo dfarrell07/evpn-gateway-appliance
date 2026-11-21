@@ -54,12 +54,12 @@ The image described below is the prototype's; the merged `image/rhel10/Container
 | Path | What it holds |
 | --- | --- |
 | `ansible/roles/evpn_onprem_appliance` | On-prem appliance: VLAN sub-interfaces, a bridge and a VXLAN device per stretch, FRR VTEP. `physical.yml` attaches a real tagged trunk, now exercised by the 7508 e2e; the veth/namespace simulation was extracted to the `network.evpn_gateway_test` test collection (7515) |
-| `ansible/roles/evpn_cloud_infra` | Infra-VPC relay: WireGuard server plus an FRR relay with `next-hop-unchanged` and no VXLAN |
+| `ansible/roles/evpn_cloud_infra` | Infra-VPC relay: WireGuard server plus an FRR relay that keeps EVPN next hops (eBGP default) and no VXLAN |
 | `ansible/roles/evpn_cloud_workload` | Standalone cloud VTEP that validated the proof of concept; CORENET-7515 removes it from production, where OCP-native EVPN is the workload VTEP |
 | `ansible/roles/evpn_aws_infra` | AWS provisioning (infra and workload VPCs, TGW, security groups, router instances) through `aws` CLI calls |
 | `ansible/roles/evpn_monitoring`, `evpn_health_check` | `frr_exporter` and `node_exporter` podman units; the health-check suite |
 | `ansible/playbooks/` | `deploy`, `health-check`, `provision-aws`, `teardown`, `teardown-aws`; inventory groups `cloud_infra`, `cloud_workload`, `onprem_appliances` |
-| `ansible/inventory/group_vars/all.yml` | The de facto API: `tunnel.type` (`wireguard` works; `ipsec` and `direct-connect` are not implemented), `tunnel.mtu_mode`, `bgp` ASNs (65044 on-prem, 65100 relay, 65200 workload), `stretches` (VLAN, subnet, gateways; the VNI is 10000 + the VLAN ID) and `frr_image` |
+| `ansible/inventory/group_vars/all.yml` | The de facto API: `tunnel.type` (`wireguard` works; `ipsec` is implemented but not yet qualified; `direct-connect` is not implemented), `tunnel.mtu_mode`, `bgp` ASNs (65044 on-prem, 65100 relay, 65200 workload), `stretches` (VLAN, subnet, gateways; the VNI is 10000 + the VLAN ID) and `frr_image` |
 | `image/` | `Containerfile` (CentOS Stream 9 bootc; FRR and both exporters as systemd `podman run` units), `build-ami.sh` (BIB `--type ami`, S3 upload, VM Import, AMI registration), `setup-vmimport-role.sh` |
 | `hack/terraform/` | Lab scaffolding for the AWS test environment, not product |
 | `docs/` | `design.md`, `evpn-l2-stretch-plan.md`, `evpn-sample-flows.md`, `evpn-task-breakdown.md`, `presentation.html` |
@@ -145,8 +145,8 @@ Use the linked feature/epic for current contacts and
 ## Transport context
 
 - Intended AWS transport: **Direct Connect** or **Site-to-Site VPN**
-  (WireGuard = dev/test only). The current source implements only WireGuard;
-  the production transports remain blocking implementation work under
+  (WireGuard = dev/test only). The current source implements WireGuard and the Site-to-Site VPN
+  (`ipsec`); Direct Connect remains blocking implementation work under
   CORENET-7498's live acceptance criteria.
 - On-prem appliances and cloud infrastructure relays have different roles;
   record the actual packet path for each supported transport. Do not transfer
