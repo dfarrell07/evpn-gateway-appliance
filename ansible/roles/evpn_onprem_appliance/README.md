@@ -61,6 +61,9 @@ the relay's `private_ip`, with `ebgp-multihop 4`, source
 blocks and the EVPN maximum-prefix limit remain in place. VXLAN traffic
 flows directly through the VPN/TGW to workload VTEPs.
 Failover relies on BGP timers `10/30`, Libreswan DPD (10 s delay, 40 s retransmit timeout) and AWS DPD action `clear`.
+While neither tunnel provides a route to a VPC, policy rules on `ega-dummy-vtep` drop traffic to `infra_vpc_cidr`
+and `workload_vpc_cidr` rather than send it unencrypted by another route; it flows again when a tunnel's BGP
+session returns. Teardown removes the rules with `ega-vtep`.
 An FRR configuration change, such as a new inside address or ASN, restarts FRR and briefly drops both AWS BGP sessions.
 
 Teardown unloads the two owned connections and
