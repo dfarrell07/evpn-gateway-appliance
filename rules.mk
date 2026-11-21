@@ -106,7 +106,7 @@ ANSIBLE_SMOKE_DIR := /tmp/ega-collections
 # Sanity needs the virtualenvs primed in the CI image, so host runs (USE_IMAGE=0) skip it.
 check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install check-ansible-preflight $(if $(EGA_IN_CI_IMAGE),check-ansible-sanity)
 
-# The transport preflight's internet-mode checks.
+# The transport preflight's internet-mode checks and the health checks' ping baseline.
 .PHONY: check-ansible-preflight
 check-ansible-preflight:
 	ANSIBLE_HOME="$$(mktemp -d)" test/preflight/run.sh

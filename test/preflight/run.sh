@@ -1,5 +1,5 @@
 #!/bin/sh
-# Each case: expected message (empty = pass), then extra vars for play.yml.
+# Each case: expected message (empty = pass), then extra vars for $play (play.yml, then baseline.yml).
 cd "$(dirname "$0")" || exit 1
 failed=0
 check() {
