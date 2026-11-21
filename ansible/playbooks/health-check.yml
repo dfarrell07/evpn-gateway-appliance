@@ -2,8 +2,27 @@
 # Validation only — no changes made.
 # Usage: ansible-playbook playbooks/health-check.yml
 
+# The relay checks iterate cloud_workload, which deploy fills from frr-k8s; refill it here.
+- name: Discover OCP frr-k8s workload peers
+  hosts: cloud_infra
+  gather_facts: false
+  tasks:
+    - name: Discover OCP frr-k8s workload peers
+      ansible.builtin.include_role:
+        name: evpn_cloud_infra
+        tasks_from: discover_peers.yml
+      when: not (skip_frr_discovery | default(false) | bool)
+      run_once: true
+
+# One play, so a failing host does not stop the checks on the others.
 - name: Run health checks
-  hosts: all
+  hosts: cloud_infra:onprem_appliances:cloud_workload
   become: true
+  # Facts would connect to the discovered OCP nodes, which run no FRR container; the checks need none.
+  gather_facts: false
+  pre_tasks:
+    - name: Skip the OCP nodes added by discovery
+      ansible.builtin.meta: end_host
+      when: frr_k8s_discovered | default(false) | bool
   roles:
     - evpn_health_check

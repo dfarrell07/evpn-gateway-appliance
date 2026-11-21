@@ -2,8 +2,9 @@
 
 Read-only validation suite for the EVPN fabric: BGP session state, EVPN
 prefix counts, VXLAN interface presence/absence, and end-to-end ping checks.
-Tasks are conditional on inventory group membership, so it's safe to apply
-to `hosts: all` (see `playbooks/health-check.yml`).
+Tasks are conditional on inventory group membership, so it can run on every
+inventory host. frr-k8s nodes added by discovery run no FRR container, so
+`playbooks/health-check.yml` skips them.
 
 See [`meta/argument_specs.yml`](meta/argument_specs.yml) for the full input
 schema (`stretches`, `tunnel`).
