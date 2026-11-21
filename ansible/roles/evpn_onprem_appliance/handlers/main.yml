@@ -79,7 +79,8 @@
         until ready "$n"; do
           i=$((i + 1))
           if [ "$i" -gt 18 ]; then
-            case "$(ipsec trafficstatus)" in *"\"ega-aws-$n\""*) what="its BGP session with $peer" ;; *) what="its Child SA" ;; esac
+            if grep -qE "\"ega-aws-$n\".*id='$aws'" <<< "$(ipsec trafficstatus)"; then what="its BGP session with $peer"
+            else what="its Child SA with $aws"; fi
             echo "ega-aws-$n: $what did not come up within 90 s; stopped before any further tunnel. Rerun deploy to retry." >&2
             exit 1
           fi
@@ -88,4 +89,5 @@
       done
       # Record what is applied; deploy replaces the tunnels again until this matches (see tasks/ipsec.yml).
       (umask 077; sha256sum /etc/ipsec.d/ega-aws.conf /etc/ipsec.d/ega-aws.secrets > /etc/ipsec.d/ega-aws.applied)
+    executable: /bin/bash
   changed_when: true
