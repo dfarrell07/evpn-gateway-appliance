@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 KEY = "TEST-ONLY-bgp-md5-key"
 DXGW = "5f0e6c1e-1b1a-4c2a-9a55-0123456789ab"
 HERE = os.path.dirname(os.path.abspath(__file__))
+ANSIBLE = os.path.join(HERE, "..", "..", "ansible")
 
 
 def fake_host(name, argv):
@@ -236,7 +237,7 @@ CASES = [
     ("detached private VIF ignored", lambda s: s["vifs"].append(
         vif("dxvif-cccc3333", virtualInterfaceType="private", attachmentState="detached")), {}, None),
     ("attaching 1500-byte VIF", lambda s: s["vifs"].append(
-        vif("dxvif-dddd4444", mtu=1500, attachmentState="attaching")), {}, "must be readable by this account"),
+        vif("dxvif-dddd4444", mtu=1500, attachmentState="attaching")), {}, READABLE),
     ("detaching 1500-byte VIF ignored", lambda s: s["vifs"].append(
         vif("dxvif-dddd4444", mtu=1500, attachmentState="detaching")), {}, None),
     ("VIF in another Region", edit(("vifs", 1), region="us-east-1"), {}, None),
@@ -289,16 +290,16 @@ PREFLIGHT = [
     ("direct-connect empty network_cidr", {"network_cidr": ""}, "a plain IPv4 address"),
     ("direct-connect next_hop not an address", {"next_hop": "10.99.0.0/30"}, "next_hop 10.99.0.0/30"),
     ("direct-connect next_hop inside tunnel.network_cidr", {"next_hop": "10.44.44.9"}, "next_hop 10.44.44.9"),
-    ("direct-connect network_cidr inside a VPC", {"network_cidr": "10.100.44.0/24", "onprem_ip": "10.100.44.1"},
+    ("direct-connect network_cidr inside the infra VPC", {"network_cidr": "10.100.44.0/24", "onprem_ip": "10.100.44.1"},
      "network_cidr 10.100.44.0/24"),
-    ("direct-connect network_cidr holding a VPC", {"network_cidr": "10.200.0.0/15", "onprem_ip": "10.200.44.1"},
-     "network_cidr 10.200.0.0/15"),
-    ("direct-connect without next_hop", {"tunnel": {"type": "direct-connect", "onprem_ip": "10.44.44.1"}},
-     "following are missing: next_hop"),
     ("direct-connect network_cidr inside the workload VPC",
      {"network_cidr": "10.200.44.0/24", "onprem_ip": "10.200.44.1"}, "network_cidr 10.200.44.0/24"),
     ("direct-connect network_cidr holding the infra VPC",
      {"network_cidr": "10.100.0.0/15", "onprem_ip": "10.101.44.1"}, "network_cidr 10.100.0.0/15"),
+    ("direct-connect network_cidr holding the workload VPC",
+     {"network_cidr": "10.200.0.0/15", "onprem_ip": "10.200.44.1"}, "network_cidr 10.200.0.0/15"),
+    ("direct-connect without next_hop", {"tunnel": {"type": "direct-connect", "onprem_ip": "10.44.44.1"}},
+     "following are missing: next_hop"),
     ("direct-connect with only the required tunnel keys",
      {"tunnel": {"type": "direct-connect", "onprem_ip": "10.44.44.1", "next_hop": "10.99.0.1"}}, None),
     ("direct-connect over its MTU budget", {"evpn_health_check_workload_mtu": 1501}, BUDGET),
@@ -347,7 +348,8 @@ def run(tmp, steps, st, extra=None, write=False, args=(), play="play.yml"):
         json.dump(st, f)
     open(log, "w").close()
     env = dict(os.environ, PATH=tmp + os.pathsep + os.environ["PATH"], DX_STUB_STATE=state, DX_STUB_LOG=log,
-               ANSIBLE_NOCOLOR="1", ANSIBLE_LOCALHOST_WARNING="false", ANSIBLE_INVENTORY_UNPARSED_WARNING="false")
+               ANSIBLE_NOCOLOR="1", ANSIBLE_LOCALHOST_WARNING="false", ANSIBLE_INVENTORY_UNPARSED_WARNING="false",
+               ANSIBLE_ROLES_PATH=os.path.join(ANSIBLE, "roles"))
     if write:
         env["DX_STUB_WRITE"] = "1"
     extra = dict(extra or {}, steps=steps)
@@ -497,13 +499,19 @@ LIFECYCLE = [
 ]
 
 
-def check_job(name, steps, mutators, extra, want):
+def check_job(name, steps, mutators, extra, want, appliance=False):
+    """appliance: the play host is in onprem_appliances, so the preflight reads its routes."""
     def job(tmp):
         st = copy.deepcopy(BASE)
         for f in mutators:
             if f:
                 f(st)
-        p, calls, _ = run(tmp, steps, st, extra)
+        args = []
+        if appliance:
+            args = ["-i", os.path.join(tmp, "hosts")]
+            with open(args[1], "w") as f:
+                f.write("[onprem_appliances]\nlocalhost ansible_connection=local\n")
+        p, calls, _ = run(tmp, steps, st, extra, args=args)
         out = p.stdout + p.stderr
         found = problems(
             ((p.returncode == 0) != (want is None), "expected %s, rc=%d" % (want or "success", p.returncode)),
@@ -554,26 +562,6 @@ APPLIANCE = [
 ]
 
 
-def appliance_job(name, mutator, want):
-    """check_job with the play host in onprem_appliances and the fake `ip` and `cat` on PATH."""
-    def job(tmp):
-        for cmd in ("ip", "cat"):
-            os.symlink(os.path.join(HERE, "run.py"), os.path.join(tmp, cmd))
-        inventory = os.path.join(tmp, "hosts")
-        with open(inventory, "w") as f:
-            f.write("[onprem_appliances]\nlocalhost ansible_connection=local\n")
-        st = copy.deepcopy(BASE)
-        if mutator:
-            mutator(st)
-        p, _, _ = run(tmp, ["preflight"], st, {"trunk_interface": "eth9"}, args=["-i", inventory])
-        out = p.stdout + p.stderr
-        found = problems(
-            ((p.returncode == 0) != (want is None), "expected %s, rc=%d" % (want or "success", p.returncode)),
-            (want is not None and want not in out, "did not fail with: %s" % want))
-        yield name, found + ([out[-3000:]] if found else [])
-    return job
-
-
 # deploy.yml's checks on two appliances of the given transports; they must stop it before any host change
 # (None: they pass, and deploy reaches the hosts).
 ONE = "supports one on-premises appliance"
@@ -586,8 +574,6 @@ DEPLOY = [
 
 def deploy_job(name, types, want):
     def job(tmp):
-        for cmd in ("ip", "cat"):
-            os.symlink(os.path.join(HERE, "run.py"), os.path.join(tmp, cmd))
         tunnels = {"wireguard": {"cloud_ip": "10.44.44.2", "port": 51820}, "direct-connect": {"next_hop": "10.99.0.1"}}
         hosts = {"appliance-%d" % i: {"tunnel": dict(tunnels[t], type=t, mtu_mode="safe", onprem_ip="10.44.44.%d" % (
             1 + 128 * i), network_cidr="10.44.44.%d/25" % (128 * i))} for i, t in enumerate(types)}
@@ -597,13 +583,8 @@ def deploy_job(name, types, want):
             json.dump({"onprem_appliances": {"hosts": hosts, "vars": {
                 "ansible_connection": "local", "ansible_become_exe": "false", "trunk_interface": "eth9",
                 "evpn_health_check_accept_internet_mode_limits": True}}}, f)
-        with open(os.path.join(tmp, "state.json"), "w") as f:
-            json.dump(BASE, f)
-        ansible = os.path.join(HERE, "..", "..", "ansible")
-        env = dict(os.environ, PATH=tmp + os.pathsep + os.environ["PATH"], DX_STUB_STATE=os.path.join(tmp, "state.json"),
-                   ANSIBLE_NOCOLOR="1", ANSIBLE_ROLES_PATH=os.path.join(ansible, "roles"))
-        p = subprocess.run(["ansible-playbook", "--check", "-i", inventory, os.path.join(ansible, "playbooks", "deploy.yml")],
-                           env=env, capture_output=True, text=True)
+        p, _, _ = run(tmp, [], BASE, args=["--check", "-i", inventory],
+                      play=os.path.join(ANSIBLE, "playbooks", "deploy.yml"))
         out = p.stdout + p.stderr
         found = problems((want is not None and want not in out, "did not fail with: %s" % want),
                          (("PLAY [Deploy on-prem appliance" in out) != (want is None),
@@ -640,7 +621,6 @@ def ipv4(lines):
 
 def render_job(ttype):
     def job(tmp):
-        os.symlink(os.path.join(HERE, "run.py"), os.path.join(tmp, "ip"))
         p, calls, _ = run(tmp, RENDER_STEPS, BASE, {"ttype": ttype, "out": tmp}, write=True, play="render.yml")
         out = {}
         for t in DX_LINES:
@@ -674,16 +654,18 @@ JOBS = [*[check_job(n, ["dx_preflight"], [m], x, w) for n, m, x, w in CASES],
                   dict(FAST, evpn_aws_infra_project_name="ega-*"), "letters, digits"),
         *[check_job("dx_status refuses " + k, ["dx_status"], [status_base], dict(FAST, **{k: v}),
                     "require local execution") for k, v in (("ansible_become", True), ("ansible_connection", "ssh"))],
-        *[appliance_job(n, m, w) for n, m, w in APPLIANCE],
+        *[check_job(n, ["preflight"], [m], {"trunk_interface": "eth9"}, w, appliance=True)
+          for n, m, w in APPLIANCE],
         *[deploy_job(n, t, w) for n, t, w in DEPLOY],
         *[render_job(t) for t in ("direct-connect", "wireguard")],
         *LIFECYCLE]
 
 
 def isolated(job):
-    """Run a job in its own directory, holding the fake `aws`."""
+    """Run a job in its own directory, holding the fake `aws`, `ip` and `cat`."""
     with tempfile.TemporaryDirectory() as tmp:
-        os.symlink(os.path.join(HERE, "run.py"), os.path.join(tmp, "aws"))
+        for cmd in ("aws", "ip", "cat"):
+            os.symlink(os.path.join(HERE, "run.py"), os.path.join(tmp, cmd))
         return list(job(tmp))
 
 

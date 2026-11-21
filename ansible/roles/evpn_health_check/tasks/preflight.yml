@@ -31,22 +31,24 @@
     that:
       - tunnel.mtu_mode | default('safe') == 'safe'
       - tunnel.onprem_ip | ansible.utils.ipv4('address') == tunnel.onprem_ip
-      - >-
-        tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.ipv4('network/prefix') ==
-        tunnel.network_cidr | default('10.44.44.0/24')
-      - tunnel.onprem_ip | ansible.utils.ipv4(tunnel.network_cidr | default('10.44.44.0/24')) == tunnel.onprem_ip
+      - _evpn_health_check_dx_cidr | ansible.utils.ipv4('network/prefix') == _evpn_health_check_dx_cidr
+      - tunnel.onprem_ip | ansible.utils.ipv4(_evpn_health_check_dx_cidr) == tunnel.onprem_ip
       - tunnel.next_hop | ansible.utils.ipv4('address') == tunnel.next_hop
-      - not (tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.network_in_network(tunnel.next_hop))
-      - not (infra_vpc_cidr | default('10.100.0.0/16') | ansible.utils.network_in_network(tunnel.network_cidr | default('10.44.44.0/24')))
-      - not (workload_vpc_cidr | default('10.200.0.0/16') | ansible.utils.network_in_network(tunnel.network_cidr | default('10.44.44.0/24')))
-      - not (tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.network_in_network(infra_vpc_cidr | default('10.100.0.0/16')))
-      - not (tunnel.network_cidr | default('10.44.44.0/24') | ansible.utils.network_in_network(workload_vpc_cidr | default('10.200.0.0/16')))
+      - not (_evpn_health_check_dx_cidr | ansible.utils.network_in_network(tunnel.next_hop))
+      - not (_evpn_health_check_dx_infra | ansible.utils.network_in_network(_evpn_health_check_dx_cidr))
+      - not (_evpn_health_check_dx_workload | ansible.utils.network_in_network(_evpn_health_check_dx_cidr))
+      - not (_evpn_health_check_dx_cidr | ansible.utils.network_in_network(_evpn_health_check_dx_infra))
+      - not (_evpn_health_check_dx_cidr | ansible.utils.network_in_network(_evpn_health_check_dx_workload))
     fail_msg: >-
       tunnel.type direct-connect requires tunnel.mtu_mode safe (8500-byte transit VIFs) until CORENET-7709;
       tunnel.onprem_ip to be a plain IPv4 address inside tunnel.network_cidr (an IPv4 network outside the VPC CIDRs); and tunnel.next_hop
       to be the customer router's IPv4 address on the appliance's uplink, outside tunnel.network_cidr. Found mtu_mode
       {{ tunnel.mtu_mode | default('safe') }}, onprem_ip {{ tunnel.onprem_ip }}, network_cidr
-      {{ tunnel.network_cidr | default('10.44.44.0/24') }}, next_hop {{ tunnel.next_hop }}.
+      {{ _evpn_health_check_dx_cidr }}, next_hop {{ tunnel.next_hop }}.
+  vars:
+    _evpn_health_check_dx_cidr: "{{ tunnel.network_cidr | default('10.44.44.0/24') }}"
+    _evpn_health_check_dx_infra: "{{ infra_vpc_cidr | default('10.100.0.0/16') }}"
+    _evpn_health_check_dx_workload: "{{ workload_vpc_cidr | default('10.200.0.0/16') }}"
   when: tunnel.type == 'direct-connect'
 
 # Direct Connect: FRR owns the routes to the VPCs (see the evpn_onprem_appliance README).

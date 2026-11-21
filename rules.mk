@@ -111,7 +111,7 @@ check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check
 check-ansible-preflight:
 	ANSIBLE_HOME="$$(mktemp -d)" test/preflight/run.sh
 
-# The Direct Connect tasks and preflight against a fake AWS CLI.
+# The Direct Connect tasks, preflight, deploy checks and rendered configs against a fake AWS CLI and route reads.
 .PHONY: check-ansible-direct-connect
 check-ansible-direct-connect:
 	ANSIBLE_HOME="$$(mktemp -d)" python3 test/direct-connect/run.py
