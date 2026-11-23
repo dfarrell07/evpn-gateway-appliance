@@ -334,7 +334,7 @@ tests:
               description: 'frr/edge-a: 3 or more BFD down events for peer-flap in VRF default in 10m, held for 5m.'
 
   # increase() extrapolates to the window edges, so on a counter with earlier samples exactly
-  # 3 events read as about 3.3 at 1m scrapes and pass `> 3`, and 2 read as about 2.2.
+  # 3 events read as about 3.3 at 1m scrapes and 2 read as about 2.2; `>= 3` splits them.
   - name: 'Flapping alerts: 3 events on an existing counter fire, 2 do not'
     input_series:
       - series: frrk8s_bgp_opens_sent{job="frr",instance="edge-a",peer="peer-three",vrf="default"}
