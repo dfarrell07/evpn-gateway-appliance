@@ -128,6 +128,7 @@
     evpn_frr_started_changed: >-
       {{ (_evpn_onprem_appliance_frr_systemd.changed | default(false) | bool) or
          (_evpn_onprem_appliance_frr_container.changed | default(false) | bool) }}
+    evpn_frr_container_caps: "{{ evpn_onprem_appliance_frr_container_caps }}"
 
 - name: Flush handlers
   ansible.builtin.meta: flush_handlers

@@ -19,3 +19,17 @@ argument_specs:
         type: str
         default: frr
         description: Name of the running FRR container.
+      evpn_frr_container_caps:
+        type: list
+        elements: str
+        default:
+          - NET_ADMIN
+          - SYS_ADMIN
+          - NET_RAW
+          - NET_BIND_SERVICE
+          - SETUID
+          - SETGID
+          - KILL
+          - DAC_OVERRIDE
+          - CHOWN
+        description: Linux capabilities used when recreating the FRR container.
