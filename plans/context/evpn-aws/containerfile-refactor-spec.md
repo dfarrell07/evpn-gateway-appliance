@@ -93,6 +93,7 @@ An always-FIPS generic image cannot run the WireGuard dev/test transport. Option
 WireGuard tests in explicitly non-FIPS development environments, development and lab
 topologies over IPsec, or a separate FIPS variant and test lane; a separately shipped
 variant needs approval under decision 12. Lab results do not qualify production FIPS behavior.
+Decision 21 keeps WireGuard for the credential-free per-PR emulated lane, in non-FIPS development environments.
 Also decide whether `wireguard-tools` belongs in the supported image. The same kernels
 disable their `md5` hash in FIPS mode, and TCP-MD5 BGP signatures depend on it. FRR's only session authentication is
 that MD5 password (TCP-AO is an open feature request, FRRouting/frr#7240), and GTSM
