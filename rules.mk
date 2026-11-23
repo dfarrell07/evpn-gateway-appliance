@@ -89,7 +89,7 @@ check-dockerfiles:
 
 # Monitoring rules and their promtool tests (promtool pinned in Dockerfile.ci), dashboard
 # PromQL compilation, the frr-k8s series-name contract, Grafana alert rules, alert runbook
-# links, and the checker's unit tests.
+# links, and unit tests for the checker and the overlay probe script.
 PROMTOOL ?= promtool
 .PHONY: check-monitoring
 check-monitoring:
@@ -97,6 +97,7 @@ check-monitoring:
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/tests/*_test.yaml' | xargs -0 -r $(PROMTOOL) test rules --
 	git ls-files -z -c -o --exclude-standard -- 'monitoring/rules/*.yaml' 'monitoring/dashboards/*.json' 'monitoring/grafana/*.yaml' | xargs -0 -r env PROMTOOL="$(PROMTOOL)" python3 monitoring/check_dashboards.py
 	env PROMTOOL="$(PROMTOOL)" PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring/tests -p 'test_*.py'
+	env PROMTOOL="$(PROMTOOL)" sh test/unit/ega-path-probe_test.sh
 
 # ── Ansible collection source checks ─────────────────────────────────────────
 # Lint, playbook syntax, collection build + tarball allowlist, a clean-env install

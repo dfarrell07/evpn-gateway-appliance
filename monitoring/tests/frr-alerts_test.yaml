@@ -313,7 +313,7 @@ tests:
               summary: 'BGP peer flapping on edge-a: peer-flap'
               runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgppeerflapping
               netobserv_io_network_health: '{}'
-              description: 'frr/edge-a: 3 or more BGP OPENs sent to peer-flap in VRF default in 10m, held for 5m.'
+              description: 'frr/edge-a: 3 or more BGP OPENs sent to peer-flap in VRF default in 20m, held for 5m.'
       - eval_time: 12m
         alertname: EGABfdPeerFlapping
         exp_alerts: []
@@ -331,10 +331,10 @@ tests:
               summary: 'BFD peer flapping on edge-a: peer-flap'
               runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabfdpeerflapping
               netobserv_io_network_health: '{}'
-              description: 'frr/edge-a: 3 or more BFD down events for peer-flap in VRF default in 10m, held for 5m.'
+              description: 'frr/edge-a: 3 or more BFD down events for peer-flap in VRF default in 20m, held for 5m.'
 
   # increase() extrapolates to the window edges, so on a counter with earlier samples exactly
-  # 3 events read as about 3.3 at 1m scrapes and pass `> 3`, and 2 read as about 2.2.
+  # 3 events read as about 3.2 at 1m scrapes and 2 read as about 2.1; `>= 3` splits them.
   - name: 'Flapping alerts: 3 events on an existing counter fire, 2 do not'
     input_series:
       - series: frrk8s_bgp_opens_sent{job="frr",instance="edge-a",peer="peer-three",vrf="default"}
@@ -363,7 +363,7 @@ tests:
               summary: 'BGP peer flapping on edge-a: peer-three'
               runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabgppeerflapping
               netobserv_io_network_health: '{}'
-              description: 'frr/edge-a: 3 or more BGP OPENs sent to peer-three in VRF default in 10m, held for 5m.'
+              description: 'frr/edge-a: 3 or more BGP OPENs sent to peer-three in VRF default in 20m, held for 5m.'
       - eval_time: 17m
         alertname: EGABfdPeerFlapping
         exp_alerts: []
@@ -381,7 +381,7 @@ tests:
               summary: 'BFD peer flapping on edge-a: peer-three'
               runbook_url: https://github.com/openshift/evpn-gateway-appliance/blob/main/monitoring/runbooks.md#egabfdpeerflapping
               netobserv_io_network_health: '{}'
-              description: 'frr/edge-a: 3 or more BFD down events for peer-three in VRF default in 10m, held for 5m.'
+              description: 'frr/edge-a: 3 or more BFD down events for peer-three in VRF default in 20m, held for 5m.'
 
   - name: A scraped-out FRR target fires only if it reported collector status in the last day
     input_series:
@@ -587,7 +587,7 @@ tests:
           - labels: 'ALERTS{job="frr",instance="bf",peer="p",vrf="default",alertname="EGABgpPeerFlapping",alertstate="firing",severity="warning",netobserv="true"}'
             value: 1
       - expr: ALERTS{alertname="EGABgpPeerFlapping",instance="bf"}
-        eval_time: 25m
+        eval_time: 30m
         exp_samples: []
       - expr: ALERTS{alertname="EGABfdPeerFlapping",alertstate="firing",instance="df"}
         eval_time: 12m
@@ -595,5 +595,44 @@ tests:
           - labels: 'ALERTS{job="frr",instance="df",peer="p",vrf="default",alertname="EGABfdPeerFlapping",alertstate="firing",severity="warning",netobserv="true"}'
             value: 1
       - expr: ALERTS{alertname="EGABfdPeerFlapping",instance="df"}
-        eval_time: 25m
+        eval_time: 30m
         exp_samples: []
+
+  # An frr-k8s or FRR restart resets per-peer counters; increase() must not read that as flaps.
+  - name: 'Flapping alerts: a counter reset alone stays quiet, flaps across a reset still fire'
+    input_series:
+      - series: frrk8s_bgp_opens_sent{job="frr",instance="edge-a",peer="peer-reset",vrf="default"}
+        values: 40+0x10 0 1+0x15
+      - series: frrk8s_bfd_session_down_events{job="frr",instance="edge-a",peer="peer-reset",vrf="default"}
+        values: 40+0x10 0 1+0x15
+      - series: frrk8s_bgp_opens_sent{job="frr",instance="edge-a",peer="peer-flap",vrf="default"}
+        values: 40 41 42 0 1 2 3+0x20
+      - series: frrk8s_bfd_session_down_events{job="frr",instance="edge-a",peer="peer-flap",vrf="default"}
+        values: 40 41 42 0 1 2 3+0x20
+    promql_expr_test:
+      - expr: count by (alertname, peer) (ALERTS{alertstate="firing"})
+        eval_time: 10m
+        exp_samples:
+          - labels: '{alertname="EGABgpPeerFlapping",peer="peer-flap"}'
+            value: 1
+          - labels: '{alertname="EGABfdPeerFlapping",peer="peer-flap"}'
+            value: 1
+      - expr: max_over_time(ALERTS{peer="peer-reset"}[26m])
+        eval_time: 26m
+        exp_samples: []
+
+  # A peer that resets steadily every 6m (10 times an hour) must fire.
+  - name: 'Flapping alerts: a steady flap every 6m fires'
+    input_series:
+      - series: frrk8s_bgp_opens_sent{job="frr",instance="edge-a",peer="peer-6m",vrf="default"}
+        values: 10 10 10 10 10 10 11 11 11 11 11 11 12 12 12 12 12 12 13 13 13 13 13 13 14 14 14 14 14 14 15 15 15 15 15 15 16 16 16 16 16
+      - series: frrk8s_bfd_session_down_events{job="frr",instance="edge-a",peer="peer-6m",vrf="default"}
+        values: 10 10 10 10 10 10 11 11 11 11 11 11 12 12 12 12 12 12 13 13 13 13 13 13 14 14 14 14 14 14 15 15 15 15 15 15 16 16 16 16 16
+    promql_expr_test:
+      - expr: count by (alertname, peer) (ALERTS{alertstate="firing"})
+        eval_time: 40m
+        exp_samples:
+          - labels: '{alertname="EGABgpPeerFlapping",peer="peer-6m"}'
+            value: 1
+          - labels: '{alertname="EGABfdPeerFlapping",peer="peer-6m"}'
+            value: 1
