@@ -27,7 +27,7 @@ roles/
 ├── evpn_monitoring/                frr_exporter + node_exporter
 └── evpn_health_check/              Read-only validation suite
 playbooks/
-├── deploy.yml                      Full deploy, idempotent
+├── deploy.yml                      Deploy the relay and the on-prem appliance
 ├── health-check.yml                Validation only
 ├── provision-aws.yml               Provision AWS infra, update inventory
 ├── teardown.yml                    Remove appliance/relay/VTEP configuration
@@ -67,7 +67,7 @@ The machine running these playbooks needs:
   Python 3.12 (`Dockerfile.ci`).
 - **Collections** — the Quick start command installs this collection and resolves
   `galaxy.yml`'s dependencies from Hub: ansible.utils, ansible.posix, amazon.aws,
-  containers.podman.
+  containers.podman, kubernetes.core.
 - **Python** — 3.12 is the current CI-tested controller baseline. A supported
   ansible-core/Python/AAP matrix remains to be defined. Install `boto3`/`botocore`
   for the amazon.aws modules and `netaddr` for the ansible.utils IP filters:
@@ -81,6 +81,9 @@ The machine running these playbooks needs:
   controller account's credential provider chain.
 - **SSH** — the EC2 key pair named by `evpn_aws_infra_ssh_key_name` must exist in AWS, with
   its private key available to your environment (e.g. loaded into ssh-agent).
+- **Kubernetes** — a kubeconfig on the controller. When the `cloud_workload`
+  inventory group is empty, the cloud infra role reads running frr-k8s pods
+  from the cluster to populate it.
 
 (When building an execution environment, ansible-builder reads the Python and
 system dependencies from `requirements.txt`, `bindep.txt` and
@@ -95,6 +98,7 @@ ANSIBLE_CONFIG=/path/to/private/ansible.cfg \
 # Provision AWS infra and generate the inventory (run at least once):
 ansible-playbook playbooks/provision-aws.yml
 # (or hand-edit inventory/hosts.yml from inventory/hosts.yml.j2)
+# The cloud infra role discovers OCP frr-k8s peers, then deploys the relay and appliance:
 ansible-playbook playbooks/deploy.yml
 ansible-playbook playbooks/health-check.yml
 ```
@@ -128,8 +132,8 @@ specifically:
 - Pinned the `frr_exporter`/`node_exporter` image tags instead of `:latest`.
 - Added a defensive EVPN `maximum-prefix` to the FRR templates.
 - Replaced hardcoded `hostvars['infra-router']`/`hostvars['workload-router']`
-  lookups (and static `hostname` lines) with the explicit
-  `infra_relay_host`/`workload_vtep_host` variables and `inventory_hostname`,
+  lookups (and static `hostname` lines) with the explicit `infra_relay_host`
+  variable, the `cloud_workload` inventory group, and `inventory_hostname`,
   so renaming those inventory hosts just needs the one matching variable
   updated, not template edits.
 - Replaced the static `frr version 10.3.1` line in all three FRR templates

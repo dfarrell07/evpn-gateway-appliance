@@ -11,3 +11,7 @@ evpn_cloud_infra_frr_container_caps:
   - KILL
   - DAC_OVERRIDE
   - CHOWN
+
+# frr-k8s pod lookup for discovery; skipped when cloud_workload is already populated.
+evpn_cloud_infra_frr_k8s_ns: openshift-frr-k8s
+evpn_cloud_infra_frr_k8s_lbl: app=frr-k8s

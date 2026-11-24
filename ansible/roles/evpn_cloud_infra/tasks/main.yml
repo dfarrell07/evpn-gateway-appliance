@@ -1,4 +1,9 @@
 ---
+- name: Discover OCP frr-k8s workload peers
+  ansible.builtin.include_tasks: discover_peers.yml
+  when: groups['cloud_workload'] | default([]) | length <= 0
+  run_once: true
+
 - name: Generate/load WireGuard keys
   ansible.builtin.include_tasks: wireguard_keys.yml
   when: tunnel.type == 'wireguard'

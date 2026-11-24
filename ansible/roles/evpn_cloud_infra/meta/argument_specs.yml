@@ -5,13 +5,18 @@ argument_specs:
     description:
       - Terminates the transport from the on-prem appliance and configures FRR
         as a route relay (not a VTEP) between the on-prem appliance and the
-        workload-VPC VTEP, using next-hop-unchanged so VTEP IPs are preserved
+        workload-side VTEPs, using next-hop-unchanged so VTEP IPs are preserved
         end-to-end.
+      - Workload peers are read from the cloud_workload inventory group.
     options:
-      workload_vtep_host:
+      evpn_cloud_infra_frr_k8s_ns:
         type: str
-        required: true
-        description: Inventory hostname of the workload-VPC VTEP peer; its private_ip host variable is used as the BGP neighbor address.
+        default: openshift-frr-k8s
+        description: Namespace searched for frr-k8s pods when the cloud_workload inventory group is empty.
+      evpn_cloud_infra_frr_k8s_lbl:
+        type: str
+        default: app=frr-k8s
+        description: Label selector matching frr-k8s pods when the cloud_workload inventory group is empty.
       private_ip:
         type: str
         required: true
