@@ -101,16 +101,17 @@ WORKDIR /
 # e2e: kind v0.33.0, kubectl v1.36.1, helm v3.19.0, yq v4.
 # The e2e entrypoint needs a podman CLI; the image has podman-remote, so the shim
 # forwards `podman` to the mounted host socket.
-RUN curl -fsSL -o /usr/local/bin/kind \
-        https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 && \
+RUN case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) arch="$(uname -m)" ;; esac && \
+    curl -fsSL -o /usr/local/bin/kind \
+        "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-${arch}" && \
     curl -fsSL -o /usr/local/bin/kubectl \
-        https://dl.k8s.io/release/v1.36.1/bin/linux/amd64/kubectl && \
-    curl -fsSL -o /tmp/helm.tgz https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz && \
+        "https://dl.k8s.io/release/v1.36.1/bin/linux/${arch}/kubectl" && \
+    curl -fsSL -o /tmp/helm.tgz "https://get.helm.sh/helm-v3.19.0-linux-${arch}.tar.gz" && \
     tar -C /tmp -xzf /tmp/helm.tgz && \
-    mv /tmp/linux-amd64/helm /usr/local/bin/helm && \
+    mv "/tmp/linux-${arch}/helm" /usr/local/bin/helm && \
     curl -fsSL -o /usr/local/bin/yq \
-        https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 && \
-    rm -rf /tmp/helm.tgz /tmp/linux-amd64 && \
+        "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_${arch}" && \
+    rm -rf /tmp/helm.tgz "/tmp/linux-${arch}" && \
     printf '%s\n' '#!/bin/sh' \
         "exec podman-remote --url \"\${DOCKER_HOST:-unix:///run/podman/podman.sock}\" \"\$@\"" \
         > /usr/local/bin/podman && \
