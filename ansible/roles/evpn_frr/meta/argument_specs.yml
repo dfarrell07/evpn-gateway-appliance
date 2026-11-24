@@ -1,5 +1,12 @@
 ---
 argument_specs:
+  render:
+    short_description: Render and check the caller's FRR configuration before installing it.
+    options:
+      evpn_frr_config_template:
+        type: str
+        required: true
+        description: Template filename relative to the calling role's templates directory.
   main:
     short_description: Reconcile a running FRR instance after configuration changes.
     options:

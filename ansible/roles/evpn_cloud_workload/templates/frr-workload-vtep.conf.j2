@@ -35,9 +35,9 @@ router bgp {{ bgp.workload_asn }}
 {% set vni = 10000 + s.vlan %}
   vni {{ vni }}
    rd {{ private_ip }}:{{ vni }}
-   rt import {{ bgp.workload_asn }}:{{ vni }}
-   rt import {{ bgp.onprem_asn }}:{{ vni }}
-   rt export {{ bgp.workload_asn }}:{{ vni }}
+   route-target import {{ bgp.workload_asn }}:{{ vni }}
+   route-target import {{ bgp.onprem_asn }}:{{ vni }}
+   route-target export {{ bgp.workload_asn }}:{{ vni }}
    advertise-svi-ip
   exit-vni
 {% endfor %}

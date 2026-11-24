@@ -1,0 +1,25 @@
+---
+- name: Determine whether FRR uses the embedded image
+  ansible.builtin.set_fact:
+    _evpn_frr_use_embedded_image: >-
+      {{ ansible_facts.services is defined and
+         'frr-container.service' in ansible_facts.services }}
+
+- name: Load the embedded FRR image before validating the config
+  ansible.builtin.systemd:
+    name: payload-load.service
+    state: started
+  when: _evpn_frr_use_embedded_image
+
+- name: Render and validate the FRR configuration
+  ansible.builtin.template:
+    src: "{{ ansible_parent_role_paths[0] }}/templates/{{ evpn_frr_config_template }}"
+    dest: /etc/frr/frr.conf
+    mode: "0644"
+    validate: >-
+      podman run --rm --network=none
+      --pull={{ _evpn_frr_use_embedded_image | ternary('never', 'missing') }}
+      --entrypoint vtysh --volume %s:/tmp/evpn-frr.conf:ro,Z
+      {{ (_evpn_frr_use_embedded_image | ternary('frr:embedded', frr_image)) | quote }}
+      -C -f /tmp/evpn-frr.conf
+  register: evpn_frr_rendered_config

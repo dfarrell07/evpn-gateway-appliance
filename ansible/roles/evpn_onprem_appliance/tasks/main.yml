@@ -86,11 +86,11 @@
     content: "service integrated-vtysh-config\n"
 
 - name: Deploy FRR config (on-prem VTEP)
-  ansible.builtin.template:
-    src: frr-onprem-appliance.conf.j2
-    dest: /etc/frr/frr.conf
-    mode: "0644"
-  register: _evpn_onprem_appliance_frr_config
+  ansible.builtin.include_role:
+    name: evpn_frr
+    tasks_from: render
+  vars:
+    evpn_frr_config_template: frr-onprem-appliance.conf.j2
 
 - name: Start FRR via systemd service (bootc image)
   ansible.builtin.systemd:
@@ -123,7 +123,7 @@
   ansible.builtin.include_role:
     name: evpn_frr
   vars:
-    evpn_frr_config_changed: "{{ _evpn_onprem_appliance_frr_config.changed | default(false) }}"
+    evpn_frr_config_changed: "{{ evpn_frr_rendered_config.changed | default(false) }}"
     evpn_frr_daemons_changed: "{{ _evpn_onprem_appliance_frr_daemons.changed | default(false) }}"
     evpn_frr_started_changed: >-
       {{ (_evpn_onprem_appliance_frr_systemd.changed | default(false) | bool) or

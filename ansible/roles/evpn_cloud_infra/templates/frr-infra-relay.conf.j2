@@ -34,10 +34,10 @@ router bgp {{ bgp.infra_asn }}
  !
  address-family l2vpn evpn
   neighbor {{ workload_host.private_ip }} activate
-  neighbor {{ workload_host.private_ip }} next-hop-unchanged
+  neighbor {{ workload_host.private_ip }} attribute-unchanged next-hop
   neighbor {{ workload_host.private_ip }} maximum-prefix {{ bgp.max_prefix | default(1000) }}
   neighbor {{ tunnel.onprem_ip }} activate
-  neighbor {{ tunnel.onprem_ip }} next-hop-unchanged
+  neighbor {{ tunnel.onprem_ip }} attribute-unchanged next-hop
   neighbor {{ tunnel.onprem_ip }} maximum-prefix {{ bgp.max_prefix | default(1000) }}
  exit-address-family
 exit
