@@ -81,13 +81,14 @@ kind create cluster \
 	--image kindest/node:v1.36.1 \
 	--config "${self_dir}/kind.yaml"
 
+nodes="$(kind get nodes --name "$cluster")"
 while IFS= read -r node; do
 	[ -n "$node" ] || continue
 	podman exec "$node" sysctl --ignore net.ipv6.conf.all.disable_ipv6=0
 	podman exec "$node" sysctl --ignore net.ipv4.conf.all.forwarding=1
 	podman exec "$node" ip route replace 10.100.0.0/16 via "$kind_tgw_ip"
 	podman exec "$node" ip route replace 10.44.44.0/24 via "$kind_tgw_ip"
-done < <(kind get nodes --name "$cluster")
+done <<< "$nodes"
 
 api="$(kind get kubeconfig --internal --name "$cluster" | awk '/server:/ { print $2; exit }')"
 cp_node="${api#*//}"
@@ -135,10 +136,12 @@ rollout() {
 	return 1
 }
 
+objs="$(kubectl --kubeconfig "$kubeconfig" -n ovn-kubernetes get daemonset,deployment -o name)"
+[ -n "$objs" ] || { echo "setup-cluster: the chart created no ovn-kubernetes workloads" >&2; exit 1; }
 while IFS= read -r obj; do
 	[ -n "$obj" ] || continue
 	rollout ovn-kubernetes "$obj" 300s
-done < <(kubectl --kubeconfig "$kubeconfig" -n ovn-kubernetes get daemonset,deployment -o name)
+done <<< "$objs"
 
 echo ">> frr-k8s ready"
 rollout frr-k8s-system deployment/frr-k8s-statuscleaner 180s
