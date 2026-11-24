@@ -1,0 +1,6 @@
+---
+all:
+  children:
+    cloud_workload:
+      hosts:
+        static-vtep: {ansible_connection: local, private_ip: 10.0.0.40}

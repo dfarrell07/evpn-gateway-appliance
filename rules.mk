@@ -104,7 +104,12 @@ ANSIBLE_SMOKE_DIR := /tmp/ega-collections
 
 .PHONY: check-ansible
 # Sanity needs the virtualenvs primed in the CI image, so host runs (USE_IMAGE=0) skip it.
-check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install $(if $(EGA_IN_CI_IMAGE),check-ansible-sanity)
+check-ansible: check-ansible-lint check-ansible-syntax check-ansible-build check-ansible-install check-ansible-discovery $(if $(EGA_IN_CI_IMAGE),check-ansible-sanity)
+
+# frr-k8s peer discovery, relay rendering and health-check targeting against a fake k8s_info.
+.PHONY: check-ansible-discovery
+check-ansible-discovery:
+	ANSIBLE_HOME="$$(mktemp -d)" test/discovery/run.sh
 
 .PHONY: check-ansible-lint
 check-ansible-lint:
