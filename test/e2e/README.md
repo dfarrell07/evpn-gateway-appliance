@@ -52,9 +52,12 @@ test/
     entrypoint_molecule.sh  molecule in-container steps: molecule test against the rootful socket
     topology/
       emulated.clab.yml   the emulated fabric
+      kind.clab.yml       appliance, relay, and TGW attached to the kind network bridge
     inventory/
       emulated/           e2e Ansible inventory + group_vars for the emulated fabric
+      kind/               e2e Ansible inventory + group_vars for the kind scenario
     scenarios/            *.env definitions: topology, inventory, ordered playbooks
+    kind/                 kind scenario assets: cluster config, setup-cluster.sh, manifests
     ee/                   execution-environment definition + build.sh (make ee-image)
 
 ansible/

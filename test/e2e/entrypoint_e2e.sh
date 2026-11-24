@@ -36,10 +36,16 @@ export CONTAINERLAB_RUNTIME="podman"
 # the work dir at the same path here and on the host so the EE can bind the staged files.
 ee_playbook() {
 	local pb="$1"
+	local kube_env=()
+	# The kind scenario's discovery reads the API from the EE; the kubeconfig lives outside lab_dir.
+	if [ -n "${KUBECONFIG:-}" ] && [ -f "$KUBECONFIG" ]; then
+		kube_env=(-e "KUBECONFIG=${KUBECONFIG}" -v "${KUBECONFIG}:${KUBECONFIG}:Z")
+	fi
 	echo ">> ansible-playbook ${pb} (via execution environment: $EGA_EE_IMAGE)"
 	podman-remote --url "unix://${EGA_RUNTIME_SOCK}" run --rm --net=host --user 0 \
 		-v "${lab_dir}:${lab_dir}:Z" \
 		-e ANSIBLE_HOST_KEY_CHECKING=False \
+		"${kube_env[@]}" \
 		-w "${lab_dir}" \
 		"$EGA_EE_IMAGE" \
 		ansible-playbook -i "${lab_dir}/inventory/hosts.yml" \
@@ -59,6 +65,8 @@ run_scenario() (
 	fi
 	# Topology selection belongs to the scenario, not the caller's environment.
 	unset EGA_TOPOLOGY
+	# Neither does a stray kubeconfig: only the kind scenario sets one.
+	unset KUBECONFIG
 	# Scenario definitions are repository-controlled.
 	# shellcheck disable=SC1090
 	source "$scenario_file"
@@ -71,6 +79,8 @@ run_scenario() (
 	src_topo="${self_dir}/topology/${EGA_TOPOLOGY}"
 	inventory_src="${self_dir}/${EGA_INVENTORY}"
 	lab_name="ega-${scenario}"
+	# A podman1 bridge node means the topology needs the kind cluster before clab deploy.
+	needs_kind="$(yq '.topology.nodes.podman1.kind == "bridge"' "$src_topo")"
 
 	# containerlab writes clab-<name>/ next to its topology. Stage it out of the read-only
 	# repo, with a distinct name and directory for each scenario (also for deploy/destroy).
@@ -88,6 +98,9 @@ run_scenario() (
 		fi
 		echo ">> containerlab destroy: $topo"
 		containerlab destroy --name "$lab_name" -t "$topo" --cleanup
+		if [ "${needs_kind:-}" = "true" ]; then
+			"${self_dir}/kind/setup-cluster.sh" teardown "${EGA_WORK_DIR}"
+		fi
 	}
 	if [ "$stage" = destroy ]; then
 		cleanup
@@ -104,14 +117,26 @@ run_scenario() (
 	chmod 644 "${ssh_key}.pub"
 	export EGA_SSH_PUBKEY="${ssh_key}.pub"
 
+	if [ "$needs_kind" = "true" ]; then
+		# Fully configured kind cluster; its kubeconfig feeds the peer discovery.
+		KUBECONFIG="${EGA_WORK_DIR}/kubeconfig"
+		"${self_dir}/kind/setup-cluster.sh" setup "${EGA_WORK_DIR}"
+	fi
+
 	echo ">> containerlab deploy: $topo"
-	EGA_NODE_IMAGE="$EGA_NODE_IMAGE" containerlab deploy --name "$lab_name" -t "$topo" --reconfigure
+	local deploy_flags=(--reconfigure)
+	if [ "$needs_kind" = "true" ]; then
+		# The bridge node's iptables rule cannot install on RHEL 10.
+		deploy_flags+=(--skip-post-deploy)
+	fi
+	EGA_NODE_IMAGE="$EGA_NODE_IMAGE" containerlab deploy --name "$lab_name" -t "$topo" "${deploy_flags[@]}"
 
 	# sshd starts only after host-key generation; wait rather than racing the boot.
 	export ANSIBLE_HOST_KEY_CHECKING=False
 	inv="${lab_dir}/clab-${lab_name}/ansible-inventory.yml"
 	echo ">> waiting for SSH on all nodes"
-	ansible -i "$inv" all -u root --private-key "$ssh_key" \
+	# The generated inventory also lists bridge nodes, which have no SSH daemon.
+	ansible -i "$inv" linux -u root --private-key "$ssh_key" \
 		-m ansible.builtin.wait_for_connection -a 'timeout=120'
 
 	# Remove the old copy first: cp -r into an existing inventory would nest it and

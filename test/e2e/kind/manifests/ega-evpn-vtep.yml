@@ -1,0 +1,9 @@
+# Unmanaged VTEP. OVN records each node's kind-network address inside this prefix.
+apiVersion: k8s.ovn.org/v1
+kind: VTEP
+metadata:
+  name: ega-vtep
+spec:
+  mode: Unmanaged
+  cidrs:
+    - 10.89.0.0/24

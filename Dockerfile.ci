@@ -98,6 +98,66 @@ RUN printf 'namespace: stub\nname: stub\nversion: 0.0.0\n' > galaxy.yml && \
     chown -R 1001:0 "$HOME/.ansible" && chmod -R g=u "$HOME/.ansible"
 WORKDIR /
 
+# e2e: kind v0.33.0, kubectl v1.36.1, helm v3.19.0, yq v4.
+# The e2e entrypoint needs a podman CLI; the image has podman-remote, so the shim
+# forwards `podman` to the mounted host socket.
+RUN curl -fsSL -o /usr/local/bin/kind \
+        https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 && \
+    curl -fsSL -o /usr/local/bin/kubectl \
+        https://dl.k8s.io/release/v1.36.1/bin/linux/amd64/kubectl && \
+    curl -fsSL -o /tmp/helm.tgz https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz && \
+    tar -C /tmp -xzf /tmp/helm.tgz && \
+    mv /tmp/linux-amd64/helm /usr/local/bin/helm && \
+    curl -fsSL -o /usr/local/bin/yq \
+        https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 && \
+    rm -rf /tmp/helm.tgz /tmp/linux-amd64 && \
+    printf '%s\n' '#!/bin/sh' \
+        "exec podman-remote --url \"\${DOCKER_HOST:-unix:///run/podman/podman.sock}\" \"\$@\"" \
+        > /usr/local/bin/podman && \
+    chmod +x /usr/local/bin/kind /usr/local/bin/kubectl /usr/local/bin/helm /usr/local/bin/yq /usr/local/bin/podman
+
+# Chart v1.4.0, the multi-network CRDs, and the frr-k8s manifest; placed in /opt/ega/e2e.
+# Deliberately no RUN heredoc here: OpenShift's Dockerfile rewrite (the base-image
+# swap) re-serializes this file without blank lines, and a heredoc terminator directly
+# followed by the next instruction breaks hadolint's parser -- and verify lints the
+# baked, rewritten copy of this file. python3 -c replaces the nested patch heredoc.
+# The RBAC patch below: v1.4.0 grants frrconfigurations to ovnkube-cluster-manager
+# only; ovn-kube-ubuntu:master lists it as system:ovn-node (dabaa8b90e6a).
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+RUN dest=/opt/ega/e2e && \
+    tmp="$(mktemp -d)" && \
+    trap 'rm -rf "$tmp"' EXIT && \
+    GIT_TERMINAL_PROMPT=0 git clone --depth 1 --filter=blob:none --sparse --branch v1.4.0 \
+        https://github.com/ovn-kubernetes/ovn-kubernetes.git "${tmp}/ovn-kubernetes" && \
+    git -C "${tmp}/ovn-kubernetes" sparse-checkout set helm/ovn-kubernetes && \
+    git -C "${tmp}/ovn-kubernetes" checkout -- helm/ovn-kubernetes && \
+    chart="${tmp}/ovn-kubernetes/helm/ovn-kubernetes" && \
+    mkdir -p "${dest}/ovnk-helm" "${dest}/manifests" && \
+    find "${chart}" -type f \
+        ! -name README.md \
+        ! -name README.md.gotmpl \
+        ! -name .helmignore \
+        ! -name values-single-node-zone-dpu.yaml \
+        -printf '%P\0' \
+        | tar --null -C "${chart}" -T - -cf - \
+        | tar -C "${dest}/ovnk-helm" -xf - && \
+    test -f "${dest}/ovnk-helm/Chart.yaml" && \
+    python3 -c 'import pathlib, sys; p = pathlib.Path(sys.argv[1]); t = p.read_text(); o = "          - routeadvertisements\n      verbs: [ \"get\", \"list\", \"watch\" ]\n    {{- end }}\n"; n = "          - routeadvertisements\n      verbs: [ \"get\", \"list\", \"watch\" ]\n    - apiGroups: [\"frrk8s.metallb.io\"]\n      resources:\n          - frrconfigurations\n      verbs: [\"get\", \"list\", \"watch\"]\n    {{- end }}\n"; c = t.count(o); sys.exit(f"chart node RBAC pattern found {c} times") if c != 1 else p.write_text(t.replace(o, n, 1))' "${dest}/ovnk-helm/templates/rbac-ovnkube-node.yaml" && \
+    grep -q 'frrconfigurations' "${dest}/ovnk-helm/templates/rbac-ovnkube-node.yaml" && \
+    curl -fsSL \
+        "https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/v4.1.3/deployments/multus-daemonset.yml" \
+        | python3 -c 'import sys; docs = sys.stdin.read().split("\n---\n"); sys.stdout.write(docs[1].strip() + "\n")' \
+        > "${dest}/manifests/network-attachment-definition.yaml" && \
+    grep -q '^kind: CustomResourceDefinition$' "${dest}/manifests/network-attachment-definition.yaml" && \
+    curl -fsSL -o "${dest}/manifests/multi-networkpolicy.yaml" \
+        https://raw.githubusercontent.com/k8snetworkplumbingwg/multi-networkpolicy/refs/tags/v1.0.1/scheme.yml && \
+    curl -fsSL -o "${dest}/manifests/ipamclaims.yaml" \
+        https://raw.githubusercontent.com/k8snetworkplumbingwg/ipamclaims/v0.5.1-alpha/artifacts/k8s.cni.cncf.io_ipamclaims.yaml && \
+    curl -fsSL -o "${dest}/manifests/frr-k8s.yaml" \
+        https://raw.githubusercontent.com/metallb/frr-k8s/b43efcb206be/config/all-in-one/frr-k8s.yaml && \
+    chmod -R a+rX "${dest}"
+SHELL ["/bin/sh", "-c"]
+
 # Copy the source code into the container
 COPY . /src
 

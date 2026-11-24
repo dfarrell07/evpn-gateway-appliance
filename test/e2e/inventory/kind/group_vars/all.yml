@@ -1,0 +1,37 @@
+---
+tunnel:
+  type: wireguard
+  mtu_mode: unsafe
+  onprem_ip: 10.44.44.1
+  cloud_ip: 10.44.44.2
+  network_cidr: 10.44.44.0/24
+  port: 51820
+
+infra_relay_host: infra-router
+
+infra_vpc_cidr: 10.100.0.0/16
+# Kind bridge prefix. The topology routes this via the TGW, and the VTEP uses it.
+workload_vpc_cidr: 10.89.0.0/24
+ocp_pod_network_cidr: 10.244.0.0/16
+
+bgp:
+  onprem_asn: 65044
+  infra_asn: 65100
+  workload_asn: 65200
+
+stretches:
+  - vlan: 100
+    name: production
+    subnet: 10.42.1.0/24
+    onprem_gateway: 10.42.1.1
+    cloud_gateway: 10.42.1.2
+
+monitoring:
+  node_exporter: true
+  frr_exporter: false
+
+frr_image: quay.io/frrouting/frr:10.5.3
+
+# frr-k8s pod discovery inputs for the cloud infra role.
+evpn_cloud_infra_frr_k8s_ns: frr-k8s-system
+evpn_cloud_infra_frr_k8s_lbl: app=frr-k8s
