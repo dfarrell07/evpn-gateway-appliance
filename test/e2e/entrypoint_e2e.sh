@@ -3,89 +3,37 @@
 # launched by run.sh with the host runtime socket mounted, so containerlab's node
 # containers are siblings on the host runtime with the host kernel.
 #
-# Stages (EGA_STAGE):
+# EGA_SCENARIOS selects comma-separated names under scenarios/ (default: all *.env files).
+# Each scenario gets its own lab, work directory and artifact directory.
+# Stages (EGA_STAGE); deploy/destroy require one explicit EGA_SCENARIOS name:
 #   full     deploy the fabric (containerlab + the collection's deploy.yml), validate, tear down.
 #   deploy   same as full but leave the lab up for inspection.
-#   destroy  tear down a lab left up by `deploy`.
+#   destroy  tear down the lab left up by `deploy`.
 set -euo pipefail
 
+self_dir="$(cd "$(dirname "$0")" && pwd)"
 stage="${EGA_STAGE:-full}"
 : "${EGA_NODE_IMAGE:?}"
 : "${EGA_RUNTIME_SOCK:?}"
 : "${EGA_EE_IMAGE:?}"
-EGA_TOPOLOGY="${EGA_TOPOLOGY:-evpn.clab.yml}"
 EGA_WORK_DIR="${EGA_WORK_DIR:-/tmp/ega/work}"
+EGA_ARTIFACT_DIR="${EGA_ARTIFACT_DIR:-/tmp/ega/artifact}"
 
-self_dir="$(cd "$(dirname "$0")" && pwd)"
+case "$stage" in
+	full | deploy | destroy) ;;
+	*)
+		echo "error: unknown EGA_STAGE: $stage" >&2
+		exit 2
+		;;
+esac
 
 # containerlab talks to the mounted host socket; podman is its runtime.
 export DOCKER_HOST="unix://${EGA_RUNTIME_SOCK}"
 export CONTAINERLAB_RUNTIME="podman"
 
-src_topo="${self_dir}/topology/${EGA_TOPOLOGY}"
-
-# containerlab writes its lab dir (clab-<name>/) NEXT TO the topology file, and the repo
-# is mounted read-only. Stage the topology into the writable work dir and deploy from
-# there so clab has somewhere to write.
-lab_dir="${EGA_WORK_DIR}/lab"
-mkdir -p "$lab_dir"
-cp "$src_topo" "$lab_dir/"
-topo="${lab_dir}/$(basename "$src_topo")"
-cd "$lab_dir"
-
-if [ "$stage" = "destroy" ]; then
-	echo ">> containerlab destroy: $topo"
-	exec containerlab destroy -t "$topo" --cleanup
-fi
-
-# ansible reaches the nodes over SSH, so generate an ephemeral keypair; the topology binds
-# its public key into each node's root authorized_keys (the image has no cloud-init).
-ssh_key="${lab_dir}/ssh/id_ega"
-mkdir -p "${lab_dir}/ssh"
-[ -f "$ssh_key" ] || ssh-keygen -t ed25519 -N '' -C ega-e2e -f "$ssh_key" >/dev/null
-chmod 644 "${ssh_key}.pub"
-export EGA_SSH_PUBKEY="${ssh_key}.pub"
-
-# Tear the topology down on exit for `full`; leave it up for `deploy`. Do NOT `exec` past
-# this point, or the trap is lost and the lab leaks.
-# shellcheck disable=SC2329 # invoked through the EXIT trap below
-cleanup() {
-	if [ "$stage" = deploy ]; then
-		echo ">> stage=deploy; leaving lab up for inspection: $topo" >&2
-		return
-	fi
-	containerlab destroy -t "$topo" --cleanup || true
-}
-trap cleanup EXIT
-
-echo ">> containerlab deploy: $topo"
-EGA_NODE_IMAGE="$EGA_NODE_IMAGE" containerlab deploy -t "$topo" --reconfigure
-
-# The nodes are still booting right after deploy (sshd starts only after host-key
-# generation), so wait for it instead of racing the boot.
-export ANSIBLE_HOST_KEY_CHECKING=False
-inv="${lab_dir}/clab-ega-evpn/ansible-inventory.yml"
-echo ">> waiting for SSH on all nodes"
-ansible -i "$inv" all -u root --private-key "$ssh_key" \
-	-m ansible.builtin.wait_for_connection -a 'timeout=120'
-
-# Stage the e2e inventory into the work dir so the EE (launched below as a sibling via
-# the host socket) can bind it: podman-remote resolves bind sources on the host, and run.sh
-# mounts the work dir at the same path on the host and here. Remove any previous copy first:
-# the work dir persists across runs, and `cp -r` into an existing dir would nest
-# (inventory/inventory/) and silently reuse the stale inventory from an earlier run.
-rm -rf "${lab_dir}/inventory"
-cp -r "${self_dir}/inventory" "${lab_dir}/inventory"
-
-# Run the collection's deploy.yml from the execution environment — the same artifact AAP
-# runs. The EE carries the collection and its derived deps (wireguard-tools for the
-# control-node key generation, netaddr for ansible.utils' ipaddr filters, boto3), so
-# nothing is built, installed or pre-seeded here. It joins the host network to reach the
-# nodes on the clab management network, and runs as root to read the (root-owned) key and
-# inventory and write ansible's temp dirs.
-# Run a collection playbook from the execution environment. The toolchain ships
-# podman-remote (not a local podman): launch the EE as a sibling on the host runtime
-# through the same mounted socket containerlab uses.
+# Run a collection playbook from the execution environment, the same artifact AAP runs.
+# Launch it as a sibling on the host runtime through the mounted socket. run.sh mounts
+# the work dir at the same path here and on the host so the EE can bind the staged files.
 ee_playbook() {
 	local pb="$1"
 	echo ">> ansible-playbook ${pb} (via execution environment: $EGA_EE_IMAGE)"
@@ -99,12 +47,122 @@ ee_playbook() {
 			-u root --private-key "$ssh_key"
 }
 
-# Build the simulated on-prem side (trunk + fake hosts) BEFORE the product deploy so
-# the appliance role finds the trunk to build its VTEP on; deploy the product; then run
-# the simulated-host data-plane checks.
-ee_playbook network.evpn_gateway_test.simulate
-ee_playbook network.evpn_gateway.deploy
-ee_playbook network.evpn_gateway_test.healthcheck
+# A subshell keeps scenario defaults, exports, cwd and the EXIT trap from leaking into
+# the next scenario. Enable errexit here even though the caller collects each exit status.
+run_scenario() (
+	set -e
+	scenario="$1"
+	scenario_file="${self_dir}/scenarios/${scenario}.env"
+	if [ ! -f "$scenario_file" ]; then
+		echo "error: unknown e2e scenario: $scenario (no $scenario_file)" >&2
+		exit 2
+	fi
+	# Topology selection belongs to the scenario, not the caller's environment.
+	unset EGA_TOPOLOGY
+	# Scenario definitions are repository-controlled.
+	# shellcheck disable=SC1090
+	source "$scenario_file"
+	: "${EGA_TOPOLOGY:?scenario did not define EGA_TOPOLOGY}"
+	: "${EGA_INVENTORY:?scenario did not define EGA_INVENTORY}"
+	: "${EGA_PLAYBOOKS:?scenario did not define EGA_PLAYBOOKS}"
+	export EGA_WORK_DIR="${EGA_WORK_DIR}/${scenario}"
+	export EGA_ARTIFACT_DIR="${EGA_ARTIFACT_DIR}/${scenario}"
 
-echo ">> deploy + simulated-host health checks complete"
-exit 0
+	src_topo="${self_dir}/topology/${EGA_TOPOLOGY}"
+	inventory_src="${self_dir}/${EGA_INVENTORY}"
+	lab_name="ega-${scenario}"
+
+	# containerlab writes clab-<name>/ next to its topology. Stage it out of the read-only
+	# repo, with a distinct name and directory for each scenario (also for deploy/destroy).
+	lab_dir="${EGA_WORK_DIR}/lab"
+	mkdir -p "$lab_dir" "$EGA_ARTIFACT_DIR"
+	cp "$src_topo" "$lab_dir/"
+	topo="${lab_dir}/$(basename "$src_topo")"
+	cd "$lab_dir"
+
+	# Share teardown between explicit destroy and the per-scenario EXIT trap.
+	cleanup() {
+		if [ "$stage" = deploy ]; then
+			echo ">> stage=deploy; leaving lab up for inspection: $topo" >&2
+			return
+		fi
+		echo ">> containerlab destroy: $topo"
+		containerlab destroy --name "$lab_name" -t "$topo" --cleanup
+	}
+	if [ "$stage" = destroy ]; then
+		cleanup
+		exit 0
+	fi
+	# Best-effort cleanup preserves the scenario's status, including partial-deploy failures.
+	# The trap finishes before this subshell returns and the next scenario starts.
+	trap 'cleanup || true' EXIT
+
+	# ansible reaches nodes over SSH; bind an ephemeral public key into each node.
+	ssh_key="${lab_dir}/ssh/id_ega"
+	mkdir -p "${lab_dir}/ssh"
+	[ -f "$ssh_key" ] || ssh-keygen -t ed25519 -N '' -C ega-e2e -f "$ssh_key" >/dev/null
+	chmod 644 "${ssh_key}.pub"
+	export EGA_SSH_PUBKEY="${ssh_key}.pub"
+
+	echo ">> containerlab deploy: $topo"
+	EGA_NODE_IMAGE="$EGA_NODE_IMAGE" containerlab deploy --name "$lab_name" -t "$topo" --reconfigure
+
+	# sshd starts only after host-key generation; wait rather than racing the boot.
+	export ANSIBLE_HOST_KEY_CHECKING=False
+	inv="${lab_dir}/clab-${lab_name}/ansible-inventory.yml"
+	echo ">> waiting for SSH on all nodes"
+	ansible -i "$inv" all -u root --private-key "$ssh_key" \
+		-m ansible.builtin.wait_for_connection -a 'timeout=120'
+
+	# Remove the old copy first: cp -r into an existing inventory would nest it and
+	# silently reuse stale files when the work dir persists across runs.
+	rm -rf "${lab_dir}/inventory"
+	cp -r "$inventory_src" "${lab_dir}/inventory"
+
+	# Each scenario owns its ordered setup, deploy and validation playbooks.
+	read -r -a playbooks <<< "$EGA_PLAYBOOKS"
+	for playbook in "${playbooks[@]}"; do
+		ee_playbook "$playbook"
+	done
+	echo ">> scenario ${scenario} complete"
+)
+
+if [ -n "${EGA_SCENARIOS:-}" ]; then
+	# Names become path components and lab names, so reject empty entries and paths.
+	if [[ ! "$EGA_SCENARIOS" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*(,[a-zA-Z0-9][a-zA-Z0-9_-]*)*$ ]]; then
+		echo "error: EGA_SCENARIOS must be comma-separated scenario names" >&2
+		exit 2
+	fi
+	IFS=, read -r -a scenarios <<< "$EGA_SCENARIOS"
+else
+	shopt -s nullglob
+	scenarios=()
+	for scenario_file in "${self_dir}/scenarios/"*.env; do
+		scenario="${scenario_file##*/}"
+		scenarios+=("${scenario%.env}")
+	done
+fi
+if [ "${#scenarios[@]}" -eq 0 ]; then
+	echo "error: no e2e scenario definitions found" >&2
+	exit 2
+fi
+if [[ "$stage" != full && ( -z "${EGA_SCENARIOS:-}" || "${#scenarios[@]}" -ne 1 ) ]]; then
+	echo "error: EGA_STAGE=$stage requires exactly one explicit scenario in EGA_SCENARIOS" >&2
+	exit 2
+fi
+
+rc=0
+for scenario in "${scenarios[@]}"; do
+	echo "========== e2e scenario: $scenario =========="
+	# Do not use `if run_scenario` or `run_scenario || ...`: Bash disables errexit
+	# throughout functions in those contexts, masking failed deploys and playbooks.
+	set +e
+	run_scenario "$scenario"
+	scenario_rc=$?
+	set -e
+	if [ "$scenario_rc" -ne 0 ]; then
+		echo "error: scenario $scenario failed (exit $scenario_rc)" >&2
+		rc=1
+	fi
+done
+exit "$rc"

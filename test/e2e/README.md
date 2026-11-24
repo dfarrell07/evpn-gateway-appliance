@@ -22,6 +22,22 @@ Entry points, by how they are meant to be run:
 All are runner-agnostic — the same scripts work under a Prow test step or a GitHub Actions
 VM; the runner only provides env and collects artifacts.
 
+The e2e entrypoint discovers all `scenarios/*.env` definitions by default, in filename
+order. Set `EGA_SCENARIOS` to comma-separated names to select scenarios and their order
+(a single name selects just that scenario):
+
+```bash
+sudo EGA_SCENARIOS=emulated test/e2e/run.sh
+```
+
+Each scenario defines its topology, inventory and ordered playbook sequence. Scenarios
+run sequentially with separate work/artifact subdirectories and containerlab names
+(`ega-<scenario>`). A failed scenario is cleaned up in `full` mode; later scenarios still
+run, and the lane fails if any scenario fails. Both runners forward `EGA_SCENARIOS` and
+`EGA_STAGE`; scenario iteration and topology selection stay inside the entrypoint.
+`deploy` and `destroy` require exactly one explicitly selected scenario; discovery and
+multi-scenario runs must use the default `full` lifecycle.
+
 ## Layout
 
 ```text
@@ -32,11 +48,13 @@ test/
     run_remote.sh         shared core: against a remote target (or locally): export, ship, build, run
     run_e2e.sh            wrapper: select the e2e lane (entrypoint_e2e.sh)
     run_molecule.sh       wrapper: select the molecule lane (entrypoint_molecule.sh; skips the EE build)
-    entrypoint_e2e.sh     e2e in-container steps: clab deploy -> simulate -> deploy.yml -> health checks
+    entrypoint_e2e.sh     iterate scenarios: clab deploy -> scenario playbooks -> teardown
     entrypoint_molecule.sh  molecule in-container steps: molecule test against the rootful socket
     topology/
-      evpn.clab.yml       the emulated fabric
-    inventory/            e2e Ansible inventory + group_vars
+      emulated.clab.yml   the emulated fabric
+    inventory/
+      emulated/           e2e Ansible inventory + group_vars for the emulated fabric
+    scenarios/            *.env definitions: topology, inventory, ordered playbooks
     ee/                   execution-environment definition + build.sh (make ee-image)
 
 ansible/
@@ -85,9 +103,12 @@ of its own and builds nothing. `run_remote.sh` is what builds and stages those i
 - `EGA_ARTIFACT_DIR` — host dir reserved for produced artifacts, out of the checkout (default
   `/tmp/ega/artifact`; Prow sets it to `$ARTIFACTS`). Mounted but **empty for now** — nothing is
   written here until diagnostics/JUnit capture is added (see Testing plan).
-- `EGA_TOPOLOGY` — topology file under `topology/` (default `evpn.clab.yml`).
+- `EGA_SCENARIOS` — comma-separated scenario names, e.g. `emulated,other`; defaults to all
+  `scenarios/*.env` definitions. A single name is supported through the same interface.
 - `EGA_STAGE` — `full` (deploy + validate + tear down), `deploy` (same but leave the lab up
   for inspection), or `destroy` (tear down a lab left up by `deploy`). Default `full`.
+  `deploy` and `destroy` require `EGA_SCENARIOS` to name exactly one scenario explicitly,
+  even if discovery would find only one definition. Other combinations fail before any lab changes.
 - `EGA_E2E_SRC` — bind a repo checkout over the image's baked `/src` for live dev (default
   unset → use the baked `/src`; the image is the artifact under test in CI).
 - `EGA_RUNTIME_SOCK` — host podman socket (default `/run/podman/podman.sock`).
@@ -121,11 +142,12 @@ inventory, `entrypoint.sh`, tests) without rebuilding the toolchain image (`sudo
 EGA_E2E_SRC="$PWD" test/e2e/run.sh`). It does **not** affect the collection: `deploy.yml` runs
 from `EGA_EE_IMAGE`, so collection edits need `make ee-image`.
 
-Leave the lab up for inspection with `EGA_STAGE=deploy`, then tear it down with
-`EGA_STAGE=destroy`:
+Explicitly select one scenario to leave its lab up for inspection with `EGA_STAGE=deploy`,
+then tear down that same scenario with `EGA_STAGE=destroy`:
 
 ```bash
-sudo EGA_STAGE=destroy test/e2e/run.sh
+sudo EGA_SCENARIOS=emulated EGA_STAGE=deploy test/e2e/run.sh
+sudo EGA_SCENARIOS=emulated EGA_STAGE=destroy test/e2e/run.sh
 ```
 
 ## run_remote.sh — remote target (or local, no target)
@@ -235,27 +257,17 @@ tests and deploy can't drift.
 
 **Scenarios.** Some assertions need a different deploy config (internet vs direct underlay,
 MSS on/off, isolation model). A scenario = base `group_vars/all.yml` + a thin overlay of
-deltas (`scenarios/<name>.yml`, applied as extra-vars), plus a topology variant via
-`EGA_TOPOLOGY` when the change is topological. The same scenario file drives both the deploy
+deltas (`scenarios/<name>.yml`, applied as extra-vars), plus a topology variant selected
+by its `scenarios/<name>.env` definition. The same scenario file drives both the deploy
 vars and the test expectations. A full deploy costs minutes, so tests are grouped by
 scenario: deploy once per scenario, run its tests, tear down (fresh topology each time for
 EVPN-state isolation).
 
-**Orchestration — OPEN.** The single-entrypoint contract holds either way: CI calls `run.sh`
-once; the runner only sets env + collects artifacts; scenario iteration lives in the repo,
-never in runner config. Two candidate shapes, undecided:
-
-- *Harness-driven:* `entrypoint.sh` loops scenarios (clab deploy -> `deploy.yml` ->
-  `pytest -m <scenario>` -> destroy), one JUnit per scenario. Simple, language-agnostic,
-  fabric buildable with no pytest in the loop; serial.
-- *pytest-driven:* a parametrized scenario fixture owns the fabric lifecycle (shelling small
-  reusable deploy/destroy scripts). Native per-scenario reporting, great local DX, and
-  `pytest-xdist` recovers parallelism repo-side; but the fabric lifecycle becomes a pytest
-  concern and the fixtures carry more complexity.
-
-`EGA_SCENARIO` (optional) narrows a run to one scenario for local iteration under either
-shape. Build the seam (scenario overlay + `EGA_SCENARIO` + the first `conftest.py`) with the
-first real assertion; add scenario files lazily as CORENET-7514 / the isolation decision land.
+**Orchestration.** CI calls `run.sh` once; the runner only sets env and collects artifacts.
+`entrypoint_e2e.sh` calls `run_scenario` for every selected `scenarios/<name>.env`, with a
+fresh deploy and cleanup per scenario in `full` mode. `EGA_SCENARIOS=emulated` narrows a run
+for local iteration without a separate single-scenario interface. Add scenario definitions
+as new assertions land; pytest fixtures and per-scenario JUnit evidence remain future work.
 
 ## Deferred (tracked, not covered yet)
 

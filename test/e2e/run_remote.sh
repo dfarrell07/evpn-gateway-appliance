@@ -28,6 +28,10 @@
 #   REGISTRY_AUTH_FILE   pull secret for the export (default: local docker config; used only if present)
 #   ARTIFACTS    local dir the lane's artifacts are collected into (default /tmp/ega/artifact; Prow
 #                sets it). For a remote target they are copied back here off the target.
+#   EGA_SCENARIOS, EGA_STAGE
+#       comma-separated scenario names and lifecycle stage passed through
+#       to the target. entrypoint_e2e.sh discovers all scenario definitions by default.
+#       e2e deploy/destroy require one explicitly selected scenario.
 set -euo pipefail
 
 # This script installs nothing -- provisioning handles tools. skopeo does the base-image export
@@ -192,13 +196,18 @@ make nested-ci-appliance-image \
 EOF
 
 # lane.sh: run the selected lane (repo-default image tags, so no EGA_* image overrides). Pin the
-# artifact dir so we know where to collect from; run.sh makes it world-readable on exit. Pass the
-# entrypoint through so run.sh runs the e2e or the molecule in-container script.
+# artifact dir so we know where to collect from; run.sh makes it world-readable on exit. Scenario
+# selection is handled by entrypoint_e2e.sh, not by this transport wrapper.
 cat > "${WORK}/lane.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd /tmp/ega/build
-EGA_ARTIFACT_DIR="${lane_artifacts}" EGA_ENTRYPOINT="${EGA_ENTRYPOINT}" bash test/e2e/run.sh
+EGA_ARTIFACT_DIR="${lane_artifacts}" \
+EGA_WORK_DIR="/tmp/ega/work" \
+EGA_ENTRYPOINT="${EGA_ENTRYPOINT}" \
+EGA_SCENARIOS="${EGA_SCENARIOS:-}" \
+EGA_STAGE="${EGA_STAGE:-full}" \
+bash test/e2e/run.sh
 EOF
 
 chmod +x "${WORK}"/*.sh
