@@ -1,85 +1,137 @@
 ---
-# The parent role renders the files and starts FRR before including this role.
-# A first start already consumed the new files, so only an already-running
-# daemon needs an in-place reconciliation.
-- name: Determine whether FRR is systemd-managed
+- name: Stage the desired FRR configuration
+  ansible.builtin.include_tasks: render.yml
+
+- name: Seed the startup configuration on a new installation
+  ansible.builtin.copy:
+    src: /etc/frr/desired/frr.conf
+    dest: /etc/frr/frr.conf
+    remote_src: true
+    force: false
+    mode: "0644"
+  register: _evpn_frr_bootstrap
+
+- name: Check for the last successfully applied FRR configuration
+  ansible.builtin.stat:
+    path: /etc/frr/.evpn-applied.json
+    get_checksum: false
+  register: _evpn_frr_applied_file
+
+- name: Read the last successfully applied FRR configuration
+  ansible.builtin.slurp:
+    src: /etc/frr/.evpn-applied.json
+  register: _evpn_frr_applied
+  when: _evpn_frr_applied_file.stat.exists
+
+- name: Determine whether FRR configuration is pending
   ansible.builtin.set_fact:
-    _evpn_frr_systemd_managed: >-
-      {{ ansible_facts.services is defined and
-         'frr-container.service' in ansible_facts.services }}
+    _evpn_frr_previous: >-
+      {{ (_evpn_frr_applied.content | b64decode | from_json)
+         if _evpn_frr_applied_file.stat.exists else {} }}
+    _evpn_frr_desired:
+      configuration: "{{ _evpn_frr_candidate.checksum }}"
+      daemons: "{{ evpn_frr_daemons_checksum }}"
 
-- name: Check whether the running FRR image provides frr-reload.py
-  ansible.builtin.command:
-    argv:
-      - podman
-      - exec
-      - "{{ evpn_frr_container_name | default('frr') }}"
-      - sh
-      - -c
-      - >-
-        for candidate in /usr/lib/frr/frr-reload.py /usr/bin/frr-reload.py;
-        do test -x "$candidate" && { printf '%s' "$candidate"; exit 0; };
-        done;
-        command -v frr-reload.py
-  register: _evpn_frr_reload_helper
-  changed_when: false
-  failed_when: false
-  when:
-    - evpn_frr_config_changed | default(false) | bool
-    - not (evpn_frr_started_changed | default(false) | bool)
-    - not (evpn_frr_daemons_changed | default(false) | bool)
+- name: Start FRR or restart it when the daemon selection changes
+  ansible.builtin.include_tasks: runtime.yml
+  vars:
+    _evpn_frr_restart: >-
+      {{ not _evpn_frr_bootstrap.changed and
+         (_evpn_frr_previous.daemons != _evpn_frr_desired.daemons
+          if 'daemons' in _evpn_frr_previous else evpn_frr_daemons_changed | bool) }}
 
-- name: Reload the changed FRR configuration in place
-  ansible.builtin.command:
-    argv:
-      - podman
-      - exec
-      - "{{ evpn_frr_container_name | default('frr') }}"
-      - "{{ _evpn_frr_reload_helper.stdout | trim }}"
-      - --reload
-      - /etc/frr/frr.conf
-  register: _evpn_frr_reload
-  changed_when: true
-  when:
-    - evpn_frr_config_changed | default(false) | bool
-    - not (evpn_frr_started_changed | default(false) | bool)
-    - not (evpn_frr_daemons_changed | default(false) | bool)
-    - _evpn_frr_reload_helper is not skipped
-    - _evpn_frr_reload_helper.rc == 0
+- name: Apply the pending FRR configuration
+  when: _evpn_frr_previous != _evpn_frr_desired or _evpn_frr_bootstrap.changed
+  block:
+    - name: Wait for the running FRR container
+      ansible.builtin.command:
+        argv: [podman, exec, "{{ evpn_frr_container_name }}", vtysh, -d, bgpd, -c, show bgp summary json]
+      register: _evpn_frr_ready
+      until: _evpn_frr_ready.rc == 0
+      retries: 30
+      delay: 1
+      changed_when: false
 
-- name: Restart FRR through its systemd unit when reload is unavailable
-  ansible.builtin.systemd:
-    name: frr-container.service
-    state: restarted
-  when:
-    - not (evpn_frr_started_changed | default(false) | bool)
-    - >-
-      (evpn_frr_daemons_changed | default(false) | bool) or
-      ((evpn_frr_config_changed | default(false) | bool) and
-       (_evpn_frr_reload_helper is skipped or _evpn_frr_reload_helper.rc != 0))
-    - _evpn_frr_systemd_managed | bool
+    - name: Look for frr-reload.py in the running image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - "{{ evpn_frr_container_name }}"
+          - sh
+          - -c
+          - >-
+            for candidate in /usr/lib/frr/frr-reload.py /usr/bin/frr-reload.py;
+            do test -x "$candidate" && { printf '%s' "$candidate"; exit 0; };
+            done;
+            command -v frr-reload.py || exit 3
+      register: _evpn_frr_reload_helper
+      changed_when: false
+      failed_when: _evpn_frr_reload_helper.rc not in [0, 3]
 
-- name: Restart FRR through its existing Podman container when reload is unavailable
-  containers.podman.podman_container:
-    name: "{{ evpn_frr_container_name | default('frr') }}"
-    state: started
-    restart: true
-    image: "{{ frr_image }}"
-    privileged: false
-    cap_drop:
-      - ALL
-    cap_add: "{{ evpn_frr_container_caps }}"
-    security_opt:
-      - no-new-privileges
-    network: host
-    restart_policy: always
-    volumes:
-      - /etc/frr:/etc/frr:Z
-      - /var/run/frr:/var/run/frr:Z
-  when:
-    - not (evpn_frr_started_changed | default(false) | bool)
-    - >-
-      (evpn_frr_daemons_changed | default(false) | bool) or
-      ((evpn_frr_config_changed | default(false) | bool) and
-       (_evpn_frr_reload_helper is skipped or _evpn_frr_reload_helper.rc != 0))
-    - not (_evpn_frr_systemd_managed | bool)
+    - name: Reconcile the running configuration without restarting FRR
+      when: _evpn_frr_reload_helper.rc == 0
+      block:
+        - name: Check whether FRR can reconcile the desired configuration
+          ansible.builtin.command:
+            argv:
+              - podman
+              - exec
+              - "{{ evpn_frr_container_name }}"
+              - "{{ _evpn_frr_reload_helper.stdout | trim }}"
+              - --test
+              - /etc/frr/desired/frr.conf
+          changed_when: false
+
+        # FRR 10.4 can write a partially applied config even when reload fails.
+        # Using the candidate directory as confdir suppresses that implicit write.
+        - name: Apply the desired configuration to the running daemons
+          ansible.builtin.command:
+            argv:
+              - podman
+              - exec
+              - "{{ evpn_frr_container_name }}"
+              - "{{ _evpn_frr_reload_helper.stdout | trim }}"
+              - --reload
+              - --confdir
+              - /etc/frr/desired
+              - /etc/frr/desired/frr.conf
+          changed_when: true
+
+        - name: Save the successfully reloaded FRR startup configuration
+          ansible.builtin.command:
+            argv: [podman, exec, "{{ evpn_frr_container_name }}", vtysh, -c, write memory]
+          changed_when: true
+
+    - name: Apply the desired startup configuration when frr-reload.py is unavailable
+      when:
+        - _evpn_frr_reload_helper.rc == 3
+        - not _evpn_frr_bootstrap.changed
+        - _evpn_frr_previous.configuration | default('') != _evpn_frr_desired.configuration
+      block:
+        - name: Install the validated startup configuration
+          ansible.builtin.copy:
+            src: /etc/frr/desired/frr.conf
+            dest: /etc/frr/frr.conf
+            remote_src: true
+            mode: "0644"
+
+        - name: Restart FRR to read the new startup configuration
+          ansible.builtin.include_tasks: runtime.yml
+          vars:
+            _evpn_frr_restart: true
+
+        - name: Wait for FRR after the fallback restart
+          ansible.builtin.command:
+            argv: [podman, exec, "{{ evpn_frr_container_name }}", vtysh, -d, bgpd, -c, show bgp summary json]
+          register: _evpn_frr_restarted
+          until: _evpn_frr_restarted.rc == 0
+          retries: 30
+          delay: 1
+          changed_when: false
+
+    - name: Record FRR configuration only after it is applied
+      ansible.builtin.copy:
+        dest: /etc/frr/.evpn-applied.json
+        content: "{{ _evpn_frr_desired | to_json }}\n"
+        mode: "0600"

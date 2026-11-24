@@ -119,49 +119,13 @@
     mode: "0644"
     content: "service integrated-vtysh-config\n"
 
-- name: Deploy FRR config (workload VTEP)
+- name: Reconcile FRR configuration
   ansible.builtin.include_role:
     name: evpn_frr
-    tasks_from: render
   vars:
     evpn_frr_config_template: frr-workload-vtep.conf.j2
-
-- name: Start FRR via systemd service (bootc image)
-  ansible.builtin.systemd:
-    name: frr-container.service
-    state: started
-    enabled: true
-  when: ansible_facts.services is defined and 'frr-container.service' in ansible_facts.services
-  register: _evpn_cloud_workload_frr_systemd
-
-- name: Start FRR via podman directly (non-bootc)
-  containers.podman.podman_container:
-    name: frr
-    image: "{{ frr_image }}"
-    state: started
-    restart_policy: always
-    privileged: false
-    cap_drop:
-      - ALL
-    cap_add: "{{ evpn_cloud_workload_frr_container_caps }}"
-    security_opt:
-      - no-new-privileges
-    network: host
-    volumes:
-      - /etc/frr:/etc/frr:Z
-      - /var/run/frr:/var/run/frr:Z
-  when: _evpn_cloud_workload_frr_systemd is skipped
-  register: _evpn_cloud_workload_frr_container
-
-- name: Reconcile the running FRR configuration
-  ansible.builtin.include_role:
-    name: evpn_frr
-  vars:
-    evpn_frr_config_changed: "{{ evpn_frr_rendered_config.changed | default(false) }}"
-    evpn_frr_daemons_changed: "{{ _evpn_cloud_workload_frr_daemons.changed | default(false) }}"
-    evpn_frr_started_changed: >-
-      {{ (_evpn_cloud_workload_frr_systemd.changed | default(false) | bool) or
-         (_evpn_cloud_workload_frr_container.changed | default(false) | bool) }}
+    evpn_frr_daemons_checksum: "{{ _evpn_cloud_workload_frr_daemons.checksum }}"
+    evpn_frr_daemons_changed: "{{ _evpn_cloud_workload_frr_daemons.changed }}"
     evpn_frr_container_caps: "{{ evpn_cloud_workload_frr_container_caps }}"
 
 - name: Flush handlers

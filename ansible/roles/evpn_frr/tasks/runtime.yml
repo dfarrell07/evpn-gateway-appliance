@@ -1,0 +1,26 @@
+---
+- name: Manage FRR through its systemd unit
+  ansible.builtin.systemd:
+    name: frr-container.service
+    state: "{{ _evpn_frr_restart | ternary('restarted', 'started') }}"
+    enabled: true
+  when: _evpn_frr_use_embedded_image
+
+- name: Manage FRR through Podman on non-bootc systems
+  containers.podman.podman_container:
+    name: "{{ evpn_frr_container_name }}"
+    state: started
+    restart: "{{ _evpn_frr_restart }}"
+    image: "{{ frr_image }}"
+    privileged: false
+    cap_drop:
+      - ALL
+    cap_add: "{{ evpn_frr_container_caps }}"
+    security_opt:
+      - no-new-privileges
+    network: host
+    restart_policy: always
+    volumes:
+      - /etc/frr:/etc/frr:Z
+      - /var/run/frr:/var/run/frr:Z
+  when: not _evpn_frr_use_embedded_image

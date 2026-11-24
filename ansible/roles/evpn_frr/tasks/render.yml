@@ -11,10 +11,22 @@
     state: started
   when: _evpn_frr_use_embedded_image
 
+- name: Create the FRR candidate directory
+  ansible.builtin.file:
+    path: /etc/frr/desired
+    state: directory
+    mode: "0755"
+
+- name: Use the same vtysh settings when applying the staged configuration
+  ansible.builtin.file:
+    src: ../vtysh.conf
+    dest: /etc/frr/desired/vtysh.conf
+    state: link
+
 - name: Render and validate the FRR configuration
   ansible.builtin.template:
     src: "{{ ansible_parent_role_paths[0] }}/templates/{{ evpn_frr_config_template }}"
-    dest: /etc/frr/frr.conf
+    dest: /etc/frr/desired/frr.conf
     mode: "0644"
     validate: >-
       podman run --rm --network=none
@@ -22,4 +34,4 @@
       --entrypoint vtysh --volume %s:/tmp/evpn-frr.conf:ro,Z
       {{ (_evpn_frr_use_embedded_image | ternary('frr:embedded', frr_image)) | quote }}
       -C -f /tmp/evpn-frr.conf
-  register: evpn_frr_rendered_config
+  register: _evpn_frr_candidate
