@@ -18,7 +18,7 @@
 # Nodes run the appliance's systemd container image (privileged linux-kind default + host
 # cgroup namespace + tmpfs = the --systemd=always equivalent). An ephemeral public key
 # generated per run (EGA_SSH_PUBKEY) is bound into each node's root authorized_keys.
-name: ega-evpn
+name: ega-emulated
 
 mgmt:
   network: clab

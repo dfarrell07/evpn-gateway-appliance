@@ -16,8 +16,9 @@
 #                     mounted at the same path on host and in-container  [default: /tmp/ega/work]
 #   EGA_ARTIFACT_DIR  host dir for produced artifacts (reserved; nothing is written here yet);
 #                     out of the checkout, Prow sets this to $ARTIFACTS  [default: /tmp/ega/artifact]
-#   EGA_TOPOLOGY      topology file under test/e2e/topology            [default: evpn.clab.yml]
+#   EGA_SCENARIOS     comma-separated scenario names; entrypoint discovers all by default
 #   EGA_STAGE         full (deploy+validate+teardown) | deploy (leave up) | destroy  [default: full]
+#                     e2e deploy/destroy require one explicit EGA_SCENARIOS name
 #   EGA_E2E_SRC       bind this repo checkout over the image's baked /src for live dev of the
 #                     harness (topology/inventory/entrypoint/tests) — NOT the collection,
 #                     which comes from EGA_EE_IMAGE. (default: unset -> use the baked /src)
@@ -28,7 +29,7 @@ EGA_NODE_IMAGE="${EGA_NODE_IMAGE:-localhost/evpn-appliance-rhel10:nested-ci}"
 EGA_EE_IMAGE="${EGA_EE_IMAGE:-localhost/evpn-gateway-appliance-ee:local}"
 EGA_WORK_DIR="${EGA_WORK_DIR:-/tmp/ega/work}"
 EGA_ARTIFACT_DIR="${EGA_ARTIFACT_DIR:-/tmp/ega/artifact}"
-EGA_TOPOLOGY="${EGA_TOPOLOGY:-evpn.clab.yml}"
+EGA_SCENARIOS="${EGA_SCENARIOS:-}"
 EGA_STAGE="${EGA_STAGE:-full}"
 # The in-container script this lane runs. Defaults to the e2e entrypoint so a direct call
 # (and the live Prow wiring) stays unchanged; run_molecule.sh sets entrypoint_molecule.sh.
@@ -77,7 +78,7 @@ rc=0
 	-v "$EGA_ARTIFACT_DIR:$EGA_ARTIFACT_DIR:Z" \
 	-e "EGA_NODE_IMAGE=$EGA_NODE_IMAGE" \
 	-e "EGA_EE_IMAGE=$EGA_EE_IMAGE" \
-	-e "EGA_TOPOLOGY=$EGA_TOPOLOGY" \
+	-e "EGA_SCENARIOS=$EGA_SCENARIOS" \
 	-e "EGA_RUNTIME_SOCK=$EGA_RUNTIME_SOCK" \
 	-e "EGA_WORK_DIR=$EGA_WORK_DIR" \
 	-e "EGA_ARTIFACT_DIR=$EGA_ARTIFACT_DIR" \
