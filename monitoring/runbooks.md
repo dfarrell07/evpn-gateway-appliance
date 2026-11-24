@@ -208,8 +208,14 @@ Open a case with the Direct Connect partner or AWS if the port is up on the cust
 
 AWS reports BGP down on a Direct Connect virtual interface while the connection can be up.
 
-- `aws directconnect describe-virtual-interfaces --region REGION --virtual-interface-id ID` for
-  `bgpPeers[].bgpStatus` and the expected peer addresses, ASN and VLAN.
+- Check `bgpStatus` and the expected peer addresses, ASN and VLAN. The query leaves out the
+  BGP MD5 keys, which the full output prints:
+
+  ```sh
+  aws directconnect describe-virtual-interfaces --region REGION --virtual-interface-id ID \
+    --query 'virtualInterfaces[].{state:virtualInterfaceState,vlan:vlan,amazonSideAsn:amazonSideAsn,bgpPeers:bgpPeers[].{addressFamily:addressFamily,asn:asnLong || asn,amazonAddress:amazonAddress,customerAddress:customerAddress,bgpStatus:bgpStatus,state:bgpPeerState}}'
+  ```
+
 - On the customer router, check the BGP session, MD5 key, ASN and the VLAN subinterface.
 
 If the customer side matches, open a case with the Direct Connect partner or AWS.
@@ -219,8 +225,14 @@ If the customer side matches, open a case with the Direct Connect partner or AWS
 At least one tunnel of a Site-to-Site VPN is down. A VPN built with one tunnel keeps this
 alert firing; README.md says how to alert only when every tunnel is down.
 
-- `aws ec2 describe-vpn-connections --region REGION --vpn-connection-ids ID` and read
-  `VgwTelemetry[].Status` and `StatusMessage` for each tunnel.
+- Check each tunnel's state. The query leaves out the pre-shared keys, which the full output
+  prints:
+
+  ```sh
+  aws ec2 describe-vpn-connections --region REGION --vpn-connection-ids ID \
+    --query 'VpnConnections[].VgwTelemetry[].[OutsideIpAddress,Status,StatusMessage]'
+  ```
+
 - On the customer gateway, check IKE and IPsec state, pre-shared keys and that UDP 500 and
   4500 reach the tunnel's outside address.
 
