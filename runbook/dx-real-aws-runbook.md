@@ -44,6 +44,7 @@ evpn_aws_infra_project_name: "{{ lookup('env', 'RUN') }}"
 evpn_aws_infra_admin_cidr: <controller public IP>/32
 evpn_aws_infra_ssh_key_name: <key pair in the account>
 evpn_health_check_accept_internet_mode_limits: true   # S2 base stack is WireGuard
+evpn_health_check_workload_mtu: 1300   # the preflight requires it; fits every transport's budget
 ```
 
 ## IAM
