@@ -27,7 +27,7 @@ ExecStart=/usr/bin/podman run --pull=never --name frr-metrics --rm --init \
     --memory=256m \
     -v /etc/frr:/etc/frr:ro -v /var/run/frr:/var/run/frr:ro \
     --entrypoint /frr-metrics frr:embedded \
-    --metrics-bind-address=127.0.0.1 --metrics-port=7573
+    --metrics-bind-address=127.0.0.1 --metrics-port=7573 --disable-metrics-auth
 ExecStop=-/usr/bin/podman stop --ignore frr-metrics
 
 [Install]

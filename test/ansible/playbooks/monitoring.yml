@@ -59,7 +59,8 @@
 
     - name: Wait for frr-metrics to report an Established BGP session and, on a VTEP, received prefixes
       ansible.builtin.uri:
-        url: http://127.0.0.1:7573/metrics
+        url: https://127.0.0.1:7573/metrics
+        validate_certs: false
         return_content: true
         timeout: 10
       register: _monitoring_metrics

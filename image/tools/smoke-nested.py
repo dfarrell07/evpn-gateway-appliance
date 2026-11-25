@@ -63,7 +63,8 @@ METRICS_PY = (
 # urlopen raises on an HTTP error status. The smoke config has no BGP peers, so no
 # particular frrk8s_ series is required.
 FRR_METRICS_PY = (
-    'import urllib.request; urllib.request.urlopen("http://127.0.0.1:7573/metrics", timeout=5)'
+    'import ssl, urllib.request; urllib.request.urlopen("https://127.0.0.1:7573/metrics", timeout=5,'
+    ' context=ssl._create_unverified_context())'
 )
 
 

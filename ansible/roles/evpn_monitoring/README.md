@@ -2,7 +2,7 @@
 
 Controls the appliance image's `frr-metrics.service`, which runs the embedded FRR image's
 `frr-metrics`, with `monitoring.frr_exporter`: unset or true enables and starts it and waits until
-`http://127.0.0.1:7573/metrics` serves `frrk8s_*` series; false stops and disables it, as teardown
+`https://127.0.0.1:7573/metrics` (self-signed) serves `frrk8s_*` series; false stops and disables it, as teardown
 does. Hosts without the unit, such as `provision-aws.yml`'s CentOS routers, are skipped. The role
 always removes the legacy `frr_exporter` container, so update appliances to an image with the unit
 before or with this collection; otherwise FRR metrics stop until they are.

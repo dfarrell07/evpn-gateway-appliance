@@ -25,7 +25,9 @@
 # metallb/frr-k8s#528), means the exporter cannot read bgpd through FRR's vtysh sockets.
 - name: Wait for frr-metrics to serve FRR series
   ansible.builtin.uri:
-    url: http://127.0.0.1:7573/metrics
+    url: https://127.0.0.1:7573/metrics
+    # Self-signed on loopback; the exporter generates its certificate at start.
+    validate_certs: false
     return_content: true
     timeout: 10
   register: _evpn_monitoring_frr_metrics
