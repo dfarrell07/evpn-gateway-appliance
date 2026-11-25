@@ -1,0 +1,35 @@
+---
+- name: Read the running FRR configuration
+  ansible.builtin.command:
+    argv: [podman, exec, frr, vtysh, -c, show running-config]
+  register: running_config
+  changed_when: false
+
+- name: Read the saved FRR configuration
+  ansible.builtin.slurp:
+    src: /etc/frr/frr.conf
+  register: saved_config
+
+- name: Read the FRR systemd invocation
+  ansible.builtin.command:
+    argv: [systemctl, show, -p, InvocationID, --value, frr-container.service]
+  register: frr_invocation
+  changed_when: false
+
+- name: Read the BGP process ID
+  ansible.builtin.command:
+    argv: [podman, exec, frr, cat, /var/run/frr/bgpd.pid]
+  register: bgpd_pid
+  changed_when: false
+
+- name: Verify the desired setting is running and persisted without a restart
+  vars:
+    description_line: "neighbor 192.0.2.2 description {{ expected_description }}"
+  ansible.builtin.assert:
+    that:
+      - description_line in running_config.stdout_lines | map('trim')
+      - description_line in (saved_config.content | b64decode).splitlines() | map('trim')
+      - frr_invocation.stdout | length > 0
+      - bgpd_pid.stdout | int > 0
+      - frr_invocation.stdout == (original_invocation | default(frr_invocation.stdout))
+      - bgpd_pid.stdout == (original_bgpd_pid | default(bgpd_pid.stdout))

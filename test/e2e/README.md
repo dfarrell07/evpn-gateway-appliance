@@ -212,20 +212,19 @@ sudo env FRR_IMAGE=<ocp frr> NODE_EXPORTER_IMAGE=<ocp node-exporter> \
 
 ## Molecule lane
 
-The molecule lane tests the `evpn_onprem_appliance` role's on-prem networking (the WS2 nmstate
-reconcile) in isolation — the behaviors the e2e lane does not target per-role: idempotence,
-ownership reconcile, teardown, and persistence across reboot. It reuses the whole `run_remote.sh`
-substrate; only the in-container script differs (`entrypoint_molecule.sh`), selected by
-`run_molecule.sh`.
+The Molecule lane tests role behavior in isolation. The on-prem networking scenarios cover
+idempotence, ownership reconciliation, teardown, and persistence across reboot. The FRR scenario
+covers first startup, live configuration changes, unchanged redeploys, drift correction,
+invalid configuration, and reload retries. `run_molecule.sh` reuses the `run_remote.sh` runner
+and selects `entrypoint_molecule.sh`.
 
 Because the role needs a real kernel (vxlan/bridge netlink) and a privileged systemd container, the
 lane cannot create its instance from the nested, rootless Prow container — same constraint as e2e.
-So molecule uses its built-in **`default` (delegated) driver**: `entrypoint_molecule.sh` runs inside
-the CI image on the rootful target with the podman socket mounted, and the shared
-`extensions/molecule/evpn_onprem_appliance/nm_networking/resources/create.yml` runs the appliance image as a sibling
-container on that rootful socket. The scenarios assert the networking *contract* (devices, SVI IPs, self-VLANs,
-`neigh_suppress`, ownership, teardown), so they are independent of whether the role reconciles via
-nmstate or keyfiles.
+The Molecule Podman driver runs the appliance image as a sibling container over the rootful
+Podman socket mounted in the CI image. The networking scenarios check devices, SVI IPs,
+self-VLANs, `neigh_suppress`, ownership, and teardown. The FRR scenario checks running and
+saved configuration and verifies that configuration changes keep the same service invocation
+and BGP process.
 
 ```bash
 # Same invocation shape as e2e; the wrapper only selects the lane.
@@ -234,8 +233,8 @@ FRR_IMAGE=<ocp frr> NODE_EXPORTER_IMAGE=<ocp node-exporter> \
 test/e2e/run_molecule.sh
 ```
 
-Scenarios live under `ansible/extensions/molecule/` (see the Layout above); `EGA_STAGE=<scenario>` runs
-a single scenario instead of all — the name is the nested path, e.g. `EGA_STAGE=evpn_onprem_appliance/nm_networking/default`.
+Scenarios live under `ansible/extensions/molecule/` (see the Layout above). To run just the FRR
+scenario, set `EGA_STAGE=evpn_frr/reconcile` on the command above.
 
 ## Status
 

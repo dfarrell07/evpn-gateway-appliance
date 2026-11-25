@@ -1,0 +1,166 @@
+---
+- name: Verify FRR reconciliation across redeployments and failures
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Verify the initial deployment
+      ansible.builtin.include_tasks: assert_state.yml
+      vars:
+        expected_description: initial
+
+    - name: Remember the original service instance and BGP process
+      ansible.builtin.set_fact:
+        original_invocation: "{{ frr_invocation.stdout }}"
+        original_bgpd_pid: "{{ bgpd_pid.stdout }}"
+
+    - name: Apply a change to the neighbor description
+      ansible.builtin.include_role:
+        name: evpn_frr_fixture
+      vars:
+        evpn_frr_fixture_description: updated
+
+    - name: Verify the update was applied without a restart
+      ansible.builtin.include_tasks: assert_state.yml
+      vars:
+        expected_description: updated
+
+    - name: Redeploy the unchanged candidate
+      ansible.builtin.include_role:
+        name: evpn_frr_fixture
+      vars:
+        evpn_frr_fixture_description: updated
+
+    - name: Verify the unchanged candidate did not restart FRR
+      ansible.builtin.include_tasks: assert_state.yml
+      vars:
+        expected_description: updated
+
+    - name: Change the description in running FRR only
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - frr
+          - vtysh
+          - -c
+          - configure terminal
+          - -c
+          - router bgp 65000
+          - -c
+          - neighbor 192.0.2.2 description drift
+      changed_when: true
+
+    - name: Reapply the unchanged candidate after live drift
+      ansible.builtin.include_role:
+        name: evpn_frr_fixture
+      vars:
+        evpn_frr_fixture_description: updated
+
+    - name: Verify reconciliation corrected live drift
+      ansible.builtin.include_tasks: assert_state.yml
+      vars:
+        expected_description: updated
+
+    - name: Remember the validated running and saved configuration
+      ansible.builtin.set_fact:
+        previous_running: "{{ running_config.stdout }}"
+        previous_saved: "{{ saved_config.content }}"
+
+    - name: Verify an invalid candidate fails validation
+      block:
+        - name: Submit an invalid candidate
+          ansible.builtin.include_role:
+            name: evpn_frr_fixture
+          vars:
+            evpn_frr_fixture_invalid: true
+
+        - name: Fail if FRR accepted the invalid candidate
+          ansible.builtin.fail:
+            msg: FRR accepted an invalid candidate.
+      rescue:
+        - name: Require a reload-helper validation failure
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Check the candidate against running FRR'
+              - ansible_failed_result.rc | default(0) != 0
+
+    - name: Verify a rejected candidate did not restart FRR
+      ansible.builtin.include_tasks: assert_state.yml
+      vars:
+        expected_description: updated
+
+    - name: Verify the rejected candidate changed neither configuration
+      ansible.builtin.assert:
+        that:
+          - running_config.stdout == previous_running
+          - saved_config.content == previous_saved
+
+    - name: Exercise reload failure and retry
+      block:
+        - name: Inject one reload failure before applying any changes
+          ansible.builtin.command:
+            argv: [podman, exec, -i, frr, sh, -se]
+            stdin: |
+              helper=/usr/lib/frr/frr-reload.py
+              mv "$helper" "$helper.molecule-real"
+              cat > "$helper" <<'WRAPPER'
+              #!/bin/sh
+              if [ "$1" = --reload ] && [ ! -e /tmp/ega-molecule-reload-failed ]; then
+                touch /tmp/ega-molecule-reload-failed
+                exit 42
+              fi
+              exec /usr/lib/frr/frr-reload.py.molecule-real "$@"
+              WRAPPER
+              chmod 0755 "$helper"
+          changed_when: true
+
+        - name: Verify the reload failure propagates
+          block:
+            - name: Apply the candidate that fails on its first reload
+              ansible.builtin.include_role:
+                name: evpn_frr_fixture
+              vars:
+                evpn_frr_fixture_description: retried
+
+            - name: Fail if the injected reload failure did not abort
+              ansible.builtin.fail:
+                msg: The injected reload failure did not abort the deploy.
+          rescue:
+            - name: Require the injected reload failure
+              ansible.builtin.assert:
+                that:
+                  - ansible_failed_task.name == 'Reload and save the desired FRR configuration'
+                  - ansible_failed_result.rc | default(0) == 42
+
+        - name: Retry the identical candidate
+          ansible.builtin.include_role:
+            name: evpn_frr_fixture
+          vars:
+            evpn_frr_fixture_description: retried
+
+        - name: Verify the retry saved the candidate without restarting FRR
+          ansible.builtin.include_tasks: assert_state.yml
+          vars:
+            expected_description: retried
+      always:
+        - name: Restore the real reload helper
+          ansible.builtin.command:
+            argv:
+              - podman
+              - exec
+              - frr
+              - sh
+              - -ec
+              - |
+                helper=/usr/lib/frr/frr-reload.py
+                if [ -e "$helper.molecule-real" ]; then
+                  mv "$helper.molecule-real" "$helper"
+                  changed=1
+                fi
+                if [ -e /tmp/ega-molecule-reload-failed ]; then
+                  unlink /tmp/ega-molecule-reload-failed
+                  changed=1
+                fi
+                echo "${changed:-0}"
+          register: restore_helper
+          changed_when: restore_helper.stdout == '1'

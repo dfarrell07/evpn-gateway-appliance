@@ -1,0 +1,15 @@
+---
+provisioner:
+  playbooks:
+    converge: converge.yml
+scenario:
+  # Reconciliation always invokes FRR. Verify idempotence through live/saved
+  # state and process identity instead of Ansible's changed-task count.
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy
