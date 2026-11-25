@@ -450,6 +450,103 @@ class ReplacementTests(unittest.TestCase):
                 self.assertEqual(final_polls, 2)
                 self.assertEqual(self.host.mutations(), [("sleep", 5)] * 9)
 
+    def test_early_unknown_then_not_ready_through_pre_wait_loads_both(self):
+        self.host.bgp = {1: "Idle", 2: "Idle"}
+        first_bgp = f"show bgp neighbors {PEERS[0].inside_ip} json"
+        run = self.host.run
+        polls = []
+
+        def runner(args):
+            status = run(args)
+            if args[:4] == ["podman", "exec", "frr", "vtysh"]:
+                polls.append((self.host.elapsed, args[-1]))
+                if self.host.elapsed == 0 and args[-1] == first_bgp:
+                    raise tunnels.CommandError("timed out after 5 s")
+            return status
+
+        def on_up(number):
+            # Tunnel 1 cannot recover until both have been loaded.
+            self.host.bgp[1] = "Idle" if number == 1 else "Established"
+
+        self.host.on_up = on_up
+        with patch.object(self.host, "run", side_effect=runner):
+            self.assertEqual(self.deploy(), (0, ""))
+        self.assertEqual(polls[:20], [(second, f"show bgp neighbors {peer.inside_ip} json")
+                                     for second in range(0, 46, 5) for peer in PEERS])
+        self.assertEqual(self.host.mutations(), [("sleep", 5)] * 9
+                         + load_events(1) + load_events(2))
+        self.assertTrue(self.record.exists())
+
+    def test_pre_wait_unknown_then_ready_repolls_answered_order_decisions(self):
+        for first_bgp in ("Established", "Idle"):
+            with self.subTest(first_bgp=first_bgp):
+                self.host = FakeHost(self, self.directory)
+                self.host.bgp = {1: "Idle", 2: "Idle"}
+                commands = [("podman", "exec", "frr", "vtysh", "-c",
+                             f"show bgp neighbors {peer.inside_ip} json") for peer in PEERS]
+                run = self.host.run
+                final_polls = 0
+
+                def runner(args):
+                    nonlocal final_polls
+                    status = run(args)
+                    if tuple(args) == commands[0] and self.host.elapsed == 45:
+                        final_polls += 1
+                        if final_polls == 1:
+                            self.host.bgp[1] = first_bgp
+                            raise tunnels.CommandError("timed out after 5 s")
+                    return status
+
+                def on_sleep():
+                    if self.host.elapsed == 45:
+                        self.host.bgp[2] = "Established"
+
+                self.host.on_sleep = on_sleep
+                with patch.object(self.host, "run", side_effect=runner), \
+                        patch.object(tunnels, "confirmed_ready",
+                                     wraps=tunnels.confirmed_ready) as confirmed:
+                    self.assertEqual(self.deploy(), (0, ""))
+                ready, not_ready = tunnels.Readiness.READY, tunnels.Readiness.NOT_READY
+                # The first argument is wait_ready's result; the rest are fresh decisions.
+                self.assertEqual([call.args[0] for call in confirmed.call_args_list],
+                                 [ready] * 4 if first_bgp == "Established"
+                                 else [ready, not_ready, ready, not_ready])
+                first_load = self.host.events.index(load_events(1)[0])
+                polls = [event for event in self.host.events[:first_load]
+                         if event[:4] == ("podman", "exec", "frr", "vtysh")]
+                decision_order = (0, 0, 1) if first_bgp == "Established" else (0, 1, 0)
+                self.assertEqual(polls[-5:], commands + [commands[i] for i in decision_order])
+                self.assertEqual(self.host.mutations(), [("sleep", 5)] * 9
+                                 + load_events(1) + load_events(2))
+                self.assertTrue(self.record.exists())
+
+    def test_pre_wait_unknown_then_ready_repolls_unknown_order_decision_and_aborts(self):
+        self.host.bgp = {1: "Idle", 2: "Idle"}
+        commands = [("podman", "exec", "frr", "vtysh", "-c",
+                     f"show bgp neighbors {peer.inside_ip} json") for peer in PEERS]
+        run = self.host.run
+
+        def runner(args):
+            status = run(args)
+            if tuple(args) == commands[0] and self.host.elapsed == 45:
+                raise tunnels.CommandError("timed out after 5 s")
+            return status
+
+        def on_sleep():
+            if self.host.elapsed == 45:
+                self.host.bgp[2] = "Established"
+
+        self.host.on_sleep = on_sleep
+        with patch.object(self.host, "run", side_effect=runner), \
+                patch.object(tunnels, "confirmed_ready", wraps=tunnels.confirmed_ready) as confirmed:
+            self.assertEqual(self.deploy(), (1, f"{tunnels.NO_REPLACE}\n"))
+        self.assertEqual([call.args[0] for call in confirmed.call_args_list],
+                         [tunnels.Readiness.READY, tunnels.Readiness.UNKNOWN])
+        polls = [event for event in self.host.events
+                 if event[:4] == ("podman", "exec", "frr", "vtysh")]
+        self.assertEqual(polls[-3:], commands + [commands[0]])
+        self.assertEqual(self.host.mutations(), [("sleep", 5)] * 9)
+
     def test_unknown_polls_can_recover_during_pre_wait_and_after_mutation(self):
         for before_mutation in (True, False):
             for command in (("ipsec", "trafficstatus"),
