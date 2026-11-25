@@ -1,15 +1,18 @@
-"""Exercise tunnel replacement without IPsec, containers or real sleeps."""
+"""Exercise tunnel replacement without IPsec or containers, plus real timeout cleanup."""
 
 import contextlib
+import ctypes
 import hashlib
 import importlib.util
 import io
 import json
 import os
 from pathlib import Path
+import signal
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -88,6 +91,21 @@ def load_events(number):
             ("ipsec", "up", "--asynchronous", f"ega-aws-{number}")]
 
 
+@contextlib.contextmanager
+def failed_command(exception):
+    """Inject a command failure while keeping process-group signals mocked."""
+    with patch.object(tunnels.subprocess, "Popen") as popen, \
+            patch.object(tunnels.os, "killpg") as killpg:
+        process = popen.return_value.__enter__.return_value
+        if isinstance(exception, OSError):
+            popen.side_effect = exception
+        elif isinstance(exception, subprocess.TimeoutExpired):
+            process.communicate.side_effect = [exception, ("", "")] * 2
+        else:
+            process.communicate.side_effect = exception
+        yield process, killpg
+
+
 class ReplacementTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -152,17 +170,55 @@ class ReplacementTests(unittest.TestCase):
         self.assertEqual(self.deploy(), (0, ""))
         self.assertEqual(self.host.mutations(), load_events(2) + load_events(1))
 
+    def test_no_sa_still_probes_before_selecting_replacement_order(self):
+        snapshots = []
+        run = self.host.run
+
+        def runner(args):
+            if args == ["ipsec", "trafficstatus"]:
+                if len(snapshots) < 2:
+                    self.host.children.clear()
+                elif len(snapshots) == 2:
+                    self.host.children[1] = PEERS[0].outside_ip
+                snapshots.append(self.host.children.copy())
+            return run(args)
+
+        with patch.object(self.host, "run", side_effect=runner):
+            self.assertEqual(self.deploy(), (0, ""))
+        self.assertEqual(snapshots[:3], [{}, {}, {1: PEERS[0].outside_ip}])
+        self.assertEqual(self.host.mutations(), load_events(2) + load_events(1))
+        first_load = self.host.events.index(load_events(2)[0])
+        self.assertEqual(self.host.events[:first_load].count(("ipsec", "trafficstatus")), 6)
+
     def test_pre_wait_allows_bgp_to_recover_before_replacement(self):
-        self.host.bgp = {1: "Idle", 2: "Idle"}
+        for recovery_time in (10, 45):
+            with self.subTest(recovery_time=recovery_time):
+                self.host = FakeHost(self, self.directory)
+                self.host.bgp = {1: "Idle", 2: "Idle"}
+
+                def on_sleep():
+                    if self.host.elapsed == recovery_time:
+                        self.host.bgp[1] = "Established"
+
+                self.host.on_sleep = on_sleep
+                self.assertEqual(self.deploy(), (0, ""))
+                self.assertEqual(self.host.mutations(), [("sleep", 5)] * (recovery_time // 5)
+                                 + load_events(2) + load_events(1))
+
+    def test_tunnel_recovers_on_last_poll_before_loading_the_next(self):
+        def on_up(number):
+            if number == 1:
+                self.host.bgp[number] = "Idle"
 
         def on_sleep():
-            if self.host.elapsed == 10:
+            if self.host.elapsed == 90:
                 self.host.bgp[1] = "Established"
 
+        self.host.on_up = on_up
         self.host.on_sleep = on_sleep
         self.assertEqual(self.deploy(), (0, ""))
-        self.assertEqual(self.host.mutations(), [("sleep", 5)] * 2
-                         + load_events(2) + load_events(1))
+        self.assertEqual(self.host.mutations(), load_events(1) + [("sleep", 5)] * 18
+                         + load_events(2))
 
     def test_pre_wait_expires_after_nine_sleeps(self):
         self.host.bgp = {1: "Idle", 2: "Idle"}
@@ -291,18 +347,55 @@ class ReadinessTests(unittest.TestCase):
                     '{"169.254.10.1": null}', '{"169.254.10.1": []}',
                     '{"169.254.10.1": {}}',
                     '{"169.254.10.1": {"bgpState": "Idle"}}',
+                    '{"169.254.10.1": {"bgpState": "Active"}}',
+                    '{"169.254.10.1": {"bgpState": "Connect"}}',
+                    '{"169.254.10.1": {"bgpState": "OpenSent"}}',
+                    '{"169.254.10.1": {"bgpState": "OpenConfirm"}}',
                     '{"169.254.20.1": {"bgpState": "Established"}}'):
             with self.subTest(bgp=bgp):
                 self.assertFalse(self.ready(status, bgp))
 
+    def test_wait_ready_observes_every_poll_through_each_deadline(self):
+        for peers, attempts in ((PEERS, 9), ([PEERS[0]], 18)):
+            with self.subTest(attempts=attempts):
+                observations = []
+                elapsed = 0
+
+                def ready(peer):
+                    observations.append((elapsed, peer.number))
+                    return False
+
+                def sleep(seconds):
+                    nonlocal elapsed
+                    self.assertEqual(seconds, 5)
+                    elapsed += seconds
+
+                replacer = tunnels.Replacer(PEERS, sleep=sleep)
+                with patch.object(replacer, "ready", side_effect=ready):
+                    self.assertFalse(replacer.wait_ready(peers, attempts))
+                self.assertEqual(observations, [(second, peer.number)
+                                 for second in range(0, attempts * 5 + 1, 5)
+                                 for peer in peers])
+
 
 class CommandAndArgumentTests(unittest.TestCase):
     def test_commands_capture_output_with_a_sixty_second_timeout(self):
-        with patch.object(tunnels.subprocess, "run") as run:
-            run.return_value.stdout = "status"
-            self.assertEqual(tunnels.run_command(["ipsec", "trafficstatus"]), "status")
-        run.assert_called_once_with(["ipsec", "trafficstatus"], check=True,
-                                    capture_output=True, text=True, timeout=60)
+        command = ["ipsec", "trafficstatus"]
+        for returncode in (0, 7):
+            with self.subTest(returncode=returncode), \
+                    patch.object(tunnels.subprocess, "Popen") as popen:
+                process = popen.return_value.__enter__.return_value
+                process.communicate.return_value = ("status", "ignored stderr")
+                process.returncode = returncode
+                if returncode:
+                    with self.assertRaisesRegex(tunnels.CommandError, "exit status 7"):
+                        tunnels.run_command(command)
+                else:
+                    self.assertEqual(tunnels.run_command(command), "status")
+                popen.assert_called_once_with(command, stdout=subprocess.PIPE,
+                                              stderr=subprocess.PIPE, text=True,
+                                              start_new_session=True)
+                process.communicate.assert_called_once_with(timeout=60)
 
     def test_required_command_errors_include_command(self):
         command = ["ipsec", "rereadsecrets"]
@@ -313,31 +406,35 @@ class CommandAndArgumentTests(unittest.TestCase):
                  "ipsec rereadsecrets failed (exit status 7)"),
                 (FileNotFoundError("missing executable"), "ipsec rereadsecrets")):
             with self.subTest(exception=exception), \
-                    patch.object(tunnels.subprocess, "run", side_effect=exception):
+                    failed_command(exception) as (process, killpg):
                 with self.assertRaises(tunnels.CommandError) as caught:
                     tunnels.run_command(command)
                 self.assertIn(message, str(caught.exception))
                 self.assertNotIn("TEST_ONLY", str(caught.exception))
+                if isinstance(exception, subprocess.TimeoutExpired):
+                    killpg.assert_called_once_with(process.pid, signal.SIGKILL)
+                    self.assertEqual(process.communicate.call_args_list, [
+                        unittest.mock.call(timeout=60), unittest.mock.call()])
 
-    def test_required_command_errors_include_bounded_diagnostics(self):
+    def test_command_output_secrets_never_reach_errors_or_main_stderr(self):
+        sentinel = "SYNTHETIC_SECRET_MUST_STAY_PRIVATE"
         for command in (["ipsec", "rereadsecrets"], *map(list, load_events(1))):
-            for stderr, stdout, detail in (
-                    ("  pluto is not running\n", "unused stdout", "pluto is not running"),
-                    ("", "  connection not found\n", "connection not found"),
-                    (" \n", "  connection not found\n", "connection not found"),
-                    ("x" * 500 + "TAIL", "", "x" * 400),
-                    (b"  pluto is not running\n", b"", "pluto is not running")):
-                for exception, message in (
-                        (subprocess.CalledProcessError(7, command, output=stdout, stderr=stderr),
-                         "failed (exit status 7)"),
-                        (subprocess.TimeoutExpired(command, 60, output=stdout, stderr=stderr),
-                         "timed out after 60 s")):
-                    with self.subTest(command=command, stderr=stderr, exception=exception), \
-                            patch.object(tunnels.subprocess, "run", side_effect=exception):
-                        with self.assertRaises(tunnels.CommandError) as caught:
-                            tunnels.run_command(command)
-                        self.assertEqual(str(caught.exception),
-                                         f"{' '.join(command)} {message}: {detail}")
+            for payload in (sentinel, sentinel.encode()):
+                for stdout, stderr in ((payload, None), (None, payload)):
+                    for exception in (
+                            subprocess.CalledProcessError(7, command, output=stdout, stderr=stderr),
+                            subprocess.TimeoutExpired(command, 60, output=stdout, stderr=stderr)):
+                        with self.subTest(command=command, stdout=stdout, exception=exception), \
+                                tempfile.TemporaryDirectory() as directory, \
+                                failed_command(exception):
+                            with self.assertRaises(tunnels.CommandError) as caught:
+                                tunnels.run_command(command)
+                            self.assertNotIn(sentinel, str(caught.exception))
+                            errors = io.StringIO()
+                            with contextlib.redirect_stderr(errors):
+                                self.assertEqual(tunnels.main(ARGS, runner=tunnels.run_command,
+                                                             directory=Path(directory)), 1)
+                            self.assertNotIn(sentinel, errors.getvalue())
 
     def test_poll_command_errors_exclude_output(self):
         for command in (["ipsec", "trafficstatus"],
@@ -349,10 +446,50 @@ class CommandAndArgumentTests(unittest.TestCase):
                     subprocess.TimeoutExpired(command, 60, output=b"POLL_OUTPUT",
                                               stderr=b"POLL_ERROR")):
                 with self.subTest(command=command, exception=exception), \
-                        patch.object(tunnels.subprocess, "run", side_effect=exception):
+                        failed_command(exception):
                     with self.assertRaises(tunnels.CommandError) as caught:
                         tunnels.run_command(command)
                     self.assertNotIn("POLL_", str(caught.exception))
+
+    def test_timeout_kills_command_descendants(self):
+        # Adopt and reap grandchildren even when the CI container's PID 1 does not.
+        libc = ctypes.CDLL(None)
+        was_subreaper = ctypes.c_int()
+        self.assertEqual(libc.prctl(37, ctypes.byref(was_subreaper), 0, 0, 0), 0)
+        self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)  # PR_SET_CHILD_SUBREAPER
+        self.addCleanup(libc.prctl, 36, was_subreaper.value, 0, 0, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            pidfile = Path(directory) / "children.pid"
+            command = ["sh", "-c", 'sleep 30 & first=$!; sleep 30 & second=$!; '
+                       'printf "%s\\n%s\\n" "$first" "$second" > "$1"; wait',
+                       "timeout-test", str(pidfile)]
+            try:
+                with patch.object(tunnels, "COMMAND_TIMEOUT", 0.5):
+                    with self.assertRaisesRegex(tunnels.CommandError, "timed out after 0.5 s"):
+                        tunnels.run_command(command)
+                pids = [int(pid) for pid in pidfile.read_text().splitlines()]
+                self.assertEqual(len(pids), 2)
+                for pid in pids:
+                    deadline = time.monotonic() + 2
+                    while time.monotonic() < deadline:
+                        try:
+                            reaped, status = os.waitpid(pid, os.WNOHANG)
+                        except ChildProcessError:
+                            break
+                        if reaped:
+                            self.assertEqual(os.waitstatus_to_exitcode(status), -signal.SIGKILL)
+                            break
+                        time.sleep(0.01)
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(pid, 0)
+            finally:
+                if pidfile.exists():
+                    for pid in map(int, pidfile.read_text().splitlines()):
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                            os.waitpid(pid, 0)
+                        except (ProcessLookupError, ChildProcessError):
+                            pass
 
     def test_arguments_accept_each_tunnel_once_and_normalize_order(self):
         self.assertEqual(tunnels.parse_tunnels(ARGS[4:] + ARGS[:4]), PEERS)
