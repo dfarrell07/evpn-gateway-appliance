@@ -46,53 +46,11 @@
   ansible.builtin.include_tasks: nm_networking.yml
 
 # ── FRR ────────────────────────────────────────────────────────
-- name: Ensure FRR directories exist
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    mode: "{{ item.mode }}"
-  loop:
-    - { path: /etc/frr, mode: '0755' }
-    - { path: /var/run/frr, mode: '0777' }
-
-- name: Deploy FRR daemons config
-  ansible.builtin.copy:
-    dest: /etc/frr/daemons
-    mode: "0644"
-    content: |
-      bgpd=yes
-      ospfd=no
-      ospf6d=no
-      ripd=no
-      ripngd=no
-      isisd=no
-      pimd=no
-      ldpd=no
-      nhrpd=no
-      eigrpd=no
-      babeld=no
-      sharpd=no
-      pbrd=no
-      bfdd=yes
-      fabricd=no
-      vrrpd=no
-      pathd=no
-  register: _evpn_onprem_appliance_frr_daemons
-
-- name: Deploy FRR vtysh config
-  ansible.builtin.copy:
-    dest: /etc/frr/vtysh.conf
-    mode: "0644"
-    content: "service integrated-vtysh-config\n"
-
 - name: Reconcile FRR configuration
   ansible.builtin.include_role:
     name: evpn_frr
   vars:
     evpn_frr_config_template: frr-onprem-appliance.conf.j2
-    evpn_frr_daemons_checksum: "{{ _evpn_onprem_appliance_frr_daemons.checksum }}"
-    evpn_frr_daemons_changed: "{{ _evpn_onprem_appliance_frr_daemons.changed }}"
-    evpn_frr_container_caps: "{{ evpn_onprem_appliance_frr_container_caps }}"
 
 - name: Flush handlers
   ansible.builtin.meta: flush_handlers

@@ -1,35 +1,9 @@
 ---
 argument_specs:
   main:
-    short_description: Reconcile the desired FRR configuration.
+    short_description: Reconcile the desired configuration on an appliance running systemd-managed FRR.
     options:
       evpn_frr_config_template:
         type: str
         required: true
         description: Template filename relative to the calling role's templates directory.
-      evpn_frr_daemons_checksum:
-        type: str
-        required: true
-        description: Checksum of the caller's installed daemon-selection file.
-      evpn_frr_daemons_changed:
-        type: bool
-        default: false
-        description: Whether the daemon-selection file changed on a host without applied state.
-      evpn_frr_container_name:
-        type: str
-        default: frr
-        description: Name of the running FRR container.
-      evpn_frr_container_caps:
-        type: list
-        elements: str
-        default:
-          - NET_ADMIN
-          - SYS_ADMIN
-          - NET_RAW
-          - NET_BIND_SERVICE
-          - SETUID
-          - SETGID
-          - KILL
-          - DAC_OVERRIDE
-          - CHOWN
-        description: Linux capabilities used when starting FRR directly through Podman.

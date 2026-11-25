@@ -10,7 +10,7 @@ This role also owns `tasks/wireguard_keys.yml`, shared with
 role's comment for why).
 
 See [`meta/argument_specs.yml`](meta/argument_specs.yml) for the full input
-schema (`tunnel`, `bgp`, `frr_image`, `stretches`).
+schema (`tunnel`, `bgp`, `stretches`).
 
 ## Requirements
 

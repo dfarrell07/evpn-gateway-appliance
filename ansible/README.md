@@ -121,8 +121,8 @@ specifically:
 - Removed `host_key_checking = False` from `ansible.cfg`.
 - Fixed a `playbook_dir`-relative cross-role include that broke once
   installed from a real collection (`evpn_onprem_appliance`).
-- Added explicit `service_facts` gathering so the bootc-systemd-vs-podman
-  fallback logic the roles depend on actually runs (`playbooks/deploy.yml`).
+- Gather service facts before deployment so monitoring can select the correct
+  runtime. FRR uses the appliance's `frr-container.service` and embedded image.
 - `evpn_aws_infra` no longer opens SSH/WireGuard to `0.0.0.0/0`
   unconditionally; it requires an explicit admin CIDR.
 - Pinned the `frr_exporter`/`node_exporter` image tags instead of `:latest`.
@@ -132,9 +132,8 @@ specifically:
   `infra_relay_host`/`workload_vtep_host` variables and `inventory_hostname`,
   so renaming those inventory hosts just needs the one matching variable
   updated, not template edits.
-- Replaced the static `frr version 10.3.1` line in all three FRR templates
-  with a value derived from `frr_image`'s tag, so it can't silently drift
-  from the image actually deployed.
+- Use the embedded payload's FRR version instead of deriving a version from an
+  inventory image tag.
 - Replaced hardcoded WireGuard `AllowedIPs` CIDRs with values derived from
   `stretches` (server side) and the
   `infra_vpc_cidr`/`workload_vpc_cidr`/`ocp_pod_network_cidr` variables

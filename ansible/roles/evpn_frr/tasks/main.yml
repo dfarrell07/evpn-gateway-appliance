@@ -1,137 +1,70 @@
 ---
-- name: Stage the desired FRR configuration
-  ansible.builtin.include_tasks: render.yml
+- name: Create the FRR candidate directory
+  ansible.builtin.file:
+    path: /etc/frr/desired
+    state: directory
+    mode: "0755"
 
-- name: Seed the startup configuration on a new installation
+- name: Seed the FRR daemon selection if it is missing
+  ansible.builtin.copy:
+    dest: /etc/frr/daemons
+    content: |
+      bgpd=yes
+      bfdd=yes
+    mode: "0644"
+    force: false
+
+- name: Enable integrated FRR configuration
+  ansible.builtin.copy:
+    dest: /etc/frr/vtysh.conf
+    content: "service integrated-vtysh-config\n"
+    mode: "0644"
+
+- name: Load the embedded FRR image
+  ansible.builtin.systemd:
+    name: payload-load.service
+    state: started
+
+- name: Render and validate the FRR candidate
+  ansible.builtin.template:
+    src: "{{ ansible_parent_role_paths[0] }}/templates/{{ evpn_frr_config_template }}"
+    dest: /etc/frr/desired/frr.conf
+    mode: "0644"
+    validate: >-
+      podman run --rm --network=none --pull=never --entrypoint vtysh
+      --volume %s:/tmp/evpn-frr.conf:ro,Z frr:embedded -C -f /tmp/evpn-frr.conf
+
+- name: Seed the startup configuration if it is missing
   ansible.builtin.copy:
     src: /etc/frr/desired/frr.conf
     dest: /etc/frr/frr.conf
     remote_src: true
     force: false
     mode: "0644"
-  register: _evpn_frr_bootstrap
 
-- name: Check for the last successfully applied FRR configuration
-  ansible.builtin.stat:
-    path: /etc/frr/.evpn-applied.json
-    get_checksum: false
-  register: _evpn_frr_applied_file
+- name: Start the FRR service
+  ansible.builtin.systemd:
+    name: frr-container.service
+    state: started
+    enabled: true
 
-- name: Read the last successfully applied FRR configuration
-  ansible.builtin.slurp:
-    src: /etc/frr/.evpn-applied.json
-  register: _evpn_frr_applied
-  when: _evpn_frr_applied_file.stat.exists
+- name: Wait for the FRR BGP daemon
+  ansible.builtin.command:
+    argv: [podman, exec, frr, vtysh, -d, bgpd, -c, show bgp summary json]
+  register: _evpn_frr_ready
+  until: _evpn_frr_ready.rc == 0
+  retries: 30
+  delay: 1
+  changed_when: false
 
-- name: Determine whether FRR configuration is pending
-  ansible.builtin.set_fact:
-    _evpn_frr_previous: >-
-      {{ (_evpn_frr_applied.content | b64decode | from_json)
-         if _evpn_frr_applied_file.stat.exists else {} }}
-    _evpn_frr_desired:
-      configuration: "{{ _evpn_frr_candidate.checksum }}"
-      daemons: "{{ evpn_frr_daemons_checksum }}"
+- name: Check the candidate against running FRR
+  ansible.builtin.command:
+    argv: [podman, exec, frr, /usr/lib/frr/frr-reload.py, --test, /etc/frr/desired/frr.conf]
+  changed_when: false
 
-- name: Start FRR or restart it when the daemon selection changes
-  ansible.builtin.include_tasks: runtime.yml
-  vars:
-    _evpn_frr_restart: >-
-      {{ not _evpn_frr_bootstrap.changed and
-         (_evpn_frr_previous.daemons != _evpn_frr_desired.daemons
-          if 'daemons' in _evpn_frr_previous else evpn_frr_daemons_changed | bool) }}
-
-- name: Apply the pending FRR configuration
-  when: _evpn_frr_previous != _evpn_frr_desired or _evpn_frr_bootstrap.changed
-  block:
-    - name: Wait for the running FRR container
-      ansible.builtin.command:
-        argv: [podman, exec, "{{ evpn_frr_container_name }}", vtysh, -d, bgpd, -c, show bgp summary json]
-      register: _evpn_frr_ready
-      until: _evpn_frr_ready.rc == 0
-      retries: 30
-      delay: 1
-      changed_when: false
-
-    - name: Look for frr-reload.py in the running image
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - "{{ evpn_frr_container_name }}"
-          - sh
-          - -c
-          - >-
-            for candidate in /usr/lib/frr/frr-reload.py /usr/bin/frr-reload.py;
-            do test -x "$candidate" && { printf '%s' "$candidate"; exit 0; };
-            done;
-            command -v frr-reload.py || exit 3
-      register: _evpn_frr_reload_helper
-      changed_when: false
-      failed_when: _evpn_frr_reload_helper.rc not in [0, 3]
-
-    - name: Reconcile the running configuration without restarting FRR
-      when: _evpn_frr_reload_helper.rc == 0
-      block:
-        - name: Check whether FRR can reconcile the desired configuration
-          ansible.builtin.command:
-            argv:
-              - podman
-              - exec
-              - "{{ evpn_frr_container_name }}"
-              - "{{ _evpn_frr_reload_helper.stdout | trim }}"
-              - --test
-              - /etc/frr/desired/frr.conf
-          changed_when: false
-
-        # FRR 10.4 can write a partially applied config even when reload fails.
-        # Using the candidate directory as confdir suppresses that implicit write.
-        - name: Apply the desired configuration to the running daemons
-          ansible.builtin.command:
-            argv:
-              - podman
-              - exec
-              - "{{ evpn_frr_container_name }}"
-              - "{{ _evpn_frr_reload_helper.stdout | trim }}"
-              - --reload
-              - --confdir
-              - /etc/frr/desired
-              - /etc/frr/desired/frr.conf
-          changed_when: true
-
-        - name: Save the successfully reloaded FRR startup configuration
-          ansible.builtin.command:
-            argv: [podman, exec, "{{ evpn_frr_container_name }}", vtysh, -c, write memory]
-          changed_when: true
-
-    - name: Apply the desired startup configuration when frr-reload.py is unavailable
-      when:
-        - _evpn_frr_reload_helper.rc == 3
-        - not _evpn_frr_bootstrap.changed
-        - _evpn_frr_previous.configuration | default('') != _evpn_frr_desired.configuration
-      block:
-        - name: Install the validated startup configuration
-          ansible.builtin.copy:
-            src: /etc/frr/desired/frr.conf
-            dest: /etc/frr/frr.conf
-            remote_src: true
-            mode: "0644"
-
-        - name: Restart FRR to read the new startup configuration
-          ansible.builtin.include_tasks: runtime.yml
-          vars:
-            _evpn_frr_restart: true
-
-        - name: Wait for FRR after the fallback restart
-          ansible.builtin.command:
-            argv: [podman, exec, "{{ evpn_frr_container_name }}", vtysh, -d, bgpd, -c, show bgp summary json]
-          register: _evpn_frr_restarted
-          until: _evpn_frr_restarted.rc == 0
-          retries: 30
-          delay: 1
-          changed_when: false
-
-    - name: Record FRR configuration only after it is applied
-      ansible.builtin.copy:
-        dest: /etc/frr/.evpn-applied.json
-        content: "{{ _evpn_frr_desired | to_json }}\n"
-        mode: "0600"
+# FRR owns the live delta and the startup file. Always apply so a retry can
+# reconcile partial changes even when the desired file is unchanged.
+- name: Reload and save the desired FRR configuration
+  ansible.builtin.command:
+    argv: [podman, exec, frr, /usr/lib/frr/frr-reload.py, --reload, --overwrite, /etc/frr/desired/frr.conf]
+  changed_when: true

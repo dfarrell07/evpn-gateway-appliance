@@ -2,8 +2,6 @@
 ! Managed by Ansible — do not edit manually
 !
 ! KNOWN OPEN ITEM: no route-map/prefix-list policy; maximum-prefix below is only a defensive backstop (source-audit.md §1, "No BGP policy or limits").
-! frr version line derived from frr_image; revisit if frr_image moves to digest pinning.
-frr version {{ frr_image.split(":")[-1] }}
 frr defaults traditional
 hostname {{ inventory_hostname }}
 log syslog informational

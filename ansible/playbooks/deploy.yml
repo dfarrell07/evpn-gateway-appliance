@@ -6,7 +6,7 @@
   hosts: cloud_infra
   become: true
   pre_tasks:
-    # Needed so ansible_facts.services is populated for the roles' systemd-vs-podman branch (source-audit.md, "Missing service facts").
+    # Monitoring uses ansible_facts.services to select its runtime.
     - name: Gather service facts
       ansible.builtin.service_facts:
   roles:
