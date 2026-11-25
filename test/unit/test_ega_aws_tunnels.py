@@ -254,14 +254,20 @@ class ReplacementTests(unittest.TestCase):
                          + load_events(1) + load_events(2))
 
     def test_first_tunnel_timeout_stops_before_second(self):
-        for child_present in (True, False):
-            with self.subTest(child_present=child_present):
+        for child_present, poll_fails in ((child, fails) for child in (True, False)
+                                          for fails in (True, False)):
+            with self.subTest(child_present=child_present, poll_fails=poll_fails):
                 self.host = FakeHost(self, self.directory)
 
                 def on_up(number):
                     self.host.bgp[number] = "Idle"
                     if not child_present:
                         self.host.children.pop(number)
+                    if poll_fails:
+                        command = (("podman", "exec", "frr", "vtysh", "-c",
+                                    "show bgp neighbors 169.254.10.1 json") if child_present
+                                   else ("ipsec", "trafficstatus"))
+                        self.host.failures[command] = tunnels.CommandError("poll failed")
 
                 self.host.on_up = on_up
                 what = ("its BGP session with 169.254.10.1" if child_present else
@@ -271,16 +277,22 @@ class ReplacementTests(unittest.TestCase):
                 self.assertEqual(self.host.mutations(), load_events(1) + [("sleep", 5)] * 18)
 
     def test_neither_ready_after_loading_both_fails(self):
-        self.host.children.clear()
+        for poll_fails in (True, False):
+            with self.subTest(poll_fails=poll_fails):
+                self.host = FakeHost(self, self.directory)
+                self.host.children.clear()
 
-        def on_up(number):
-            self.host.bgp[number] = "Idle"
+                def on_up(number):
+                    self.host.bgp[number] = "Idle"
+                    if poll_fails:
+                        self.host.failures[("ipsec", "trafficstatus")] = tunnels.CommandError(
+                            "poll failed")
 
-        self.host.on_up = on_up
-        self.assertEqual(self.deploy(), (1, "Neither ega-aws-1 nor ega-aws-2 came up with "
-                         f"its BGP session within 90 s. {RETRY}\n"))
-        self.assertEqual(self.host.mutations(), load_events(1) + load_events(2)
-                         + [("sleep", 5)] * 18)
+                self.host.on_up = on_up
+                self.assertEqual(self.deploy(), (1, "Neither ega-aws-1 nor ega-aws-2 came up with "
+                                 f"its BGP session within 90 s. {RETRY}\n"))
+                self.assertEqual(self.host.mutations(), load_events(1) + load_events(2)
+                                 + [("sleep", 5)] * 18)
 
     def test_second_tunnel_timeout_after_first_recovers_leaves_no_record(self):
         def on_up(number):
@@ -378,17 +390,99 @@ class ReplacementTests(unittest.TestCase):
                     with patch.object(self.host, "run", side_effect=runner):
                         self.assertEqual(self.deploy(), (1, f"{expected}: {detail[:400]}\n"))
 
-    def test_poll_command_timeouts_are_not_ready_and_can_recover(self):
-        for command in (("ipsec", "trafficstatus"),
-                        ("podman", "exec", "frr", "vtysh", "-c",
-                         "show bgp neighbors 169.254.10.1 json")):
-            with self.subTest(command=command):
+    def test_slow_trafficstatus_aborts_before_replacement(self):
+        command = ("ipsec", "trafficstatus")
+        self.host.failures[command] = tunnels.CommandError("timed out after 5 s")
+        self.assertEqual(self.deploy(), (1, "ipsec trafficstatus or vtysh did not answer "
+                         "within 5 s, so no connection was replaced. Rerun deploy.\n"))
+        self.assertEqual(self.host.events, [("ipsec", "rereadsecrets"), command])
+
+    def test_slow_vtysh_at_each_order_decision_aborts_before_replacement(self):
+        for number, occurrence, first_bgp in ((1, 2, "Established"), (1, 3, "Established"),
+                                              (2, 1, "Established"), (2, 2, "Idle")):
+            with self.subTest(number=number, occurrence=occurrence, first_bgp=first_bgp):
                 self.host = FakeHost(self, self.directory)
-                self.host.failures[command] = tunnels.CommandError("timed out after 5 s")
-                self.host.on_sleep = self.host.failures.clear
-                self.assertEqual(self.deploy(), (0, ""))
-                self.assertTrue(self.record.exists())
-                self.assertGreater(self.host.elapsed, 0)
+                self.host.bgp[1] = first_bgp
+                command = ["podman", "exec", "frr", "vtysh", "-c",
+                           f"show bgp neighbors {PEERS[number - 1].inside_ip} json"]
+                run = self.host.run
+                polls = 0
+
+                def runner(args):
+                    nonlocal polls
+                    status = run(args)
+                    if args == command:
+                        polls += 1
+                        if polls == occurrence:
+                            return tunnels.run_command(args)
+                    return status
+
+                with failed_command(subprocess.TimeoutExpired(command, 5)), \
+                        patch.object(self.host, "run", side_effect=runner):
+                    self.assertEqual(self.deploy(), (1, "ipsec trafficstatus or vtysh did not "
+                                     "answer within 5 s, so no connection was replaced. "
+                                     "Rerun deploy.\n"))
+                self.assertEqual(self.host.mutations(), [])
+                self.assertEqual(self.host.events[-1], tuple(command))
+
+    def test_unknown_pre_wait_final_state_aborts_before_replacement(self):
+        for command, unknown_polls in ((command, polls) for command in ("ipsec", "podman")
+                                       for polls in ((1,), (2,), (1, 2))):
+            with self.subTest(command=command, unknown_polls=unknown_polls):
+                self.host = FakeHost(self, self.directory)
+                self.host.bgp = {1: "Idle", 2: "Idle"}
+                run = self.host.run
+                final_polls = 0
+
+                def runner(args):
+                    nonlocal final_polls
+                    status = run(args)
+                    if args[0] == command and self.host.elapsed == 45:
+                        final_polls += 1
+                        if final_polls in unknown_polls:
+                            raise tunnels.CommandError("timed out after 5 s")
+                    return status
+
+                with patch.object(self.host, "run", side_effect=runner):
+                    self.assertEqual(self.deploy(), (1, "ipsec trafficstatus or vtysh did not "
+                                     "answer within 5 s, so no connection was replaced. "
+                                     "Rerun deploy.\n"))
+                self.assertEqual(final_polls, 2)
+                self.assertEqual(self.host.mutations(), [("sleep", 5)] * 9)
+
+    def test_unknown_polls_can_recover_during_pre_wait_and_after_mutation(self):
+        for before_mutation in (True, False):
+            for command in (("ipsec", "trafficstatus"),
+                            ("podman", "exec", "frr", "vtysh", "-c",
+                             "show bgp neighbors 169.254.10.1 json")):
+                with self.subTest(before_mutation=before_mutation, command=command):
+                    self.host = FakeHost(self, self.directory)
+                    run = self.host.run
+
+                    def runner(args):
+                        status = run(args)
+                        if before_mutation and len(self.host.events) == 2:
+                            self.host.bgp[2] = "Idle"
+                            self.host.failures[command] = tunnels.CommandError("poll failed")
+                        return status
+
+                    def on_up(number):
+                        if not before_mutation and number == 1:
+                            self.host.failures[command] = tunnels.CommandError("poll failed")
+
+                    def on_sleep():
+                        self.host.failures.clear()
+                        self.host.bgp[2] = "Established"
+
+                    self.host.on_up = on_up
+                    self.host.on_sleep = on_sleep
+                    with patch.object(self.host, "run", side_effect=runner):
+                        self.assertEqual(self.deploy(), (0, ""))
+                    self.assertTrue(self.record.exists())
+                    pause = [("sleep", 5)]
+                    self.assertEqual(self.host.mutations(),
+                                     pause + load_events(1) + load_events(2) if before_mutation
+                                     else load_events(1) + pause + load_events(2))
 
     def test_successful_secret_and_poll_output_is_withheld(self):
         stdout = "SYNTHETIC_SECRET_STDOUT"
@@ -432,7 +526,7 @@ class ReplacementTests(unittest.TestCase):
         quick_down = (0, 5, "Connect")
         timeout = (5, 10, None)
         up = (5, 5, "Established")
-        outcomes = iter([down] * 3 + [quick_down] + [timeout] * 4  # pre-wait, then load-both
+        outcomes = iter([down] * 3 + [quick_down] + [down] * 4  # pre-wait, then load-both
                         + [down] * 6 + [quick_down] * 2 + [timeout, up]  # either-ready wait
                         + [timeout] * 2  # both flap down before selecting remaining tunnels
                         + [down] * 6 + [up]  # first recovers
@@ -466,7 +560,8 @@ class ReplacementTests(unittest.TestCase):
 
         with patch.object(self.host, "run", side_effect=runner):
             result = self.deploy()
-        self.assertEqual(self.host.elapsed, 770)
+        self.assertEqual(self.host.elapsed, 750)  # decision polls must now answer
+        self.assertLessEqual(self.host.elapsed, 770)
         self.assertEqual(result, (1, "ega-aws-2: its Child SA with 192.0.2.2 did not come up "
                          f"within 90 s; stopped before any further tunnel. {RETRY}\n"))
         self.assertFalse(self.record.exists())
@@ -524,8 +619,9 @@ class ReadinessTests(unittest.TestCase):
     def test_real_trafficstatus_and_bgp_captures(self):
         for number in (1, 2):
             peer = tunnels.Tunnel(number, "192.0.2.2", f"192.0.2.2{number}")
-            for fixture, expected in (("established.json", True), ("down.json", False),
-                                      ("missing.json", False)):
+            for fixture, expected in (("established.json", tunnels.Readiness.READY),
+                                      ("down.json", tunnels.Readiness.NOT_READY),
+                                      ("missing.json", tunnels.Readiness.NOT_READY)):
                 with self.subTest(number=number, fixture=fixture):
                     self.assertEqual(self.ready(TRAFFICSTATUS,
                                                 (FIXTURES / fixture).read_text(), peer), expected)
@@ -538,7 +634,7 @@ class ReadinessTests(unittest.TestCase):
                     status = "\n".join(prefix + line.replace('"ega-aws-2"',
                                                             f'"ega-aws-2"{suffix}')
                                        for line in TRAFFICSTATUS.splitlines())
-                    self.assertTrue(self.ready(status, ESTABLISHED, peer))
+                    self.assertEqual(self.ready(status, ESTABLISHED, peer), tunnels.Readiness.READY)
 
     def test_rekey_accepts_current_endpoint_before_or_after_stale_sa(self):
         peer = tunnels.Tunnel(2, "192.0.2.2", "192.0.2.22")
@@ -546,7 +642,8 @@ class ReadinessTests(unittest.TestCase):
         stale = old.replace("192.0.2.22", "192.0.2.99")
         for lines in ((stale, current), (current, stale)):
             with self.subTest(lines=lines):
-                self.assertTrue(self.ready("\n".join(lines), ESTABLISHED, peer))
+                self.assertEqual(self.ready("\n".join(lines), ESTABLISHED, peer),
+                                 tunnels.Readiness.READY)
 
     def test_child_sa_requires_exact_connection_and_endpoint_id(self):
         bgp = json.dumps({PEERS[0].inside_ip: {"bgpState": "Established"}})
@@ -559,9 +656,11 @@ class ReadinessTests(unittest.TestCase):
                 ("ega-aws-2", "192.0.2.1", False)):
             with self.subTest(connection=connection, outside=outside):
                 status = f'006 #1: "{connection}", type=ESP, id=\'{outside}\''
-                self.assertEqual(self.ready(status, bgp), expected)
-        self.assertFalse(self.ready('"ega-aws-1", id=\'192.0.2.9\'\n'
-                                    '"ega-aws-2", id=\'192.0.2.1\'', bgp))
+                self.assertEqual(self.ready(status, bgp), tunnels.Readiness.READY if expected
+                                 else tunnels.Readiness.NOT_READY)
+        self.assertEqual(self.ready('"ega-aws-1", id=\'192.0.2.9\'\n'
+                                    '"ega-aws-2", id=\'192.0.2.1\'', bgp),
+                         tunnels.Readiness.NOT_READY)
 
     def test_bgp_requires_expected_neighbor_and_established_json_state(self):
         status = '006 #1: "ega-aws-1", type=ESP, id=\'192.0.2.1\''
@@ -575,7 +674,25 @@ class ReadinessTests(unittest.TestCase):
                     '{"169.254.10.1": {"bgpState": "OpenConfirm"}}',
                     '{"169.254.20.1": {"bgpState": "Established"}}'):
             with self.subTest(bgp=bgp):
-                self.assertFalse(self.ready(status, bgp))
+                self.assertEqual(self.ready(status, bgp), tunnels.Readiness.NOT_READY)
+
+    def test_poll_command_failures_are_unknown(self):
+        for command in (["ipsec", "trafficstatus"],
+                        ["podman", "exec", "frr", "vtysh", "-c",
+                         "show bgp neighbors 192.0.2.2 json"]):
+            for exception in (subprocess.TimeoutExpired(command, 5),
+                              subprocess.CalledProcessError(7, command, output="", stderr=""),
+                              FileNotFoundError("missing executable")):
+                with self.subTest(command=command, exception=exception), failed_command(exception):
+                    def runner(args):
+                        if args == command:
+                            return tunnels.run_command(args)
+                        self.assertEqual(args, ["ipsec", "trafficstatus"])
+                        return TRAFFICSTATUS
+
+                    peer = tunnels.Tunnel(1, "192.0.2.2", "192.0.2.21")
+                    self.assertEqual(tunnels.Replacer(PEERS, runner=runner).ready(peer),
+                                     tunnels.Readiness.UNKNOWN)
 
     def test_wait_ready_observes_every_poll_through_each_deadline(self):
         for peers, timeout in ((PEERS, 45), ([PEERS[0]], 90)):
@@ -585,7 +702,7 @@ class ReadinessTests(unittest.TestCase):
 
                 def ready(peer):
                     observations.append((elapsed, peer.number))
-                    return False
+                    return tunnels.Readiness.NOT_READY
 
                 def sleep(seconds):
                     nonlocal elapsed
@@ -594,7 +711,7 @@ class ReadinessTests(unittest.TestCase):
 
                 replacer = tunnels.Replacer(PEERS, sleep=sleep, monotonic=lambda: elapsed)
                 with patch.object(replacer, "ready", side_effect=ready):
-                    self.assertFalse(replacer.wait_ready(peers, timeout))
+                    self.assertEqual(replacer.wait_ready(peers, timeout), tunnels.Readiness.NOT_READY)
                 self.assertEqual(observations, [(second, peer.number)
                                  for second in range(0, timeout + 1, 5)
                                  for peer in peers])
@@ -612,7 +729,7 @@ class ReadinessTests(unittest.TestCase):
                     nonlocal elapsed
                     observations.append((elapsed - 1000, peer.number))
                     elapsed += 2
-                    return False
+                    return tunnels.Readiness.NOT_READY
 
                 def sleep(seconds):
                     nonlocal elapsed
@@ -621,7 +738,7 @@ class ReadinessTests(unittest.TestCase):
 
                 replacer = tunnels.Replacer(PEERS, sleep=sleep, monotonic=lambda: elapsed)
                 with patch.object(replacer, "ready", side_effect=ready):
-                    self.assertFalse(replacer.wait_ready(peers, timeout))
+                    self.assertEqual(replacer.wait_ready(peers, timeout), tunnels.Readiness.NOT_READY)
                 self.assertEqual(observations, [(start + index * 2, peer.number)
                                  for start in starts for index, peer in enumerate(peers)])
                 self.assertEqual(pauses, sleeps)

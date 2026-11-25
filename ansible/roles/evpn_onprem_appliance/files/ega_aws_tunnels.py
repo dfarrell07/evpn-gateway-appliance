@@ -3,6 +3,7 @@
 import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 import fcntl
 from functools import partial
 import hashlib
@@ -25,6 +26,23 @@ COMMAND_TIMEOUT = 60
 POLL_TIMEOUT = 5
 RETRY = ("Rerun deploy to retry, after restarting FRR if a deploy stopped before "
          "FRR restarted.")
+NO_REPLACE = ("ipsec trafficstatus or vtysh did not answer within 5 s, so no connection "
+              "was replaced. Rerun deploy.")
+
+
+class Readiness(Enum):
+    """Distinguish an answered status from an unavailable poll."""
+
+    READY = "ready"
+    NOT_READY = "not ready"
+    UNKNOWN = "unknown"
+
+
+def confirmed_ready(state: Readiness) -> bool:
+    """Require an answered decision before the first connection is replaced."""
+    if state is Readiness.UNKNOWN:
+        raise RuntimeError(NO_REPLACE)
+    return state is Readiness.READY
 
 
 @dataclass(frozen=True)
@@ -143,48 +161,60 @@ class Replacer:
         self.monotonic = monotonic
         self.directory = directory
 
-    def query(self, args: list[str]) -> str:
+    def query(self, args: list[str]) -> str | None:
         """Treat failed or timed-out readiness commands as unavailable status."""
         try:
             return self.runner(args)
         except CommandError:
-            return ""
+            return None
 
-    def child_up(self, peer: Tunnel) -> bool:
+    def child_up(self, peer: Tunnel) -> Readiness:
         """Match one connection's parsed endpoint ID exactly, on the same line."""
-        for line in self.query(["ipsec", "trafficstatus"]).splitlines():
+        output = self.query(["ipsec", "trafficstatus"])
+        if output is None:
+            return Readiness.UNKNOWN
+        for line in output.splitlines():
             connection = re.search(r'"([^"]+)"', line)
             if connection is None or connection[1] != peer.name:
                 continue
             endpoint = re.search(r"\bid='([^']*)'", line[connection.end():])
             if endpoint is not None and endpoint[1] == peer.outside_ip:
-                return True
-        return False
+                return Readiness.READY
+        return Readiness.NOT_READY
 
-    def ready(self, peer: Tunnel) -> bool:
+    def ready(self, peer: Tunnel) -> Readiness:
         """Require a Child SA with this AWS endpoint, not one left before renumbering, and BGP Established."""
-        if not self.child_up(peer):
-            return False
+        child = self.child_up(peer)
+        if child is not Readiness.READY:
+            return child
         output = self.query(["podman", "exec", "frr", "vtysh", "-c",
                              f"show bgp neighbors {peer.inside_ip} json"])
+        if output is None:
+            return Readiness.UNKNOWN
         try:
             neighbors = json.loads(output)
         except json.JSONDecodeError:
-            return False
+            return Readiness.NOT_READY
         if not isinstance(neighbors, dict):
-            return False
+            return Readiness.NOT_READY
         neighbor = neighbors.get(peer.inside_ip)
-        return isinstance(neighbor, dict) and neighbor.get("bgpState") == "Established"
+        return (Readiness.READY if isinstance(neighbor, dict)
+                and neighbor.get("bgpState") == "Established" else Readiness.NOT_READY)
 
-    def wait_ready(self, peers: list[Tunnel], timeout: float) -> bool:
+    def wait_ready(self, peers: list[Tunnel], timeout: float) -> Readiness:
         """Poll immediately and through the deadline, counting command time too."""
         deadline = self.monotonic() + timeout
         while True:
-            if any(self.ready(peer) for peer in peers):
-                return True
+            state = Readiness.NOT_READY
+            for peer in peers:
+                observed = self.ready(peer)
+                if observed is Readiness.READY:
+                    return Readiness.READY
+                if observed is Readiness.UNKNOWN:
+                    state = Readiness.UNKNOWN
             remaining = deadline - self.monotonic()
             if remaining <= 0:
-                return False
+                return state
             self.sleep(min(5, remaining))
 
     def load(self, peer: Tunnel) -> None:
@@ -202,11 +232,14 @@ class Replacer:
         # An FRR restart just before this handler drops both BGP sessions. While
         # any tunnel has a Child SA, wait up to 45 s (AWS's 30 s hold time plus
         # FRR's 10 s connect retry) for one to be ready before choosing.
-        timeout = 45 if '"ega-aws-' in self.query(["ipsec", "trafficstatus"]) else 0
-        self.wait_ready(self.peers, timeout)
+        status = self.query(["ipsec", "trafficstatus"])
+        if status is None:
+            raise RuntimeError(NO_REPLACE)
+        timeout = 45 if '"ega-aws-' in status else 0
+        confirmed_ready(self.wait_ready(self.peers, timeout))
         one, two = self.peers
         loaded = False
-        if not self.ready(one) and not self.ready(two):
+        if not confirmed_ready(self.ready(one)) and not confirmed_ready(self.ready(two)):
             # Nothing is up to protect. Load both so one failed AWS endpoint
             # cannot prevent the other from starting. Libreswan keeps retrying
             # the other (auto=start), which the loop below waits for without
@@ -214,12 +247,12 @@ class Replacer:
             # the connections fails until both AWS endpoints are up.
             for peer in self.peers:
                 self.load(peer)
-            if not self.wait_ready(self.peers, 90):
+            if self.wait_ready(self.peers, 90) is not Readiness.READY:
                 raise RuntimeError("Neither ega-aws-1 nor ega-aws-2 came up with its "
                                    f"BGP session within 90 s. {RETRY}")
             loaded = True
-            order = [peer for peer in self.peers if not self.ready(peer)]
-        elif self.ready(one) and not self.ready(two):
+            order = [peer for peer in self.peers if self.ready(peer) is not Readiness.READY]
+        elif confirmed_ready(self.ready(one)) and not confirmed_ready(self.ready(two)):
             order = [two, one]
         else:
             order = [one, two]
@@ -229,8 +262,9 @@ class Replacer:
         for peer in order:
             if not loaded:
                 self.load(peer)
-            if not self.wait_ready([peer], 90):
-                what = (f"its BGP session with {peer.inside_ip}" if self.child_up(peer)
+            if self.wait_ready([peer], 90) is not Readiness.READY:
+                what = (f"its BGP session with {peer.inside_ip}"
+                        if self.child_up(peer) is Readiness.READY
                         else f"its Child SA with {peer.outside_ip}")
                 raise RuntimeError(f"{peer.name}: {what} did not come up within 90 s; "
                                    f"stopped before any further tunnel. {RETRY}")
