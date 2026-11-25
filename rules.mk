@@ -75,12 +75,13 @@ check-shell:
 
 # Dockerfile and Containerfile lint with Hadolint (installed in Dockerfile.ci). --config and
 # `env -i` keep out host config and HADOLINT_* settings. OpenShift rewrites Dockerfile.ci
-# without comments before COPY, dropping its DL3041 pragma. Repeat that reviewed
-# package-version exception only for this root file; every other Dockerfile* and
-# Containerfile* keeps the native rules and inline pragmas. Dockerfile.ci is required.
+# without comments before COPY, dropping its DL3041 and DL3059 pragmas. Repeat those reviewed
+# exceptions (package versions, separate download RUN layers) only for this root file; every
+# other Dockerfile* and Containerfile* keeps the native rules and inline pragmas.
+# Dockerfile.ci is required.
 .PHONY: check-dockerfiles
 check-dockerfiles:
-	env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --ignore DL3041 -- Dockerfile.ci
+	env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --ignore DL3041 --ignore DL3059 -- Dockerfile.ci
 	git ls-files -z -c -o --exclude-standard -- ':(glob)**/Dockerfile*' ':(glob)**/Containerfile*' ':(top,exclude,literal)Dockerfile.ci' | xargs -0 -r env -i PATH="$$PATH" hadolint --config .hadolint.yaml --no-color --
 	# relabel= rewrites the SELinux label of checkout files on the build host and fails on
 	# virtiofs. COPY the file into a stage and bind-mount from that stage instead.

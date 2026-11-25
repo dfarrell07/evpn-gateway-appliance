@@ -29,19 +29,50 @@ RUN pip install --no-cache-dir \
         hadolint-py==v2.15.1.2
 
 # promtool for offline monitoring checks; hashes from the official 3.5.0 sha256sums.txt.
-# Extract only the tool, not the server or its assets.
-RUN case "$(uname -m)" in \
-        x86_64) arch=amd64; sha256=e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a ;; \
-        aarch64) arch=arm64; sha256=173389cc42bf09c4e6e54cb53fa07a5a835d7c261e14775d2183181d6e385d1c ;; \
-        *) echo "unsupported promtool architecture" >&2; exit 1 ;; \
-    esac && \
-    tmp="$(mktemp -d)" && \
-    curl -fsSL "https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-$arch.tar.gz" -o "$tmp/prometheus.tar.gz" && \
-    echo "$sha256  $tmp/prometheus.tar.gz" > "$tmp/sha256sum" && \
-    sha256sum -c "$tmp/sha256sum" && \
-    tar -xzf "$tmp/prometheus.tar.gz" -C "$tmp" --strip-components=1 "prometheus-3.5.0.linux-$arch/promtool" && \
-    install -m 0755 "$tmp/promtool" /usr/local/bin/promtool && \
-    rm -rf "$tmp"
+# Extract only the tool, not the server or its assets. Kept as its own RUN layer.
+# hadolint ignore=DL3059
+RUN python3 - <<'PYTHON'
+import hashlib
+import io
+import platform
+import shutil
+import tarfile
+import time
+from pathlib import Path
+from urllib.request import urlopen
+
+targets = {
+    "x86_64": ("amd64", "e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a"),
+    "aarch64": ("arm64", "173389cc42bf09c4e6e54cb53fa07a5a835d7c261e14775d2183181d6e385d1c"),
+}
+machine = platform.machine()
+if machine not in targets:
+    raise SystemExit(f"unsupported promtool architecture: {machine}")
+arch, sha256 = targets[machine]
+version = "3.5.0"
+release = f"prometheus-{version}.linux-{arch}"
+url = f"https://github.com/prometheus/prometheus/releases/download/v{version}/{release}.tar.gz"
+for attempt in range(3):
+    try:
+        with urlopen(url, timeout=60) as response:
+            archive = response.read()
+        break
+    except OSError:
+        if attempt == 2:
+            raise
+        time.sleep(10)
+if hashlib.sha256(archive).hexdigest() != sha256:
+    raise SystemExit(f"promtool archive checksum mismatch: {url}")
+
+destination = Path("/usr/local/bin/promtool")
+with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
+    member = tar.getmember(f"{release}/promtool")
+    if not member.isfile():
+        raise SystemExit("promtool archive member is not a regular file")
+    with tar.extractfile(member) as source, destination.open("wb") as output:
+        shutil.copyfileobj(source, output)
+destination.chmod(0o755)
+PYTHON
 
 # Collection dependencies, pinned to exact versions for reproducible image builds and
 # so the checks can resolve FQCN modules on the network-less runner. Keep in sync with
@@ -84,8 +115,49 @@ RUN tmp="$(mktemp -d)" && \
 # exports the base images to tarballs. iproute/iputils/tcpdump/nmap-ncat: dataplane probes.
 RUN dnf install -y podman-remote skopeo openssh-clients iproute iputils tcpdump nmap-ncat && dnf clean all
 
-# containerlab, pinned. 0.81.1 is the latest release as of 2026-10-19.
-RUN bash -c "$(curl -fsSL https://get.containerlab.dev)" -- -v 0.81.1
+# containerlab, pinned. 0.81.1 is the latest release as of 2026-10-19; hashes from its
+# checksums.txt.
+RUN python3 - <<'PYTHON'
+import hashlib
+import io
+import platform
+import shutil
+import tarfile
+import time
+from pathlib import Path
+from urllib.request import urlopen
+
+targets = {
+    "x86_64": ("amd64", "3a257dc329774dff598c7f1277bb7c2723f76ff620cdab33f83a9f381f4e64ae"),
+    "aarch64": ("arm64", "3a4c0188583d9a72b96a4eb0903a49d4bfa9e23e7d5b3f37355da815364ad334"),
+}
+machine = platform.machine()
+if machine not in targets:
+    raise SystemExit(f"unsupported containerlab architecture: {machine}")
+arch, sha256 = targets[machine]
+version = "0.81.1"
+url = f"https://github.com/srl-labs/containerlab/releases/download/v{version}/containerlab_{version}_linux_{arch}.tar.gz"
+for attempt in range(3):
+    try:
+        with urlopen(url, timeout=60) as response:
+            archive = response.read()
+        break
+    except OSError:
+        if attempt == 2:
+            raise
+        time.sleep(10)
+if hashlib.sha256(archive).hexdigest() != sha256:
+    raise SystemExit(f"containerlab archive checksum mismatch: {url}")
+
+destination = Path("/usr/local/bin/containerlab")
+with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
+    member = tar.getmember("containerlab")
+    if not member.isfile():
+        raise SystemExit("containerlab archive member is not a regular file")
+    with tar.extractfile(member) as source, destination.open("wb") as output:
+        shutil.copyfileobj(source, output)
+destination.chmod(0o755)
+PYTHON
 
 # Python test toolchain. testinfra pinned to latest (10.2.2, 2026-10-19); pytest pinned
 # conservatively for broad testinfra compatibility. molecule drives the role suite
@@ -95,6 +167,7 @@ RUN bash -c "$(curl -fsSL https://get.containerlab.dev)" -- -v 0.81.1
 # on the controller (this image, not the instance), so the molecule lane needs it here; baked at build
 # (not pulled at lane runtime) because the lanes must run disconnected. Pinned for a reproducible image —
 # the EE derives the same dep unpinned from ansible.utils. The static checks don't exercise it.
+# hadolint ignore=DL3059
 RUN pip install --no-cache-dir \
         pytest==8.3.4 \
         pytest-testinfra==10.2.2 \
