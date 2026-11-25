@@ -54,7 +54,8 @@ def run_command(args: list[str], *, lock_fd: int | None = None) -> str:
     try:
         with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               text=True, start_new_session=True,
-                              pass_fds=() if lock_fd is None else (lock_fd,)) as process:
+                              # Only changes keep the lock; a stuck poll must not block later deploys.
+                              pass_fds=() if lock_fd is None or polling else (lock_fd,)) as process:
             try:
                 stdout, stderr = process.communicate(timeout=timeout)
             except subprocess.TimeoutExpired as error:
@@ -251,7 +252,8 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None,
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
                 raise RuntimeError("another replacement of the AWS IPsec connections is still "
-                                   "running; rerun deploy after it finishes") from error
+                                   "running (or an ipsec command it started is stuck); rerun "
+                                   "deploy after it finishes") from error
             # Surviving commands must keep the lock if this parent is terminated.
             if runner is None:
                 runner = partial(run_command, lock_fd=lock.fileno())

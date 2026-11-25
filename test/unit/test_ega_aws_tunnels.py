@@ -328,7 +328,8 @@ class ReplacementTests(unittest.TestCase):
                 self.assertEqual(tunnels.main(ARGS, runner=self.host.run,
                                               directory=self.directory), 1)
             self.assertEqual(errors.getvalue(), "another replacement of the AWS IPsec connections "
-                             "is still running; rerun deploy after it finishes\n")
+                             "is still running (or an ipsec command it started is stuck); "
+                             "rerun deploy after it finishes\n")
             self.assertEqual(self.record.read_text(), "old record\n")
             self.assertEqual(self.host.events, [])
         self.assertEqual(self.deploy(), (0, ""))
@@ -628,11 +629,12 @@ class ReadinessTests(unittest.TestCase):
 
 class CommandAndArgumentTests(unittest.TestCase):
     def test_commands_capture_output_with_poll_or_mutation_timeout(self):
-        for command, timeout in ((["ipsec", "trafficstatus"], 5),
-                                 (["podman", "exec", "frr", "vtysh", "-c",
-                                   "show bgp neighbors 192.0.2.2 json"], 5),
-                                 (["ipsec", "rereadsecrets"], 60),
-                                 *((list(command), 60) for command in load_events(1))):
+        # Polls neither keep the lock nor get the mutation timeout.
+        for command, timeout, fds in ((["ipsec", "trafficstatus"], 5, ()),
+                                      (["podman", "exec", "frr", "vtysh", "-c",
+                                        "show bgp neighbors 192.0.2.2 json"], 5, ()),
+                                      (["ipsec", "rereadsecrets"], 60, (42,)),
+                                      *((list(command), 60, (42,)) for command in load_events(1))):
             for returncode in (0, 7):
                 with self.subTest(command=command, returncode=returncode), \
                         patch.object(tunnels.subprocess, "Popen") as popen:
@@ -646,7 +648,7 @@ class CommandAndArgumentTests(unittest.TestCase):
                         self.assertEqual(tunnels.run_command(command, lock_fd=42), "status")
                     popen.assert_called_once_with(command, stdout=subprocess.PIPE,
                                                   stderr=subprocess.PIPE, text=True,
-                                                  start_new_session=True, pass_fds=(42,))
+                                                  start_new_session=True, pass_fds=fds)
                     process.communicate.assert_called_once_with(timeout=timeout)
 
     def test_required_command_errors_include_command(self):
