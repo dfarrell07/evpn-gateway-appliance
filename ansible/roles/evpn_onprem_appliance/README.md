@@ -24,6 +24,7 @@ Ansible Vault; never from plaintext inventory, since Ansible error excerpts can 
 The only persistent key copy is `/etc/ipsec.d/ega-aws.secrets` (root, `0600`, no diffs); on bootc hosts,
 earlier deployments keep their own `/etc` copy until pruned.
 
+The IPsec replacement handler needs python3 3.11 or later (RHEL 10 ships 3.12).
 IPsec needs Libreswan 5.0 or later (RHEL 10's; 4.x lacks `leftinterface-ip`). Non-bootc hosts get it
 installed; bootc images must ship it with XFRM interface support (tested with 5.4.1), and `/etc/ipsec.conf` and
 `/etc/ipsec.secrets` must include `/etc/ipsec.d`, as RHEL's do. The role runs

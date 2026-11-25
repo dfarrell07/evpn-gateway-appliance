@@ -2,6 +2,7 @@
 
 import contextlib
 import ctypes
+import fcntl
 import hashlib
 import importlib.util
 import io
@@ -27,6 +28,11 @@ SPEC.loader.exec_module(tunnels)
 ARGS = ["--tunnel", "1", "169.254.10.1", "192.0.2.1",
         "--tunnel", "2", "169.254.20.1", "192.0.2.2"]
 PEERS = tunnels.parse_tunnels(ARGS)
+# Appliance Libreswan x86 N=2 capture (including a rekey) and trimmed FRR 10.6.2
+# neighbor JSON. All addresses in the captures are documentation addresses.
+FIXTURES = Path(__file__).parent / "fixtures" / "ega_aws_tunnels"
+TRAFFICSTATUS = (FIXTURES / "trafficstatus.txt").read_text()
+ESTABLISHED = (FIXTURES / "established.json").read_text()
 RETRY = ("Rerun deploy to retry, after restarting FRR if a deploy stopped before "
          "FRR restarted.")
 
@@ -53,14 +59,18 @@ class FakeHost:
             raise self.failures[command]
         if args == ["ipsec", "trafficstatus"]:
             return "\n".join(
-                f"006 #{number}: \"ega-aws-{number}\", type=ESP, id='{outside}'"
-                for number, outside in self.children.items()
+                line.replace(f"192.0.2.2{number}", self.children[number])
+                for line in TRAFFICSTATUS.splitlines()
+                for number in self.children if f'"ega-aws-{number}"' in line
             )
         if args[:4] == ["podman", "exec", "frr", "vtysh"]:
             for peer in PEERS:
                 if args == ["podman", "exec", "frr", "vtysh", "-c",
                             f"show bgp neighbors {peer.inside_ip} json"]:
-                    return json.dumps({peer.inside_ip: {"bgpState": self.bgp[peer.number]}})
+                    neighbor = json.loads(ESTABLISHED)["192.0.2.2"]
+                    neighbor["neighborAddr"] = peer.inside_ip
+                    neighbor["bgpState"] = self.bgp[peer.number]
+                    return json.dumps({peer.inside_ip: neighbor})
             self.case.fail(f"Unexpected BGP command: {args}")
         if args[:2] == ["ipsec", "replace"]:
             number = int(args[-1][-1])
@@ -93,7 +103,7 @@ def load_events(number):
 
 
 @contextlib.contextmanager
-def failed_command(exception):
+def failed_command(exception, *, drained=("", "")):
     """Inject a nonzero exit, timeout or launch error with group signals mocked."""
     with patch.object(tunnels.subprocess, "Popen") as popen, \
             patch.object(tunnels.os, "killpg") as killpg:
@@ -101,7 +111,7 @@ def failed_command(exception):
         if isinstance(exception, OSError):
             popen.side_effect = exception
         elif isinstance(exception, subprocess.TimeoutExpired):
-            process.communicate.side_effect = [exception, ("", "")] * 2
+            process.communicate.side_effect = [exception, drained] * 2
         else:
             process.communicate.return_value = (exception.stdout, exception.stderr)
             process.returncode = exception.returncode
@@ -124,6 +134,7 @@ class ReplacementTests(unittest.TestCase):
         errors = io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             result = tunnels.main(ARGS, runner=self.host.run, sleep=self.host.sleep,
+                                  monotonic=lambda: self.host.elapsed,
                                   directory=self.directory)
         self.assertEqual(output.getvalue(), "")
         self.assertNotIn("TEST_ONLY", errors.getvalue())
@@ -271,6 +282,68 @@ class ReplacementTests(unittest.TestCase):
         self.assertEqual(self.host.mutations(), load_events(1) + load_events(2)
                          + [("sleep", 5)] * 18)
 
+    def test_second_tunnel_timeout_after_first_recovers_leaves_no_record(self):
+        def on_up(number):
+            if number == 2:
+                self.host.bgp[number] = "Connect"
+
+        self.host.on_up = on_up
+        self.assertEqual(self.deploy(), (1, "ega-aws-2: its BGP session with 169.254.20.1 "
+                         "did not come up within 90 s; stopped before any further tunnel. "
+                         f"{RETRY}\n"))
+        self.assertEqual(self.host.mutations(), load_events(1) + load_events(2)
+                         + [("sleep", 5)] * 18)
+        self.assertFalse(self.record.exists())
+
+    def test_first_deploy_one_tunnel_never_recovers_leaves_no_record(self):
+        for first_ready in (1, 2):
+            with self.subTest(first_ready=first_ready):
+                self.host = FakeHost(self, self.directory)
+                self.host.children.clear()
+
+                def on_up(number):
+                    if number != first_ready:
+                        self.host.bgp[number] = "Connect"
+
+                self.host.on_up = on_up
+                result, error = self.deploy()
+                self.assertEqual(result, 1)
+                self.assertTrue(error.startswith(f"ega-aws-{3 - first_ready}: "))
+                self.assertEqual(self.host.mutations(), load_events(1) + load_events(2)
+                                 + [("sleep", 5)] * 18)
+                self.assertFalse(self.record.exists())
+
+    def test_held_lock_preserves_record_and_runs_no_commands(self):
+        real_flock = fcntl.flock
+
+        def nonblocking(fd, operation):
+            self.assertEqual(operation, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return real_flock(fd, operation)
+
+        with (self.directory / "ega-aws.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors), \
+                    patch.object(tunnels.fcntl, "flock", side_effect=nonblocking):
+                self.assertEqual(tunnels.main(ARGS, runner=self.host.run,
+                                              directory=self.directory), 1)
+            self.assertEqual(errors.getvalue(), "another replacement of the AWS IPsec connections "
+                             "is still running; rerun deploy after it finishes\n")
+            self.assertEqual(self.record.read_text(), "old record\n")
+            self.assertEqual(self.host.events, [])
+        self.assertEqual(self.deploy(), (0, ""))
+
+    def test_lock_is_held_through_record_publication_and_released_on_failure(self):
+        def replace(source, destination):
+            with (self.directory / "ega-aws.lock").open("a") as lock:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            raise OSError("rename failed")
+
+        with patch.object(tunnels.os, "replace", side_effect=replace):
+            self.assertEqual(self.deploy(), (1, "rename failed\n"))
+        self.assertEqual(self.deploy(), (0, ""))
+
     def test_required_command_failure_stops_immediately(self):
         for command in (("ipsec", "rereadsecrets"), *load_events(1)):
             with self.subTest(command=command):
@@ -280,17 +353,86 @@ class ReplacementTests(unittest.TestCase):
                 self.assertEqual(self.host.events[-1], command)
                 self.assertNotIn(load_events(2)[0], self.host.events)
 
+    def test_replace_and_up_stderr_is_stripped_capped_and_reported_by_main(self):
+        detail = "configuration error " + "x" * 420
+        for command in map(list, load_events(1)):
+            for exception in (
+                    subprocess.CalledProcessError(7, command, output="UNUSED_STDOUT",
+                                                  stderr=f" \n{detail}\n "),
+                    subprocess.TimeoutExpired(command, 60, output=b"UNUSED_STDOUT",
+                                              stderr=f" \n{detail}\n ".encode())):
+                with self.subTest(command=command, exception=exception), failed_command(exception):
+                    run = self.host.run
+
+                    def runner(args):
+                        return tunnels.run_command(args) if args == command else run(args)
+
+                    with self.assertRaises(tunnels.CommandError) as caught:
+                        tunnels.run_command(command)
+                    expected = (f"{' '.join(command)} timed out after 60 s"
+                                if isinstance(exception, subprocess.TimeoutExpired) else
+                                f"{' '.join(command)} failed (exit status 7)")
+                    self.assertEqual(str(caught.exception), f"{expected}: {detail[:400]}")
+                    with patch.object(self.host, "run", side_effect=runner):
+                        self.assertEqual(self.deploy(), (1, f"{expected}: {detail[:400]}\n"))
+
     def test_poll_command_timeouts_are_not_ready_and_can_recover(self):
         for command in (("ipsec", "trafficstatus"),
                         ("podman", "exec", "frr", "vtysh", "-c",
                          "show bgp neighbors 169.254.10.1 json")):
             with self.subTest(command=command):
                 self.host = FakeHost(self, self.directory)
-                self.host.failures[command] = tunnels.CommandError("timed out after 60 s")
+                self.host.failures[command] = tunnels.CommandError("timed out after 5 s")
                 self.host.on_sleep = self.host.failures.clear
                 self.assertEqual(self.deploy(), (0, ""))
                 self.assertTrue(self.record.exists())
                 self.assertGreater(self.host.elapsed, 0)
+
+    def test_slow_commands_and_flapping_tunnels_stay_below_handler_timeout(self):
+        # Each readiness result specifies trafficstatus time, vtysh time, and
+        # BGP state (None means vtysh times out: 5 s plus 5 s cleanup).
+        down = (5, 5, "Connect")
+        quick_down = (0, 5, "Connect")
+        timeout = (5, 10, None)
+        up = (5, 5, "Established")
+        outcomes = iter([down] * 3 + [quick_down] + [timeout] * 4  # pre-wait, then load-both
+                        + [down] * 6 + [quick_down] * 2 + [timeout, up]  # either-ready wait
+                        + [timeout] * 2  # both flap down before selecting remaining tunnels
+                        + [down] * 6 + [up]  # first recovers
+                        + [down] * 6 + [timeout])  # second times out
+        self.host.bgp = {1: "Connect", 2: "Connect"}
+        run = self.host.run
+        starts = []
+        current = None
+
+        def runner(args):
+            nonlocal current
+            starts.append(self.host.elapsed)
+            if args == ["ipsec", "trafficstatus"]:
+                if len(starts) == 2:  # initial snapshot after rereadsecrets
+                    self.host.elapsed += 5
+                else:
+                    current = next(outcomes, None)
+                    if current is None:  # failure diagnostic after the final wait
+                        self.host.elapsed += 10
+                        raise tunnels.CommandError("trafficstatus timed out")
+                    self.host.elapsed += current[0]
+            elif args[:4] == ["podman", "exec", "frr", "vtysh"]:
+                self.host.elapsed += current[1]
+                if current[2] is None:
+                    raise tunnels.CommandError("vtysh timed out")
+                number = next(peer.number for peer in PEERS if peer.inside_ip in args[-1])
+                self.host.bgp[number] = current[2]
+            else:
+                self.host.elapsed += 60
+            return run(args)
+
+        with patch.object(self.host, "run", side_effect=runner):
+            result = self.deploy()
+        self.assertEqual(self.host.elapsed, 770)
+        self.assertEqual(result, (1, "ega-aws-2: its Child SA with 192.0.2.2 did not come up "
+                         f"within 90 s; stopped before any further tunnel. {RETRY}\n"))
+        self.assertFalse(self.record.exists())
 
     def test_record_format_mode_and_atomic_write_last(self):
         real_replace = os.replace
@@ -328,19 +470,38 @@ class ReplacementTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("rename failed", error)
         self.assertEqual(sorted(path.name for path in self.directory.iterdir()),
-                         ["ega-aws.conf", "ega-aws.secrets"])
+                         ["ega-aws.conf", "ega-aws.lock", "ega-aws.secrets"])
 
 
 class ReadinessTests(unittest.TestCase):
-    def ready(self, status, bgp):
+    def ready(self, status, bgp, peer=PEERS[0]):
         def runner(args):
             if args == ["ipsec", "trafficstatus"]:
                 return status
             self.assertEqual(args, ["podman", "exec", "frr", "vtysh", "-c",
-                                   "show bgp neighbors 169.254.10.1 json"])
+                                   f"show bgp neighbors {peer.inside_ip} json"])
             return bgp
 
-        return tunnels.Replacer(PEERS, runner=runner).ready(PEERS[0])
+        return tunnels.Replacer(PEERS, runner=runner).ready(peer)
+
+    def test_real_trafficstatus_and_bgp_captures(self):
+        for number in (1, 2):
+            peer = tunnels.Tunnel(number, "192.0.2.2", f"192.0.2.2{number}")
+            for fixture, expected in (("established.json", True), ("down.json", False),
+                                      ("missing.json", False)):
+                with self.subTest(number=number, fixture=fixture):
+                    self.assertEqual(self.ready(TRAFFICSTATUS,
+                                                (FIXTURES / fixture).read_text(), peer), expected)
+
+    def test_trafficstatus_accepts_reply_codes_and_instance_suffixes(self):
+        peer = tunnels.Tunnel(2, "192.0.2.2", "192.0.2.22")
+        for prefix in ("", "006 "):
+            for suffix in ("", "[1]"):
+                with self.subTest(prefix=prefix, suffix=suffix):
+                    status = "\n".join(prefix + line.replace('"ega-aws-2"',
+                                                            f'"ega-aws-2"{suffix}')
+                                       for line in TRAFFICSTATUS.splitlines())
+                    self.assertTrue(self.ready(status, ESTABLISHED, peer))
 
     def test_child_sa_requires_exact_connection_and_endpoint_id(self):
         bgp = json.dumps({PEERS[0].inside_ip: {"bgpState": "Established"}})
@@ -372,8 +533,8 @@ class ReadinessTests(unittest.TestCase):
                 self.assertFalse(self.ready(status, bgp))
 
     def test_wait_ready_observes_every_poll_through_each_deadline(self):
-        for peers, attempts in ((PEERS, 9), ([PEERS[0]], 18)):
-            with self.subTest(attempts=attempts):
+        for peers, timeout in ((PEERS, 45), ([PEERS[0]], 90)):
+            with self.subTest(timeout=timeout):
                 observations = []
                 elapsed = 0
 
@@ -386,32 +547,64 @@ class ReadinessTests(unittest.TestCase):
                     self.assertEqual(seconds, 5)
                     elapsed += seconds
 
-                replacer = tunnels.Replacer(PEERS, sleep=sleep)
+                replacer = tunnels.Replacer(PEERS, sleep=sleep, monotonic=lambda: elapsed)
                 with patch.object(replacer, "ready", side_effect=ready):
-                    self.assertFalse(replacer.wait_ready(peers, attempts))
+                    self.assertFalse(replacer.wait_ready(peers, timeout))
                 self.assertEqual(observations, [(second, peer.number)
-                                 for second in range(0, attempts * 5 + 1, 5)
+                                 for second in range(0, timeout + 1, 5)
                                  for peer in peers])
+
+    def test_wait_deadlines_include_poll_time_and_shorten_the_last_sleep(self):
+        for peers, timeout, starts, sleeps, end in (
+                (PEERS, 45, list(range(0, 46, 9)), [5] * 5, 49),
+                ([PEERS[0]], 90, [*range(0, 85, 7), 90], [5] * 12 + [4], 92)):
+            with self.subTest(timeout=timeout):
+                elapsed = 1000  # monotonic need not start at zero
+                observations = []
+                pauses = []
+
+                def ready(peer):
+                    nonlocal elapsed
+                    observations.append((elapsed - 1000, peer.number))
+                    elapsed += 2
+                    return False
+
+                def sleep(seconds):
+                    nonlocal elapsed
+                    pauses.append(seconds)
+                    elapsed += seconds
+
+                replacer = tunnels.Replacer(PEERS, sleep=sleep, monotonic=lambda: elapsed)
+                with patch.object(replacer, "ready", side_effect=ready):
+                    self.assertFalse(replacer.wait_ready(peers, timeout))
+                self.assertEqual(observations, [(start + index * 2, peer.number)
+                                 for start in starts for index, peer in enumerate(peers)])
+                self.assertEqual(pauses, sleeps)
+                self.assertEqual(elapsed, 1000 + end)
 
 
 class CommandAndArgumentTests(unittest.TestCase):
-    def test_commands_capture_output_with_a_sixty_second_timeout(self):
-        command = ["ipsec", "trafficstatus"]
-        for returncode in (0, 7):
-            with self.subTest(returncode=returncode), \
-                    patch.object(tunnels.subprocess, "Popen") as popen:
-                process = popen.return_value.__enter__.return_value
-                process.communicate.return_value = ("status", "ignored stderr")
-                process.returncode = returncode
-                if returncode:
-                    with self.assertRaisesRegex(tunnels.CommandError, "exit status 7"):
-                        tunnels.run_command(command)
-                else:
-                    self.assertEqual(tunnels.run_command(command), "status")
-                popen.assert_called_once_with(command, stdout=subprocess.PIPE,
-                                              stderr=subprocess.PIPE, text=True,
-                                              start_new_session=True)
-                process.communicate.assert_called_once_with(timeout=60)
+    def test_commands_capture_output_with_poll_or_mutation_timeout(self):
+        for command, timeout in ((["ipsec", "trafficstatus"], 5),
+                                 (["podman", "exec", "frr", "vtysh", "-c",
+                                   "show bgp neighbors 192.0.2.2 json"], 5),
+                                 (["ipsec", "rereadsecrets"], 60),
+                                 *((list(command), 60) for command in load_events(1))):
+            for returncode in (0, 7):
+                with self.subTest(command=command, returncode=returncode), \
+                        patch.object(tunnels.subprocess, "Popen") as popen:
+                    process = popen.return_value.__enter__.return_value
+                    process.communicate.return_value = ("status", "ignored stderr")
+                    process.returncode = returncode
+                    if returncode:
+                        with self.assertRaisesRegex(tunnels.CommandError, "exit status 7"):
+                            tunnels.run_command(command)
+                    else:
+                        self.assertEqual(tunnels.run_command(command), "status")
+                    popen.assert_called_once_with(command, stdout=subprocess.PIPE,
+                                                  stderr=subprocess.PIPE, text=True,
+                                                  start_new_session=True)
+                    process.communicate.assert_called_once_with(timeout=timeout)
 
     def test_required_command_errors_include_command(self):
         command = ["ipsec", "rereadsecrets"]
@@ -430,32 +623,32 @@ class CommandAndArgumentTests(unittest.TestCase):
                 if isinstance(exception, subprocess.TimeoutExpired):
                     killpg.assert_called_once_with(process.pid, signal.SIGKILL)
                     self.assertEqual(process.communicate.call_args_list, [
-                        unittest.mock.call(timeout=60), unittest.mock.call()])
+                        unittest.mock.call(timeout=60), unittest.mock.call(timeout=5)])
 
     def test_command_output_secrets_never_reach_errors_or_main_output(self):
         sentinel = "SYNTHETIC_SECRET_MUST_STAY_PRIVATE"
-        for command in (["ipsec", "rereadsecrets"], *map(list, load_events(1))):
-            for payload in (sentinel, sentinel.encode()):
-                for stdout, stderr in ((payload, None), (None, payload), (payload, payload)):
-                    for exception in (
-                            subprocess.CalledProcessError(7, command, output=stdout, stderr=stderr),
-                            subprocess.TimeoutExpired(command, 60, output=stdout, stderr=stderr)):
-                        with self.subTest(command=command, stdout=stdout, exception=exception), \
-                                tempfile.TemporaryDirectory() as directory, \
-                                failed_command(exception):
-                            output = io.StringIO()
-                            errors = io.StringIO()
-                            with contextlib.redirect_stdout(output), \
-                                    contextlib.redirect_stderr(errors):
-                                with self.assertRaises(tunnels.CommandError) as caught:
-                                    tunnels.run_command(command)
-                                self.assertNotIn(sentinel, str(caught.exception))
-                                # With every command failing, main() stops at rereadsecrets.
-                                if command == ["ipsec", "rereadsecrets"]:
-                                    self.assertEqual(tunnels.main(ARGS, runner=tunnels.run_command,
-                                                                 directory=Path(directory)), 1)
-                            self.assertNotIn(sentinel, output.getvalue())
-                            self.assertNotIn(sentinel, errors.getvalue())
+        drained = (f"{sentinel}_DRAIN_STDOUT", f"{sentinel}_DRAIN_STDERR")
+        command = ["ipsec", "rereadsecrets"]
+        for payload in (sentinel, sentinel.encode()):
+            for stdout, stderr in ((payload, None), (None, payload), (payload, payload)):
+                for exception in (
+                        subprocess.CalledProcessError(7, command, output=stdout, stderr=stderr),
+                        subprocess.TimeoutExpired(command, 60, output=stdout, stderr=stderr)):
+                    with self.subTest(stdout=stdout, exception=exception), \
+                            tempfile.TemporaryDirectory() as directory, \
+                            failed_command(exception, drained=drained):
+                        output = io.StringIO()
+                        errors = io.StringIO()
+                        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                            with self.assertRaises(tunnels.CommandError) as caught:
+                                tunnels.run_command(command)
+                            self.assertNotIn(sentinel, str(caught.exception))
+                            self.assertIn("; its output is withheld, see journalctl -u ipsec",
+                                          str(caught.exception))
+                            self.assertEqual(tunnels.main(ARGS, runner=tunnels.run_command,
+                                                         directory=Path(directory)), 1)
+                        self.assertNotIn(sentinel, output.getvalue())
+                        self.assertNotIn(sentinel, errors.getvalue())
 
     def test_poll_command_errors_exclude_output(self):
         for command in (["ipsec", "trafficstatus"],
@@ -474,6 +667,7 @@ class CommandAndArgumentTests(unittest.TestCase):
                         with self.assertRaises(tunnels.CommandError) as caught:
                             tunnels.run_command(command)
                     self.assertNotIn("POLL_", str(caught.exception))
+                    self.assertNotIn("output is withheld", str(caught.exception))
                     self.assertNotIn("POLL_", output.getvalue())
                     self.assertNotIn("POLL_", errors.getvalue())
 

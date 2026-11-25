@@ -3,6 +3,7 @@
 import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
+import fcntl
 import hashlib
 import ipaddress
 import json
@@ -18,7 +19,9 @@ import time
 
 Runner = Callable[[list[str]], str]
 Sleep = Callable[[float], None]
+Clock = Callable[[], float]
 COMMAND_TIMEOUT = 60
+POLL_TIMEOUT = 5
 RETRY = ("Rerun deploy to retry, after restarting FRR if a deploy stopped before "
          "FRR restarted.")
 
@@ -38,34 +41,44 @@ class Tunnel:
 
 
 class CommandError(RuntimeError):
-    """An external command failed without exposing its captured output."""
+    """An external command failed with only safe diagnostics."""
 
 
 def run_command(args: list[str]) -> str:
-    """Capture one command, bounding even a stopped pluto or FRR to 60 seconds."""
+    """Bound polls to 5 s and mutations to 60 s; expose only replace/up stderr."""
     command = " ".join(args)
+    polling = (args == ["ipsec", "trafficstatus"]
+               or args[:4] == ["podman", "exec", "frr", "vtysh"])
+    timeout = POLL_TIMEOUT if polling else COMMAND_TIMEOUT
     try:
         with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               text=True, start_new_session=True) as process:
             try:
-                stdout = process.communicate(timeout=COMMAND_TIMEOUT)[0]
-            except subprocess.TimeoutExpired:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired as error:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-                process.communicate()
+                stderr = process.communicate(timeout=5)[1]
+                error.stderr = stderr or error.stderr
                 raise
             if process.returncode:
-                raise subprocess.CalledProcessError(process.returncode, args)
+                raise subprocess.CalledProcessError(process.returncode, args, stderr=stderr)
             return stdout
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
         message = (f"{command} timed out after {error.timeout} s"
                    if isinstance(error, subprocess.TimeoutExpired)
                    else f"{command} failed (exit status {error.returncode})")
-        if args[0] == "ipsec":
+        if args[:2] == ["ipsec", "rereadsecrets"]:
             # Libreswan can echo secrets in its errors, so point to its log instead.
             message += "; its output is withheld, see journalctl -u ipsec"
+        elif args[:2] in (["ipsec", "replace"], ["ipsec", "up"]):
+            detail = error.stderr or ""
+            if isinstance(detail, bytes):
+                detail = detail.decode(errors="replace")
+            if detail.strip():
+                message += f": {detail.strip()[:400]}"
         raise CommandError(message) from error
     except OSError as error:
         raise CommandError(f"{command} could not run: {error.strerror}") from error
@@ -102,7 +115,6 @@ def write_record(directory: Path) -> None:
         with tempfile.NamedTemporaryFile(mode="w", dir=directory,
                                          prefix=".ega-aws.applied.", delete=False) as record:
             temporary = Path(record.name)
-            os.fchmod(record.fileno(), 0o600)
             record.writelines(lines)
             record.flush()
             os.fsync(record.fileno())
@@ -113,13 +125,15 @@ def write_record(directory: Path) -> None:
 
 
 class Replacer:
-    """Coordinate replacement with injectable commands and five-second sleeps."""
+    """Coordinate replacement with injectable commands, clock and sleep."""
 
     def __init__(self, peers: list[Tunnel], *, runner: Runner = run_command,
-                 sleep: Sleep = time.sleep, directory: Path = Path("/etc/ipsec.d")) -> None:
+                 sleep: Sleep = time.sleep, monotonic: Clock = time.monotonic,
+                 directory: Path = Path("/etc/ipsec.d")) -> None:
         self.peers = peers
         self.runner = runner
         self.sleep = sleep
+        self.monotonic = monotonic
         self.directory = directory
 
     def query(self, args: list[str]) -> str:
@@ -155,14 +169,16 @@ class Replacer:
         neighbor = neighbors.get(peer.inside_ip)
         return isinstance(neighbor, dict) and neighbor.get("bgpState") == "Established"
 
-    def wait_ready(self, peers: list[Tunnel], attempts: int) -> bool:
-        """Poll immediately, then after at most attempts five-second sleeps."""
-        for attempt in range(attempts + 1):
+    def wait_ready(self, peers: list[Tunnel], timeout: float) -> bool:
+        """Poll immediately and through the deadline, counting command time too."""
+        deadline = self.monotonic() + timeout
+        while True:
             if any(self.ready(peer) for peer in peers):
                 return True
-            if attempt < attempts:
-                self.sleep(5)
-        return False
+            remaining = deadline - self.monotonic()
+            if remaining <= 0:
+                return False
+            self.sleep(min(5, remaining))
 
     def load(self, peer: Tunnel) -> None:
         """Replace and initiate one connection, stopping on either failure."""
@@ -179,8 +195,8 @@ class Replacer:
         # An FRR restart just before this handler drops both BGP sessions. While
         # any tunnel has a Child SA, wait up to 45 s (AWS's 30 s hold time plus
         # FRR's 10 s connect retry) for one to be ready before choosing.
-        attempts = 9 if '"ega-aws-' in self.query(["ipsec", "trafficstatus"]) else 0
-        self.wait_ready(self.peers, attempts)
+        timeout = 45 if '"ega-aws-' in self.query(["ipsec", "trafficstatus"]) else 0
+        self.wait_ready(self.peers, timeout)
         one, two = self.peers
         loaded = False
         if not self.ready(one) and not self.ready(two):
@@ -191,7 +207,7 @@ class Replacer:
             # the connections fails until both AWS endpoints are up.
             for peer in self.peers:
                 self.load(peer)
-            if not self.wait_ready(self.peers, 18):
+            if not self.wait_ready(self.peers, 90):
                 raise RuntimeError("Neither ega-aws-1 nor ega-aws-2 came up with its "
                                    f"BGP session within 90 s. {RETRY}")
             loaded = True
@@ -206,7 +222,7 @@ class Replacer:
         for peer in order:
             if not loaded:
                 self.load(peer)
-            if not self.wait_ready([peer], 18):
+            if not self.wait_ready([peer], 90):
                 what = (f"its BGP session with {peer.inside_ip}" if self.child_up(peer)
                         else f"its Child SA with {peer.outside_ip}")
                 raise RuntimeError(f"{peer.name}: {what} did not come up within 90 s; "
@@ -216,14 +232,22 @@ class Replacer:
 
 
 def main(argv: list[str] | None = None, *, runner: Runner = run_command,
-         sleep: Sleep = time.sleep, directory: Path = Path("/etc/ipsec.d")) -> int:
+         sleep: Sleep = time.sleep, monotonic: Clock = time.monotonic,
+         directory: Path = Path("/etc/ipsec.d")) -> int:
     """Validate arguments and report failures to stderr."""
     try:
         peers = parse_tunnels(argv)
     except SystemExit as error:
         return 0 if error.code == 0 else 1
     try:
-        Replacer(peers, runner=runner, sleep=sleep, directory=directory).apply()
+        with (directory / "ega-aws.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise RuntimeError("another replacement of the AWS IPsec connections is still "
+                                   "running; rerun deploy after it finishes") from error
+            Replacer(peers, runner=runner, sleep=sleep, monotonic=monotonic,
+                     directory=directory).apply()
     except (RuntimeError, OSError) as error:
         print(error, file=sys.stderr)
         return 1

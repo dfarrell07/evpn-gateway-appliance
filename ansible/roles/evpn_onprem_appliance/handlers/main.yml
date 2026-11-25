@@ -43,6 +43,6 @@
       --tunnel 2 {{ _evpn_onprem_appliance_ipsec_peers[1].aws_inside_ip | quote }} {{ _evpn_onprem_appliance_ipsec_peers[1].outside_ip | quote }}
     executable: /usr/bin/python3
   changed_when: true
-  # The script's waits sleep at most 315 s, plus commands bounded at 60 s each; a slow or stopped pluto or
-  # FRR can still exhaust this task's overall timeout.
+  # Worst case: 300 s mutations + (45 + 3*90) s wait deadlines + 80 s final polls
+  # + 65 s status/order polls + 10 s failure diagnostic = 770 s, including timeout cleanup.
   timeout: 900
