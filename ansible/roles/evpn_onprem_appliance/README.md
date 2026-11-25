@@ -39,8 +39,10 @@ Libreswan loads both tunnels' keys at once, so after a bad key change the other 
 re-authentication: correct the keys and redeploy promptly. While neither tunnel provides a route to a VPC,
 policy rules drop traffic to both VPC prefixes, so a covering route cannot send it unencrypted (a more-specific
 route still wins). The rules live on the VTEP's NetworkManager profile, so at boot they apply once NetworkManager
-activates it, together with the VTEP address. Until then, appliance-originated traffic to the VPC prefixes can
-leave unencrypted; VXLAN cannot, because the VTEP address does not exist yet. Changing a VPC prefix or `tunnel.onprem_ip` needs a teardown first, because nmstate keeps the old rules. An FRR configuration
+activates it, together with the VTEP address. Until then, appliance-originated traffic to the VPC prefixes could
+leave unencrypted; VXLAN cannot, because the VTEP address does not exist yet. On real VM boots NetworkManager
+installed the rules with or before the uplink's default route and no cleartext left, but that ordering is not
+guaranteed (a fail-closed boot is CORENET-7511). Changing a VPC prefix or `tunnel.onprem_ip` needs a teardown first, because nmstate keeps the old rules. An FRR configuration
 change, such as a new inside address or ASN, restarts FRR and briefly drops both AWS BGP sessions. Teardown
 removes only the role's connections, keys and rules, leaving other Libreswan connections running and the Libreswan
 service enabled; with no appliance connections it carries no traffic, so disable it if nothing else uses it. IPsec
