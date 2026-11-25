@@ -4,7 +4,7 @@ Packet path: IPsec from the appliance to the AWS gateway, VXLAN directly between
 
 The posted [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500) acceptance criteria are the requirements; this plan proposes how to meet them:
 
-- AC1: create and delete the customer gateway and two-tunnel VPN on the TGW (decision 20); provisioning fails before creating anything while a project VPC or TGW exists, so after any failed run, `teardown-aws.yml` runs first (#52 replaces the criterion's customer-gateway reuse with this stricter rule; the Jira text follows); teardown, in every transport mode, leaves no VPN, customer gateway or Elastic IP.
+- AC1: create and delete the customer gateway and two-tunnel VPN on the TGW (decision 20); a rerun with a project VPN present fails before creating anything (after any failed run, run `teardown-aws.yml` first), and a customer gateway left by a failed run is reused; teardown, in every transport mode, leaves no VPN, customer gateway or Elastic IP.
 - AC2: explicit FIPS-compatible tunnel options (IKEv2, AES256-GCM-16, SHA2-256, DH14); hand per-tunnel parameters and keys to the appliance and configure Libreswan and FRR there, without writing keys to logs or artifacts.
 - AC3: EVPN BGP from an advertised on-premises address, separate from underlay BGP; VXLAN reachability asserted; accept only VPC prefixes and advertise only the VTEP network.
 - AC4: document the MTU budget as a limit (controls are CORENET-7709).
@@ -42,7 +42,7 @@ The posted [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500) acce
 [#52](https://github.com/openshift/evpn-gateway-appliance/pull/52) implements AC1–AC5, AC7 and AC6's emulated scenario on the TGW; the AWS canary, outside 7500, follows Test Platform approval and, with the [spikes](#ranked-evidence-spikes), checks it.
 Provisioning runs the VPN tasks once (AC1), so adding or removing an appliance needs `teardown-aws.yml` and a new provisioning run; converging against an existing VPN would need an adopt-on-rerun path outside 7500 (unassigned).
 
-Prow's root-privileged e2e runner runs the scenario's kernel IPsec (green on #52).
+Prow's root-privileged e2e runner runs the scenario's kernel IPsec ([e2e on 9bdb92e](https://prow.ci.openshift.org/view/gs/test-platform-results-public/pr-logs/pull/openshift_evpn-gateway-appliance/52/pull-ci-openshift-evpn-gateway-appliance-main-e2e/2125628476990951424)).
 Beyond 7500: compare the IPsec scenario with WireGuard (kept, question 7) for L2, BGP, MTU, MSS, failover and CI duration.
 OpenShift qualification (IPI lanes and a second cluster) belongs to 7708/7515 ([OCP qualification lanes](pipeline-spec.md#ocp-qualification-lanes)).
 

@@ -63,6 +63,9 @@ def run_command(args: list[str]) -> str:
         message = (f"{command} timed out after {error.timeout} s"
                    if isinstance(error, subprocess.TimeoutExpired)
                    else f"{command} failed (exit status {error.returncode})")
+        if args[0] == "ipsec":
+            # Libreswan can echo secrets in its errors, so point to its log instead.
+            message += "; its output is withheld, see journalctl -u ipsec"
         raise CommandError(message) from error
     except OSError as error:
         raise CommandError(f"{command} could not run: {error.strerror}") from error

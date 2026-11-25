@@ -5,8 +5,8 @@ argument_specs:
     description:
       - Terminates WireGuard from the on-prem appliance (with ipsec, the AWS VPN
         ends at the TGW instead) and configures FRR as a route relay (not a
-        VTEP) between the on-prem appliance and the workload-VPC VTEP; eBGP
-        keeps EVPN next hops, so VTEP IPs are preserved end-to-end.
+        VTEP) between the on-prem appliance and the workload-VPC VTEP, keeping
+        EVPN next hops (attribute-unchanged next-hop) so VTEP IPs are preserved end-to-end.
     options:
       workload_vtep_host:
         type: str

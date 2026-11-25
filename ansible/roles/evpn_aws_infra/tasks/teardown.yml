@@ -16,7 +16,7 @@
     region: "{{ evpn_aws_infra_aws_region }}"
     filters:
       "tag:Project": "{{ evpn_aws_infra_project_name }}"
-      instance-state-name: ["pending", "running", "stopping", "stopped"]
+      instance-state-name: ["running", "stopped"]
   register: _evpn_aws_infra_instances
 
 - name: Terminate EC2 instances
@@ -107,9 +107,7 @@
 
 - name: Delete IGWs
   amazon.aws.ec2_vpc_igw:
-    # By ID, so a gateway a failed run created but never attached is deleted too.
-    internet_gateway_id: "{{ item.internet_gateway_id }}"
-    detach_vpc: true
+    vpc_id: "{{ item.attachments[0].vpc_id }}"
     state: absent
     region: "{{ evpn_aws_infra_aws_region }}"
   loop: "{{ _evpn_aws_infra_igws.internet_gateways }}"

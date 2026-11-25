@@ -1,4 +1,6 @@
 ---
+# An identical request (type, IP, ASN and device name) returns the existing gateway, so a rerun
+# after a failed run reuses it.
 - name: Create VPN customer gateway
   ansible.builtin.command: >
     aws ec2 create-customer-gateway --region {{ _evpn_aws_infra_region }}

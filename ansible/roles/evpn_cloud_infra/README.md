@@ -4,7 +4,7 @@ Configures the cloud-side EVPN relay: terminates WireGuard from the
 on-prem appliance (with `ipsec`, the AWS VPN ends at the TGW instead) and
 configures FRR as a route relay (not a VTEP) between
 the on-prem appliance and the workload-VPC VTEP, preserving VTEP IPs
-end-to-end because eBGP keeps EVPN next hops.
+end-to-end with `attribute-unchanged next-hop`.
 
 For `tunnel.type: ipsec`, AWS terminates the VPN: the relay peers only in `l2vpn evpn` with each
 `onprem_appliances` host's `tunnel.onprem_ip`, and VXLAN goes directly between VTEPs through the TGW.
@@ -30,8 +30,8 @@ schema (`tunnel`, `bgp`, `frr_image`, `stretches`).
   route-map/prefix-list/route-target filtering beyond a defensive
   `maximum-prefix`; see `templates/frr-infra-relay.conf.j2`.
 - A relay configuration change, such as adding an appliance, restarts the relay's FRR, which
-  interrupts cross-site traffic for every appliance until its sessions are back (CORENET-7710
-  applies changes in place).
+  interrupts cross-site traffic for every appliance until its sessions are back; applying changes
+  in place is CORENET-7710.
 - WireGuard key generation/loading (`tasks/wireguard_keys.yml`) only runs
   for `tunnel.type: wireguard`; every task touching key material sets
   `no_log: true`.

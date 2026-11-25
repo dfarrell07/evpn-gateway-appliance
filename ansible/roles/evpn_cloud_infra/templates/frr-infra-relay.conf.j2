@@ -44,12 +44,13 @@ router bgp {{ bgp.infra_asn }}
 {% endif %}
  exit-address-family
  !
-{# eBGP keeps EVPN next hops (the originating VTEPs) by default; next-hop-unchanged is not an FRR command. #}
  address-family l2vpn evpn
   neighbor {{ workload_host.private_ip }} activate
+  neighbor {{ workload_host.private_ip }} attribute-unchanged next-hop
   neighbor {{ workload_host.private_ip }} maximum-prefix {{ bgp.max_prefix | default(1000) }}
 {% for a in onprem_peers %}
   neighbor {{ a.tunnel.onprem_ip }} activate
+  neighbor {{ a.tunnel.onprem_ip }} attribute-unchanged next-hop
   neighbor {{ a.tunnel.onprem_ip }} maximum-prefix {{ bgp.max_prefix | default(1000) }}
 {% endfor %}
  exit-address-family

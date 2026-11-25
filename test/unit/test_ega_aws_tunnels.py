@@ -11,6 +11,7 @@ from pathlib import Path
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -430,6 +431,8 @@ class CommandAndArgumentTests(unittest.TestCase):
                             with self.assertRaises(tunnels.CommandError) as caught:
                                 tunnels.run_command(command)
                             self.assertNotIn(sentinel, str(caught.exception))
+                            if command != ["ipsec", "rereadsecrets"]:
+                                continue  # main() stops at rereadsecrets when every command fails.
                             errors = io.StringIO()
                             with contextlib.redirect_stderr(errors):
                                 self.assertEqual(tunnels.main(ARGS, runner=tunnels.run_command,
@@ -451,6 +454,8 @@ class CommandAndArgumentTests(unittest.TestCase):
                         tunnels.run_command(command)
                     self.assertNotIn("POLL_", str(caught.exception))
 
+    # prctl (child subreaper) is Linux-only, like the appliance this program runs on.
+    @unittest.skipUnless(sys.platform == "linux", "needs Linux prctl")
     def test_timeout_kills_command_descendants(self):
         # Adopt and reap grandchildren even when the CI container's PID 1 does not.
         libc = ctypes.CDLL(None)
