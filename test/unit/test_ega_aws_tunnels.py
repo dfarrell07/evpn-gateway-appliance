@@ -329,7 +329,8 @@ class ReplacementTests(unittest.TestCase):
                                               directory=self.directory), 1)
             self.assertEqual(errors.getvalue(), "another replacement of the AWS IPsec connections "
                              "is still running (or an ipsec command it started is stuck); "
-                             "rerun deploy after it finishes\n")
+                             "rerun deploy after it finishes, or see the evpn_onprem_appliance "
+                             "README if it persists\n")
             self.assertEqual(self.record.read_text(), "old record\n")
             self.assertEqual(self.host.events, [])
         self.assertEqual(self.deploy(), (0, ""))

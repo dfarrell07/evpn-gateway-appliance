@@ -253,7 +253,8 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None,
             except BlockingIOError as error:
                 raise RuntimeError("another replacement of the AWS IPsec connections is still "
                                    "running (or an ipsec command it started is stuck); rerun "
-                                   "deploy after it finishes") from error
+                                   "deploy after it finishes, or see the evpn_onprem_appliance "
+                                   "README if it persists") from error
             # Surviving commands must keep the lock if this parent is terminated.
             if runner is None:
                 runner = partial(run_command, lock_fd=lock.fileno())

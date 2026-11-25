@@ -36,7 +36,9 @@ A connection or key change replaces the tunnels one at a time, a down one first,
 BGP session is not back within 90 s; later deploys retry until a replacement succeeds. A deploy interrupted
 before FRR restarts leaves its new configuration unloaded; restart `frr-container.service` (or FRR) then. If
 deploy reports that another replacement is still running when none is, an `ipsec` command it started is stuck
-(for example on a stopped pluto) and holds the lock: restart `ipsec.service`, which briefly drops both tunnels, then rerun deploy.
+(for example on a stopped pluto) and holds the lock: restart `ipsec.service`, which briefly drops both tunnels,
+check that `lslocks` no longer lists `/etc/ipsec.d/ega-aws.lock`, then rerun deploy. Do not delete the lock file
+instead: a new file is a second lock, so two replacements could run at once.
 Libreswan loads both tunnels' keys at once, so after a bad key change the other tunnel also fails at its next
 re-authentication: correct the keys and redeploy promptly. While neither tunnel provides a route to a VPC,
 policy rules drop traffic to both VPC prefixes, so a covering route cannot send it unencrypted (a more-specific
