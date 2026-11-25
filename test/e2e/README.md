@@ -157,7 +157,8 @@ links the `emulated` inventory and adds `group_vars/all/ipsec.yml`. Its TGW node
 Libreswan responders and FRR in place of the AWS VPN endpoint, with a public test-only
 handoff. It does not prove IKE/ESP proposal compatibility with AWS (the simulator copies
 the appliance's), AWS telemetry, NAT-T, rekey or maintenance behavior, ECMP or route
-limits. It ends with the product teardown, which `EGA_STAGE=deploy` skips (as it does any
+limits, and its single Libreswan responder can keep an older Child SA until it expires (an hour)
+after a tunnel is replaced or torn down. It ends with the product teardown, which `EGA_STAGE=deploy` skips (as it does any
 `*.teardown` playbook) so the lab stays deployed for inspection.
 
 ## run_remote.sh — remote target (or local, no target)

@@ -13,7 +13,7 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
 ## AWS Site-to-Site VPN (`tunnel.type: ipsec`)
 
 This transport is not yet qualified for production (MTU/MSS controls are CORENET-7709;
-FIPS validation, hardening and qualification CORENET-7708 and CORENET-7511). Set `tunnel.onprem_ip` to the appliance VTEP address,
+FIPS validation, hardening and qualification CORENET-7708 and CORENET-7511, including the fail-closed boot below). Set `tunnel.onprem_ip` to the appliance VTEP address,
 `tunnel.network_cidr` to the network advertised to AWS (default `10.44.44.0/24`, containing the VTEP),
 `bgp.onprem_asn` to the customer gateway ASN, and `infra_relay_host` to the relay, which needs a
 `private_ip` host variable. `tunnel.cloud_ip` and `tunnel.port` are WireGuard-only.
@@ -65,9 +65,6 @@ MTU/MSS/DF control yet (CORENET-7709).
   defensive EVPN `maximum-prefix`; IPsec underlay IPv4 has the VPC/VTEP prefix
   lists described above. See the comment at the top of
   `templates/frr-onprem-appliance.conf.j2`.
-- Libreswan 5.4 may hold extra Child SAs on a tunnel for up to an hour after a deploy replaces either
-  tunnel, or after the other is torn down or fails to come back; AWS documents one SA pair per tunnel, so
-  the AWS canary must confirm traffic is unaffected.
 
 ## Example
 
