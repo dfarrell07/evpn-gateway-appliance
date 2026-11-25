@@ -93,7 +93,7 @@ def load_events(number):
 
 @contextlib.contextmanager
 def failed_command(exception):
-    """Inject a command failure while keeping process-group signals mocked."""
+    """Inject a nonzero exit, timeout or launch error with group signals mocked."""
     with patch.object(tunnels.subprocess, "Popen") as popen, \
             patch.object(tunnels.os, "killpg") as killpg:
         process = popen.return_value.__enter__.return_value
@@ -102,7 +102,8 @@ def failed_command(exception):
         elif isinstance(exception, subprocess.TimeoutExpired):
             process.communicate.side_effect = [exception, ("", "")] * 2
         else:
-            process.communicate.side_effect = exception
+            process.communicate.return_value = (exception.stdout, exception.stderr)
+            process.returncode = exception.returncode
         yield process, killpg
 
 
@@ -130,8 +131,14 @@ class ReplacementTests(unittest.TestCase):
         return result, errors.getvalue()
 
     def test_first_deploy_loads_both_then_waits_without_reloading(self):
-        for first_ready in (1, 2):
-            with self.subTest(first_ready=first_ready):
+        polls = {
+            peer.number: [("ipsec", "trafficstatus"),
+                          ("podman", "exec", "frr", "vtysh", "-c",
+                           f"show bgp neighbors {peer.inside_ip} json")]
+            for peer in PEERS
+        }
+        for first_ready, last_ready_at in ((1, 10), (2, 10), (1, 95), (2, 95)):
+            with self.subTest(first_ready=first_ready, last_ready_at=last_ready_at):
                 self.host = FakeHost(self, self.directory)
                 self.host.children.clear()
                 self.host.bgp = {1: "Idle", 2: "Idle"}
@@ -140,14 +147,22 @@ class ReplacementTests(unittest.TestCase):
                     self.host.bgp[number] = "Idle"
 
                 def on_sleep():
-                    number = first_ready if self.host.elapsed == 5 else 3 - first_ready
-                    self.host.bgp[number] = "Established"
+                    if self.host.elapsed in (5, last_ready_at):
+                        number = first_ready if self.host.elapsed == 5 else 3 - first_ready
+                        self.host.bgp[number] = "Established"
 
                 self.host.on_up = on_up
                 self.host.on_sleep = on_sleep
                 self.assertEqual(self.deploy(), (0, ""))
-                self.assertEqual(self.host.mutations(), load_events(1) + load_events(2)
-                                 + [("sleep", 5)] * 2)
+                self.assertEqual(self.host.events,
+                                 [("ipsec", "rereadsecrets")]
+                                 + [("ipsec", "trafficstatus")] * 5
+                                 + load_events(1) + load_events(2)
+                                 + polls[1] + polls[2] + [("sleep", 5)] + polls[1]
+                                 + (polls[2] if first_ready == 2 else [])
+                                 + polls[1] + polls[2]
+                                 + (polls[3 - first_ready] + [("sleep", 5)])
+                                 * (last_ready_at // 5 - 1) + polls[3 - first_ready])
                 self.assertTrue(self.record.exists())
 
     def test_both_up_replace_one_then_wait_before_touching_two(self):
@@ -416,24 +431,27 @@ class CommandAndArgumentTests(unittest.TestCase):
                     self.assertEqual(process.communicate.call_args_list, [
                         unittest.mock.call(timeout=60), unittest.mock.call()])
 
-    def test_command_output_secrets_never_reach_errors_or_main_stderr(self):
+    def test_command_output_secrets_never_reach_errors_or_main_output(self):
         sentinel = "SYNTHETIC_SECRET_MUST_STAY_PRIVATE"
         for command in (["ipsec", "rereadsecrets"], *map(list, load_events(1))):
             for payload in (sentinel, sentinel.encode()):
-                for stdout, stderr in ((payload, None), (None, payload)):
+                for stdout, stderr in ((payload, None), (None, payload), (payload, payload)):
                     for exception in (
                             subprocess.CalledProcessError(7, command, output=stdout, stderr=stderr),
                             subprocess.TimeoutExpired(command, 60, output=stdout, stderr=stderr)):
                         with self.subTest(command=command, stdout=stdout, exception=exception), \
                                 tempfile.TemporaryDirectory() as directory, \
                                 failed_command(exception):
-                            with self.assertRaises(tunnels.CommandError) as caught:
-                                tunnels.run_command(command)
-                            self.assertNotIn(sentinel, str(caught.exception))
+                            output = io.StringIO()
                             errors = io.StringIO()
-                            with contextlib.redirect_stderr(errors):
+                            with contextlib.redirect_stdout(output), \
+                                    contextlib.redirect_stderr(errors):
+                                with self.assertRaises(tunnels.CommandError) as caught:
+                                    tunnels.run_command(command)
+                                self.assertNotIn(sentinel, str(caught.exception))
                                 self.assertEqual(tunnels.main(ARGS, runner=tunnels.run_command,
                                                              directory=Path(directory)), 1)
+                            self.assertNotIn(sentinel, output.getvalue())
                             self.assertNotIn(sentinel, errors.getvalue())
 
     def test_poll_command_errors_exclude_output(self):
@@ -447,9 +465,14 @@ class CommandAndArgumentTests(unittest.TestCase):
                                               stderr=b"POLL_ERROR")):
                 with self.subTest(command=command, exception=exception), \
                         failed_command(exception):
-                    with self.assertRaises(tunnels.CommandError) as caught:
-                        tunnels.run_command(command)
+                    output = io.StringIO()
+                    errors = io.StringIO()
+                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                        with self.assertRaises(tunnels.CommandError) as caught:
+                            tunnels.run_command(command)
                     self.assertNotIn("POLL_", str(caught.exception))
+                    self.assertNotIn("POLL_", output.getvalue())
+                    self.assertNotIn("POLL_", errors.getvalue())
 
     def test_timeout_kills_command_descendants(self):
         # Adopt and reap grandchildren even when the CI container's PID 1 does not.
