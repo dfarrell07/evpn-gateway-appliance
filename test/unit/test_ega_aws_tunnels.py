@@ -388,6 +388,41 @@ class ReplacementTests(unittest.TestCase):
                 self.assertTrue(self.record.exists())
                 self.assertGreater(self.host.elapsed, 0)
 
+    def test_successful_secret_and_poll_output_is_withheld(self):
+        stdout = "SYNTHETIC_SECRET_STDOUT"
+        stderr = "SYNTHETIC_SECRET_STDERR"
+        for command in (["ipsec", "rereadsecrets"], ["ipsec", "trafficstatus"],
+                        ["podman", "exec", "frr", "vtysh", "-c",
+                         "show bgp neighbors 169.254.10.1 json"]):
+            with self.subTest(command=command), \
+                    patch.object(tunnels.subprocess, "Popen") as popen:
+                process = popen.return_value.__enter__.return_value
+                process.returncode = 0
+                process.communicate.return_value = (stdout, stderr)
+                output, errors = io.StringIO(), io.StringIO()
+                with self.subTest(entrypoint="run_command"):
+                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                        self.assertEqual(tunnels.run_command(command), stdout)
+                    self.assertEqual(output.getvalue(), "")
+                    self.assertEqual(errors.getvalue(), "")
+                self.host = FakeHost(self, self.directory)
+                run = self.host.run
+
+                def runner(args):
+                    status = run(args)
+                    if args != command:
+                        return status
+                    if args[0] == "podman":
+                        status = json.dumps({**json.loads(status), "sentinel": stdout})
+                    else:
+                        status += f"\n{stdout}"
+                    process.communicate.return_value = (status, stderr)
+                    return tunnels.run_command(args)
+
+                with self.subTest(entrypoint="main"), \
+                        patch.object(self.host, "run", side_effect=runner):
+                    self.assertEqual(self.deploy(), (0, ""))
+
     def test_slow_commands_and_flapping_tunnels_stay_below_handler_timeout(self):
         # Each readiness result specifies trafficstatus time, vtysh time, and
         # BGP state (None means vtysh times out: 5 s plus 5 s cleanup).
@@ -503,6 +538,14 @@ class ReadinessTests(unittest.TestCase):
                                        for line in TRAFFICSTATUS.splitlines())
                     self.assertTrue(self.ready(status, ESTABLISHED, peer))
 
+    def test_rekey_accepts_current_endpoint_before_or_after_stale_sa(self):
+        peer = tunnels.Tunnel(2, "192.0.2.2", "192.0.2.22")
+        old, current = [line for line in TRAFFICSTATUS.splitlines() if '"ega-aws-2"' in line]
+        stale = old.replace("192.0.2.22", "192.0.2.99")
+        for lines in ((stale, current), (current, stale)):
+            with self.subTest(lines=lines):
+                self.assertTrue(self.ready("\n".join(lines), ESTABLISHED, peer))
+
     def test_child_sa_requires_exact_connection_and_endpoint_id(self):
         bgp = json.dumps({PEERS[0].inside_ip: {"bgpState": "Established"}})
         for connection, outside, expected in (
@@ -598,12 +641,12 @@ class CommandAndArgumentTests(unittest.TestCase):
                     process.returncode = returncode
                     if returncode:
                         with self.assertRaisesRegex(tunnels.CommandError, "exit status 7"):
-                            tunnels.run_command(command)
+                            tunnels.run_command(command, lock_fd=42)
                     else:
-                        self.assertEqual(tunnels.run_command(command), "status")
+                        self.assertEqual(tunnels.run_command(command, lock_fd=42), "status")
                     popen.assert_called_once_with(command, stdout=subprocess.PIPE,
                                                   stderr=subprocess.PIPE, text=True,
-                                                  start_new_session=True)
+                                                  start_new_session=True, pass_fds=(42,))
                     process.communicate.assert_called_once_with(timeout=timeout)
 
     def test_required_command_errors_include_command(self):
@@ -624,6 +667,18 @@ class CommandAndArgumentTests(unittest.TestCase):
                     killpg.assert_called_once_with(process.pid, signal.SIGKILL)
                     self.assertEqual(process.communicate.call_args_list, [
                         unittest.mock.call(timeout=60), unittest.mock.call(timeout=5)])
+
+    def test_cleanup_timeout_preserves_original_command_timeout(self):
+        command = ["ipsec", "rereadsecrets"]
+        original = subprocess.TimeoutExpired(command, 60)
+        drain = subprocess.TimeoutExpired(command, 5)
+        with failed_command(original, drained=drain) as (process, killpg):
+            with self.assertRaisesRegex(tunnels.CommandError, "timed out after 60 s") as caught:
+                tunnels.run_command(command)
+            self.assertIs(caught.exception.__cause__, original)
+            killpg.assert_called_once_with(process.pid, signal.SIGKILL)
+            self.assertEqual(process.communicate.call_args_list, [
+                unittest.mock.call(timeout=60), unittest.mock.call(timeout=5)])
 
     def test_command_output_secrets_never_reach_errors_or_main_output(self):
         sentinel = "SYNTHETIC_SECRET_MUST_STAY_PRIVATE"
@@ -670,6 +725,70 @@ class CommandAndArgumentTests(unittest.TestCase):
                     self.assertNotIn("output is withheld", str(caught.exception))
                     self.assertNotIn("POLL_", output.getvalue())
                     self.assertNotIn("POLL_", errors.getvalue())
+
+    # prctl (child subreaper) is Linux-only, like the appliance this program runs on.
+    @unittest.skipUnless(sys.platform == "linux", "needs Linux prctl")
+    def test_command_holds_lock_after_parent_dies(self):
+        libc = ctypes.CDLL(None)
+        was_subreaper = ctypes.c_int()
+        self.assertEqual(libc.prctl(37, ctypes.byref(was_subreaper), 0, 0, 0), 0)
+        self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)
+        self.addCleanup(libc.prctl, 36, was_subreaper.value, 0, 0, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            pidfile = directory / "command.pid"
+            wrapper = directory / "ipsec"
+            wrapper.write_text(
+                '#!/bin/sh\n[ "$1" = replace ] || exit 0\n'
+                'exec "$EGA_TEST_PYTHON" -c \'import os, sys, time; from pathlib import Path; '
+                'Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)\' "$EGA_TEST_PIDFILE"\n'
+            )
+            wrapper.chmod(0o700)
+            parent_code = (
+                "import importlib.util, sys; from pathlib import Path; "
+                "spec = importlib.util.spec_from_file_location('ega_aws_tunnels', sys.argv[1]); "
+                "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+                "sys.exit(module.main(sys.argv[3:], directory=Path(sys.argv[2])))"
+            )
+            with subprocess.Popen([sys.executable, "-c", parent_code, str(PROGRAM),
+                                   str(directory), *ARGS],
+                                  env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
+                                       "EGA_TEST_PYTHON": sys.executable,
+                                       "EGA_TEST_PIDFILE": str(pidfile)}) as parent:
+                try:
+                    deadline = time.monotonic() + 5
+                    pid = ""
+                    while time.monotonic() < deadline and parent.poll() is None:
+                        if pidfile.exists():
+                            pid = pidfile.read_text()
+                            if pid:
+                                break
+                        time.sleep(0.01)
+                    self.assertTrue(pid, "replacement command did not start")
+                    parent.send_signal(signal.SIGHUP)
+                    self.assertEqual(parent.wait(timeout=5), -signal.SIGHUP)
+                    child_pid = int(pid)
+                    os.kill(child_pid, 0)
+                    with (directory / "ega-aws.lock").open("a") as lock:
+                        with self.assertRaises(BlockingIOError):
+                            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        os.kill(child_pid, signal.SIGTERM)
+                        reaped, status = os.waitpid(child_pid, 0)
+                        self.assertEqual(reaped, child_pid)
+                        self.assertEqual(os.waitstatus_to_exitcode(status), -signal.SIGTERM)
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    if parent.poll() is None:
+                        parent.kill()
+                    parent.wait(timeout=5)
+                    if pidfile.exists():
+                        pid = pidfile.read_text()
+                        if pid:
+                            try:
+                                os.kill(int(pid), signal.SIGKILL)
+                                os.waitpid(int(pid), 0)
+                            except (ProcessLookupError, ChildProcessError):
+                                pass
 
     # prctl (child subreaper) is Linux-only, like the appliance this program runs on.
     @unittest.skipUnless(sys.platform == "linux", "needs Linux prctl")
@@ -724,9 +843,18 @@ class CommandAndArgumentTests(unittest.TestCase):
                    [*ARGS[:2], "169.254.10.1/30", *ARGS[3:]]]
         for args in invalid:
             with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()), \
+                    tempfile.TemporaryDirectory() as directory, \
+                    patch.object(Path, "open") as open_lock, \
                     patch.object(tunnels, "run_command") as runner:
-                self.assertEqual(tunnels.main(args, runner=runner), 1)
+                with self.assertRaises(SystemExit) as caught:
+                    tunnels.parse_tunnels(args)
+                self.assertEqual(caught.exception.code, 2)
+                unused_directory = Path(directory) / "absent"
+                self.assertEqual(tunnels.main(args, runner=runner,
+                                              directory=unused_directory), 1)
                 runner.assert_not_called()
+                open_lock.assert_not_called()
+                self.assertFalse((unused_directory / "ega-aws.lock").exists())
 
 
 if __name__ == "__main__":
