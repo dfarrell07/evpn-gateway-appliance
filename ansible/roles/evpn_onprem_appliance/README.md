@@ -34,7 +34,9 @@ from `tunnel.onprem_ip`. Other traffic the appliance sends to the VPCs takes the
 its source, which AWS does not route back, so test reachability from the VTEP address (`ping -I <tunnel.onprem_ip>`).
 A connection or key change replaces the tunnels one at a time, a down one first, and fails if a tunnel or its
 BGP session is not back within 90 s; later deploys retry until a replacement succeeds. A deploy interrupted
-before FRR restarts leaves its new configuration unloaded; restart `frr-container.service` (or FRR) then.
+before FRR restarts leaves its new configuration unloaded; restart `frr-container.service` (or FRR) then. If
+deploy reports that another replacement is still running when none is, an `ipsec` command it started is stuck
+(for example on a stopped pluto) and holds the lock: restart `ipsec.service`, which briefly drops both tunnels, then rerun deploy.
 Libreswan loads both tunnels' keys at once, so after a bad key change the other tunnel also fails at its next
 re-authentication: correct the keys and redeploy promptly. While neither tunnel provides a route to a VPC,
 policy rules drop traffic to both VPC prefixes, so a covering route cannot send it unencrypted (a more-specific
