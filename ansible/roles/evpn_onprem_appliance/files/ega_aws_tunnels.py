@@ -4,6 +4,7 @@ import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 import fcntl
+from functools import partial
 import hashlib
 import ipaddress
 import json
@@ -44,7 +45,7 @@ class CommandError(RuntimeError):
     """An external command failed with only safe diagnostics."""
 
 
-def run_command(args: list[str]) -> str:
+def run_command(args: list[str], *, lock_fd: int | None = None) -> str:
     """Bound polls to 5 s and mutations to 60 s; expose only replace/up stderr."""
     command = " ".join(args)
     polling = (args == ["ipsec", "trafficstatus"]
@@ -52,7 +53,8 @@ def run_command(args: list[str]) -> str:
     timeout = POLL_TIMEOUT if polling else COMMAND_TIMEOUT
     try:
         with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              text=True, start_new_session=True) as process:
+                              text=True, start_new_session=True,
+                              pass_fds=() if lock_fd is None else (lock_fd,)) as process:
             try:
                 stdout, stderr = process.communicate(timeout=timeout)
             except subprocess.TimeoutExpired as error:
@@ -60,8 +62,12 @@ def run_command(args: list[str]) -> str:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-                stderr = process.communicate(timeout=5)[1]
-                error.stderr = stderr or error.stderr
+                try:
+                    stderr = process.communicate(timeout=5)[1]
+                except subprocess.TimeoutExpired:
+                    pass
+                else:
+                    error.stderr = stderr or error.stderr
                 raise
             if process.returncode:
                 raise subprocess.CalledProcessError(process.returncode, args, stderr=stderr)
@@ -231,7 +237,7 @@ class Replacer:
         write_record(self.directory)
 
 
-def main(argv: list[str] | None = None, *, runner: Runner = run_command,
+def main(argv: list[str] | None = None, *, runner: Runner | None = None,
          sleep: Sleep = time.sleep, monotonic: Clock = time.monotonic,
          directory: Path = Path("/etc/ipsec.d")) -> int:
     """Validate arguments and report failures to stderr."""
@@ -246,6 +252,9 @@ def main(argv: list[str] | None = None, *, runner: Runner = run_command,
             except BlockingIOError as error:
                 raise RuntimeError("another replacement of the AWS IPsec connections is still "
                                    "running; rerun deploy after it finishes") from error
+            # Surviving commands must keep the lock if this parent is terminated.
+            if runner is None:
+                runner = partial(run_command, lock_fd=lock.fileno())
             Replacer(peers, runner=runner, sleep=sleep, monotonic=monotonic,
                      directory=directory).apply()
     except (RuntimeError, OSError) as error:
