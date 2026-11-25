@@ -241,7 +241,7 @@ a single scenario instead of all — the name is the nested path, e.g. `EGA_STAG
 
 Deploy + the collection's health check pass end to end: three-AS eBGP, Type-2/3 exchange,
 and bidirectional L2 reachability across the fabric. Still to add: explicit pytest
-assertions (Type-2/3, BUM, isolation) and the Prow/CI job wiring (cross-repo).
+assertions (Type-2/3, BUM, isolation). Prow's `e2e` and `molecule` jobs run these lanes.
 
 ## Testing plan (not yet built)
 
