@@ -29,6 +29,9 @@ schema (`tunnel`, `bgp`, `frr_image`, `stretches`).
 - The relay re-advertises every EVPN route from each peer with no
   route-map/prefix-list/route-target filtering beyond a defensive
   `maximum-prefix`; see `templates/frr-infra-relay.conf.j2`.
+- A relay configuration change, such as adding an appliance, restarts the relay's FRR, which
+  interrupts cross-site traffic for every appliance until its sessions are back (CORENET-7710
+  applies changes in place).
 - WireGuard key generation/loading (`tasks/wireguard_keys.yml`) only runs
   for `tunnel.type: wireguard`; every task touching key material sets
   `no_log: true`.

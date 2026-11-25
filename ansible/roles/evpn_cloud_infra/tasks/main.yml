@@ -100,7 +100,7 @@
     src: frr-infra-relay.conf.j2
     dest: /etc/frr/frr.conf
     mode: "0644"
-  notify: Reload FRR
+  notify: Restart FRR
 
 - name: Start FRR via systemd service (bootc image)
   ansible.builtin.systemd:

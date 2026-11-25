@@ -4,7 +4,7 @@ Packet path: IPsec from the appliance to the AWS gateway, VXLAN directly between
 
 The posted [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500) acceptance criteria are the requirements; this plan proposes how to meet them:
 
-- AC1: create and delete the customer gateway and two-tunnel VPN on the TGW (decision 20); a rerun with a project VPN present fails before creating anything (after any failed run, run `teardown-aws.yml` first), and a customer gateway left by a failed run is reused; teardown, in every transport mode, leaves no VPN, customer gateway or Elastic IP.
+- AC1: create and delete the customer gateway and two-tunnel VPN on the TGW (decision 20); provisioning fails before creating anything while a project VPC or TGW exists, so after any failed run, `teardown-aws.yml` runs first (#52 replaces the criterion's customer-gateway reuse with this stricter rule; the Jira text follows); teardown, in every transport mode, leaves no VPN, customer gateway or Elastic IP.
 - AC2: explicit FIPS-compatible tunnel options (IKEv2, AES256-GCM-16, SHA2-256, DH14); hand per-tunnel parameters and keys to the appliance and configure Libreswan and FRR there, without writing keys to logs or artifacts.
 - AC3: EVPN BGP from an advertised on-premises address, separate from underlay BGP; VXLAN reachability asserted; accept only VPC prefixes and advertise only the VTEP network.
 - AC4: document the MTU budget as a limit (controls are CORENET-7709).
@@ -23,7 +23,7 @@ The posted [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500) acce
 3. Who takes 7501 and records its corrected [virtual-interface (VIF) criterion](source-audit.md#3-configuration--structure-mismatches) before acceptance?
 4. Who owns BGP Cloud Connector (BCC) coordination for FRR, RouteAdvertisements and primary-ENI SourceDestCheck?
 5. Name a coordinator for transport, security, and CI budgets, gates and cleanup.
-6. Networking and CI owners: approve enabling the IPsec scenario in the shared e2e job. Architecture: agree transport MTUs. The IPsec [cipher profile](#test-obligations) is decided ([decision 20](kickoff-decisions.md#decisions-at-a-glance)); PSK authentication is #52's choice, pending the 7708 owner. 7708 and CI/QE owners: agree transport limits and emulation fidelity.
+6. Networking and CI owners: #52 adds the IPsec scenario to the shared e2e job; this repository's approvers, who own its job configuration, give AC6's agreement by approving #52. Architecture: agree transport MTUs. The IPsec [cipher profile](#test-obligations) is decided ([decision 20](kickoff-decisions.md#decisions-at-a-glance)); PSK authentication is #52's choice, pending the 7708 owner. 7708 and CI/QE owners: agree transport limits and emulation fidelity.
 7. Decided ([decision 21](kickoff-decisions.md#decisions-at-a-glance)): keep the WireGuard code path; it carries the credential-free per-PR e2e lane (7508).
 8. Decision 11 owners: supply the funded AWS account, IAM user, cluster-secrets bundle and IPI Route53 base domain.
 9. Test Platform: approve VPN readback in a dedicated account/Region without unrelated VPNs; readback cannot be restricted by tag and exposes [pre-shared keys](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TunnelOption.html) under Standard PSK storage; consider [Secrets Manager storage](https://docs.aws.amazon.com/vpn/latest/s2svpn/enhanced-security.html) instead, gated by `secretsmanager:GetSecretValue`.
@@ -42,7 +42,7 @@ The posted [CORENET-7500](https://redhat.atlassian.net/browse/CORENET-7500) acce
 [#52](https://github.com/openshift/evpn-gateway-appliance/pull/52) implements AC1–AC5, AC7 and AC6's emulated scenario on the TGW; the AWS canary, outside 7500, follows Test Platform approval and, with the [spikes](#ranked-evidence-spikes), checks it.
 Provisioning runs the VPN tasks once (AC1), so adding or removing an appliance needs `teardown-aws.yml` and a new provisioning run; converging against an existing VPN would need an adopt-on-rerun path outside 7500 (unassigned).
 
-Before CI owners enable the IPsec scenario in the shared job (AC6), qualify kernel IPsec on a root-privileged runner.
+Prow's root-privileged e2e runner runs the scenario's kernel IPsec (green on #52).
 Beyond 7500: compare the IPsec scenario with WireGuard (kept, question 7) for L2, BGP, MTU, MSS, failover and CI duration.
 OpenShift qualification (IPI lanes and a second cluster) belongs to 7708/7515 ([OCP qualification lanes](pipeline-spec.md#ocp-qualification-lanes)).
 
@@ -50,7 +50,7 @@ OpenShift qualification (IPI lanes and a second cluster) belongs to 7708/7515 ([
 
 | Lane | Fixture | Coverage and limits |
 | --- | --- | --- |
-| Local IPsec scenario in the existing e2e lane (AC6) | The 7508 e2e stack, added by #52: the `ipsec` scenario (`test/e2e/scenarios/ipsec.env`), with IPsec in place of WireGuard for that run: the TGW node terminates both tunnels (Libreswan and FRR as the AWS endpoint), the relay carries only EVPN BGP, and VXLAN goes directly to the workload VTEP; credential-free, no OpenShift; runs in the shared e2e job (the entrypoint runs every scenario), and keeping it there is the CI owners' call | No managed VPN, TGW routing, AWS ECMP or route limits; no production FIPS qualification. |
+| Local IPsec scenario in the existing e2e lane (AC6) | The 7508 e2e stack, added by #52: the `ipsec` scenario (`test/e2e/scenarios/ipsec.env`), with IPsec in place of WireGuard for that run: the TGW node terminates both tunnels (Libreswan and FRR as the AWS endpoint), the relay carries only EVPN BGP, and VXLAN goes directly to the workload VTEP; credential-free, no OpenShift; runs in the shared e2e job (the entrypoint runs every scenario), which #52's approval confirms | No managed VPN, TGW routing, AWS ECMP or route limits; no production FIPS qualification. |
 
 The AWS canary (outside 7500, decision 20) plans its own fixtures, cost, Test Platform approvals and cancellation.
 

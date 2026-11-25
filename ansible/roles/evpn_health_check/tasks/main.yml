@@ -22,13 +22,6 @@
     - "'cloud_infra' in group_names"
     - tunnel.type == 'wireguard'
 
-# The relay applies frr.conf with frr-reload, which refuses a file with any line FRR does not
-# know (start-up skips such lines silently). vtysh prints each one ("line N: % Unknown command").
-- name: "HEALTH [infra]: FRR config file parses"
-  ansible.builtin.command: podman exec frr vtysh -m -f /etc/frr/frr.conf
-  changed_when: false
-  when: "'cloud_infra' in group_names"
-
 - name: "HEALTH [infra]: BGP session to workload is Established"
   ansible.builtin.shell: >
     set -o pipefail;

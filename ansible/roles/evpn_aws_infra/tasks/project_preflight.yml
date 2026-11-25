@@ -1,0 +1,25 @@
+---
+# Every run creates new VPCs and a TGW, so refuse while any project VPC or TGW is left from an earlier
+# run; the filter is teardown's, so teardown-aws.yml removes whatever blocks here.
+- name: Find project VPCs left by an earlier run
+  amazon.aws.ec2_vpc_net_info:
+    region: "{{ evpn_aws_infra_aws_region }}"
+    filters:
+      "tag:Project": "{{ evpn_aws_infra_project_name }}"
+  register: _evpn_aws_infra_existing_vpcs
+
+- name: Find project transit gateways left by an earlier run
+  amazon.aws.ec2_transit_gateway_info:
+    region: "{{ evpn_aws_infra_aws_region }}"
+    filters:
+      "tag:Project": "{{ evpn_aws_infra_project_name }}"
+  register: _evpn_aws_infra_existing_tgws
+
+- name: Require teardown before provisioning again
+  ansible.builtin.assert:
+    that:
+      - _evpn_aws_infra_existing_vpcs.vpcs | length == 0
+      - _evpn_aws_infra_existing_tgws.transit_gateways | rejectattr('state', 'in', ['deleting', 'deleted']) | list | length == 0
+    fail_msg: >-
+      Project {{ evpn_aws_infra_project_name }} already has VPCs or a transit gateway in {{ evpn_aws_infra_aws_region }};
+      run teardown-aws.yml first.

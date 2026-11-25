@@ -17,10 +17,11 @@ Where to run the commands:
   recovery plus CloudWatch's publishing delay.
 
 The critical alerts do not tell planned work from failure. Before planned work that restarts
-FRR or WireGuard, such as a reboot or bootc upgrade, add an expiring Alertmanager silence for
-the affected `job` and `instance` (or `peer` and `vrf`) here and on each neighbor that monitors
-the session, and afterwards check that the sessions are back. Reconnecting sends BGP OPENs, so
-EGABgpPeerFlapping can fire after the work: keep the silence for 15m after it, or include that alert.
+FRR, WireGuard or IPsec, such as a reboot, a bootc upgrade or AWS maintenance on a VPN tunnel,
+add an expiring Alertmanager silence for the affected `job` and `instance` (or `peer` and `vrf`)
+here and on each neighbor that monitors the session, and afterwards check that the sessions are
+back. Reconnecting sends BGP OPENs, so EGABgpPeerFlapping can fire after the work: keep the
+silence for 15m after it, or include that alert.
 
 ## EGAFrrCollectorFailed
 
@@ -82,9 +83,10 @@ and check the sessions in FRR by their local address and interface. Other series
 ## EGABgpSessionDown
 
 A BGP peer has not been Established for 1m. On the appliance the relay peer runs over the
-WireGuard tunnel; losing it withdraws every stretch's EVPN routes. The alert clears once the
-session is back, or 4m after its series stops, when EGAFrrCollectorFailed or EGAFrrMetricsDown
-takes over.
+WireGuard or IPsec transport; losing it withdraws every stretch's EVPN routes. With IPsec the
+appliance also peers with each AWS tunnel's inside address; losing one leaves traffic on the
+other. The alert clears once the session is back, or 4m after its series stops, when
+EGAFrrCollectorFailed or EGAFrrMetricsDown takes over.
 
 - `show bgp vrf VRF summary` and `show bgp vrf VRF neighbors PEER` for the state and the
   last error (the alert's `vrf` label; `default` on the appliance).
@@ -93,15 +95,19 @@ takes over.
 - A last error naming the maximum-prefix limit (`bgp.max_prefix`, default 1000) means the peer
   sent too many EVPN routes. EGA sets no restart timer, so the session stays down: fix the
   advertisements or raise the limit, then `clear bgp vrf VRF PEER`.
-- For the appliance's relay peer, `wg show wg0`: a `latest handshake` older than about 3
-  minutes means the tunnel is down. Check the underlay route and UDP reachability to the
-  WireGuard endpoint, then `ping` the peer address over the tunnel. With `tunnel.type: ipsec`,
-  check `ipsec trafficstatus` for both `ega-aws-1` and `ega-aws-2`, that both AWS underlay
-  peers are Established (`show bgp summary`), then ping the peer from the VTEP address
-  (`ping -I TUNNEL_ONPREM_IP PEER`; other sources get no reply over the VPN).
-- With IPsec, a 169.254.x.1 peer is an AWS underlay session over `ega-aws-1` or `ega-aws-2`
-  (`ipsec trafficstatus`); check the tunnel's AWS telemetry. One tunnel down while the other is
-  up, such as during AWS endpoint maintenance, does not interrupt traffic.
+- With WireGuard, for the appliance's relay peer, `wg show wg0`: a `latest handshake` older than
+  about 3 minutes means the tunnel is down. Check the underlay route and UDP reachability to the
+  WireGuard endpoint, then `ping` the peer address over the tunnel.
+- With IPsec, for the appliance's relay peer, check `ipsec trafficstatus` for both `ega-aws-1`
+  and `ega-aws-2` and that both AWS underlay peers are Established (`show bgp summary`), then
+  ping the peer from the VTEP address (`ping -I TUNNEL_ONPREM_IP PEER`; other sources get no
+  reply over the VPN).
+- For an AWS tunnel peer (IPsec, 169.254.x.1), `ipsec trafficstatus` should list its `ega-aws-N`
+  connection; if not, see EGAVpnTunnelDown. A tunnel can lose traffic while its Child SA still
+  shows there, so judge it by this BGP session to the AWS inside address, not by SA presence.
+  The same one-way loss shows as `inBytes` that stops growing between two `ipsec trafficstatus`
+  runs, or Device receive traffic near 0 on ipsecN while transmit continues. One tunnel down
+  while the other is up, such as during AWS endpoint maintenance, does not interrupt traffic.
 
 Otherwise fix the tunnel or underlay; BGP re-establishes on its own once the peer is reachable.
 
@@ -124,7 +130,7 @@ host learns no remote MACs or VTEPs from that peer.
   `ovnkube_clustermanager_vtep_condition` series (see the [README](README.md#frr-and-evpn)) for a
   network, route advertisement or VTEP that is not ready, then the cluster's frr-k8s. In the
   emulated lab, the cloud workload's VNIs and `advertise-all-vni` instead.
-- The appliance applies no inbound route policy; its `maximum-prefix` limit tears the session
+- The appliance applies no inbound EVPN route policy; its `maximum-prefix` limit tears the session
   down rather than leaving it Established with zero routes.
 
 Zero can be intentional on a peer that carries no EVPN; silence the alert for that peer.
@@ -147,8 +153,8 @@ host's VNIs or MACs.
 no OPEN has been sent for about 10m (the rule's window), so it outlasts the fix.
 
 - `show bgp vrf VRF neighbors PEER` for the last reset reason and error.
-- For the appliance's relay peer, the transport (`wg show wg0`, or `ipsec trafficstatus` with
-  IPsec) and the underlay path, as for EGABgpSessionDown.
+- For the appliance's relay or AWS tunnel peer, the tunnel and underlay path, as for
+  EGABgpSessionDown.
 - A maximum-prefix shutdown with a restart timer, mismatched timers, MTU problems or packet loss
   on the path can each cause repeated resets; with BFD, loss resets the session through BFD and
   EGABfdPeerFlapping fires too.
@@ -228,6 +234,10 @@ alert firing; README.md says how to alert only when every tunnel is down.
 - `aws ec2 describe-vpn-connections --region REGION --vpn-connection-ids ID` and read
   `VgwTelemetry[].Status` and `StatusMessage` for each tunnel.
 - On the customer gateway, check IKE and IPsec state, pre-shared keys and that UDP 500 and
-  4500 reach the tunnel's outside address.
+  4500 reach the tunnel's outside address. On an EGA appliance: `ipsec trafficstatus` for
+  `ega-aws-1` and `ega-aws-2`, `journalctl -u ipsec` for authentication failures (or repeated
+  `retransmitting IKE_SA_INIT` when the outside address is unreachable), and
+  `show bgp neighbors` for the tunnel's AWS inside address. After a pre-shared key change on
+  either side, rerun `deploy.yml` with the current keys.
 
 Restore the tunnel on the customer gateway.

@@ -25,6 +25,9 @@
     _evpn_aws_infra_region: "{{ evpn_aws_infra_aws_region }}"
     _evpn_aws_infra_admin_cidr: "{{ evpn_aws_infra_admin_cidr if evpn_aws_infra_admin_cidr | length > 0 else '0.0.0.0/0' }}"
 
+- name: Require teardown of an earlier run's resources
+  ansible.builtin.include_tasks: project_preflight.yml
+
 - name: Validate AWS Site-to-Site VPN inputs
   ansible.builtin.include_tasks: vpn_preflight.yml
   when: tunnel.type == 'ipsec'

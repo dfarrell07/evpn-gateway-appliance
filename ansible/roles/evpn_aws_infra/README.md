@@ -35,9 +35,9 @@ VPN connection, tagged `Project: <project>` and `Name: <project>-cgw-<ip>` or `<
 customer gateway IPs and inside networks across appliances (AWS requires inside networks unique per TGW) and
 one shared customer gateway ASN. Each customer gateway uses a project-specific device name to prevent AWS deduplicating gateways across
 projects with the same IP and ASN ([CLI behavior](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-customer-gateway.html)).
-Rerunning IPsec provisioning with any project VPN present fails at preflight before anything is created.
-Provisioning creates new VPCs and a TGW on every run, so after any failed run, run teardown-aws.yml first. Adding or removing an appliance needs teardown-aws.yml and
-a new provisioning run: deploy fails when the project's VPNs don't match the appliances.
+Provisioning creates new VPCs and a TGW on every run, so for every transport it fails before creating anything while
+a project VPC or TGW exists: after a failed run, run teardown-aws.yml first. Adding or removing an appliance needs
+teardown-aws.yml and a new provisioning run: deploy fails when the project's VPNs don't match the appliances.
 
 The fresh TGW's defaults associate and propagate the VPN attachments to its default route table.
 Both VPC route tables send
@@ -77,9 +77,10 @@ For the health integration (`evpn_health_check` checks AWS telemetry by default 
 ## Permissions
 
 The preflight, handoff, telemetry and teardown run on the controller with `amazon.aws`, boto3/botocore and AWS
-credentials; the handoff and teardown also need the AWS CLI. IPsec provisioning adds `ec2:CreateCustomerGateway`,
+credentials; the handoff and teardown also need the AWS CLI. Provisioning's preflight, for every transport, needs
+`ec2:DescribeVpcs` and `ec2:DescribeTransitGateways`. IPsec provisioning adds `ec2:CreateCustomerGateway`,
 `ec2:CreateVpnConnection` and `ec2:CreateTags` on those two resource types, first used after the VPCs and TGW
-exist. It and the controller tasks need `ec2:DescribeVpnConnections` (provisioning, handoff, telemetry and teardown),
+exist. It and the controller tasks need `ec2:DescribeVpnConnections` (handoff, telemetry and teardown),
 `ec2:DescribeTransitGateways` (handoff), `ec2:DescribeCustomerGateways` (provisioning, handoff and teardown),
 and, for teardown with every transport, `ec2:DeleteVpnConnection`, `ec2:DescribeTransitGatewayAttachments` and
 `ec2:DeleteCustomerGateway`.

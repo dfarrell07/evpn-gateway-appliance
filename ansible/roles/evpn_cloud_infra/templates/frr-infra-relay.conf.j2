@@ -44,8 +44,7 @@ router bgp {{ bgp.infra_asn }}
 {% endif %}
  exit-address-family
  !
-{# eBGP keeps EVPN next hops (the originating VTEPs) by default; next-hop-unchanged is not an FRR command, and
-   frr-reload refuses a file that contains one. #}
+{# eBGP keeps EVPN next hops (the originating VTEPs) by default; next-hop-unchanged is not an FRR command. #}
  address-family l2vpn evpn
   neighbor {{ workload_host.private_ip }} activate
   neighbor {{ workload_host.private_ip }} maximum-prefix {{ bgp.max_prefix | default(1000) }}
