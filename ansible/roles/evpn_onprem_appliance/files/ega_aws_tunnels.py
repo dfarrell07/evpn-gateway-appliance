@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ import time
 
 Runner = Callable[[list[str]], str]
 Sleep = Callable[[float], None]
+COMMAND_TIMEOUT = 60
 RETRY = ("Rerun deploy to retry, after restarting FRR if a deploy stopped before "
          "FRR restarted.")
 
@@ -36,26 +38,31 @@ class Tunnel:
 
 
 class CommandError(RuntimeError):
-    """An external command failed, with bounded diagnostics for required IPsec commands."""
+    """An external command failed without exposing its captured output."""
 
 
 def run_command(args: list[str]) -> str:
     """Capture one command, bounding even a stopped pluto or FRR to 60 seconds."""
     command = " ".join(args)
     try:
-        return subprocess.run(args, check=True, capture_output=True, text=True,
-                              timeout=60).stdout
+        with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, start_new_session=True) as process:
+            try:
+                stdout = process.communicate(timeout=COMMAND_TIMEOUT)[0]
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate()
+                raise
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, args)
+            return stdout
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
-        message = (f"{command} timed out after 60 s"
+        message = (f"{command} timed out after {error.timeout} s"
                    if isinstance(error, subprocess.TimeoutExpired)
                    else f"{command} failed (exit status {error.returncode})")
-        if tuple(args[:2]) in (("ipsec", "rereadsecrets"), ("ipsec", "replace"), ("ipsec", "up")):
-            for output in (error.stderr, error.stdout):
-                if isinstance(output, bytes):
-                    output = output.decode(errors="replace")
-                if output and output.strip():
-                    message += f": {output.strip()[:400]}"
-                    break
         raise CommandError(message) from error
     except OSError as error:
         raise CommandError(f"{command} could not run: {error.strerror}") from error
@@ -169,8 +176,8 @@ class Replacer:
         # An FRR restart just before this handler drops both BGP sessions. While
         # any tunnel has a Child SA, wait up to 45 s (AWS's 30 s hold time plus
         # FRR's 10 s connect retry) for one to be ready before choosing.
-        if '"ega-aws-' in self.query(["ipsec", "trafficstatus"]):
-            self.wait_ready(self.peers, 9)
+        attempts = 9 if '"ega-aws-' in self.query(["ipsec", "trafficstatus"]) else 0
+        self.wait_ready(self.peers, attempts)
         one, two = self.peers
         loaded = False
         if not self.ready(one) and not self.ready(two):
