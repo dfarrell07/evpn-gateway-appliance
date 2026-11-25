@@ -42,6 +42,7 @@
   loop:
     - /etc/ipsec.d/ega-aws.conf
     - /etc/ipsec.d/ega-aws.secrets
+    - /etc/ipsec.d/ega-aws.lock
 
 - name: Reread Libreswan secrets after removing appliance keys
   ansible.builtin.command: ipsec rereadsecrets
