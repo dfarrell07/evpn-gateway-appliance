@@ -1,0 +1,24 @@
+---
+# Every run creates new VPCs and a TGW, so refuse while any project VPC or live TGW is left from an earlier
+# run; the filter is teardown's, so teardown-aws.yml removes whatever blocks here.
+- name: Count project VPCs and live transit gateways left by an earlier run
+  ansible.builtin.command: >-
+    aws ec2 {{ item.command }} --region {{ evpn_aws_infra_aws_region }}
+    --filters "Name=tag:Project,Values={{ evpn_aws_infra_project_name }}" {{ item.filters }}
+    --query "length({{ item.key }})" --output json
+  loop:
+    - {command: describe-vpcs, key: Vpcs, filters: ""}
+    - {command: describe-transit-gateways, key: TransitGateways, filters: "Name=state,Values=pending,available,modifying"}
+  loop_control:
+    label: "{{ item.command }}"
+  register: _evpn_aws_infra_existing
+  changed_when: false
+  check_mode: false
+
+- name: Require teardown before provisioning again
+  ansible.builtin.assert:
+    # JSON output, so the CLI counts across every page instead of printing one count per page.
+    that: _evpn_aws_infra_existing.results | map(attribute='stdout') | map('from_json') | list == [0, 0]
+    fail_msg: >-
+      Project {{ evpn_aws_infra_project_name }} already has VPCs or a transit gateway in {{ evpn_aws_infra_aws_region }};
+      run teardown-aws.yml first.

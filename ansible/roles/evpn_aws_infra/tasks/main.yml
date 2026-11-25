@@ -29,6 +29,9 @@
   ansible.builtin.include_tasks: vpn_preflight.yml
   when: tunnel.type == 'ipsec'
 
+- name: Require teardown of an earlier run's resources
+  ansible.builtin.include_tasks: project_preflight.yml
+
 # ── Look up AMI ─────────────────────────────────────────────────────
 - name: Look up CentOS Stream 10 AMI
   vars:
@@ -47,6 +50,25 @@
 - name: Set AMI ID
   ansible.builtin.set_fact:
     _evpn_aws_infra_ami_id: "{{ evpn_aws_infra_router_ami if evpn_aws_infra_router_ami != '' else _evpn_aws_infra_ami_lookup.stdout | trim }}"
+
+# Teardown finds resources by their Project tag, which volumes kept after termination never carry.
+- name: Count the AMI and its volumes that outlive their instance
+  ansible.builtin.command: >-
+    aws ec2 describe-images --region {{ _evpn_aws_infra_region }} --image-ids {{ _evpn_aws_infra_ami_id }}
+    --query "[length(Images), length(Images[0].BlockDeviceMappings[?Ebs.DeleteOnTermination == `false`] || `[]`)]"
+    --output json
+  register: _evpn_aws_infra_ami_check
+  changed_when: false
+  check_mode: false
+
+- name: Require a visible AMI whose volumes are deleted with the instance
+  ansible.builtin.assert:
+    that:
+      - (_evpn_aws_infra_ami_check.stdout | from_json)[0] == 1
+      - (_evpn_aws_infra_ami_check.stdout | from_json)[1] == 0
+    fail_msg: >-
+      AMI {{ _evpn_aws_infra_ami_id }} must exist in {{ _evpn_aws_infra_region }} and delete its EBS volumes on
+      termination (DeleteOnTermination true): teardown cannot find volumes it keeps.
 
 - name: Display AMI
   ansible.builtin.debug:

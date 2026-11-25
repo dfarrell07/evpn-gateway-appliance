@@ -45,29 +45,3 @@
     _cidrs: "{{ _evpn_aws_infra_vpn_appliances | map(attribute='tunnel_inside_cidrs') | flatten }}"
     _asns: "{{ _evpn_aws_infra_vpn_appliances | map(attribute='customer_gateway_asn') | unique }}"
     _onprem_asns: "{{ _evpn_aws_infra_vpn_appliances | map(attribute='onprem_asn') | reject('none') | map('int') | unique }}"
-
-# The same filter as teardown, so whatever blocks provisioning, teardown-aws.yml removes.
-- name: Look up project VPN connections
-  block:
-    - name: Find existing project VPN connections before provisioning
-      amazon.aws.ec2_vpc_vpn_info:
-        region: "{{ evpn_aws_infra_aws_region }}"
-        filters:
-          "tag:Project": "{{ evpn_aws_infra_project_name }}"
-          "tag:Name": "{{ evpn_aws_infra_project_name }}-vpn-*"
-      register: _evpn_aws_infra_vpn_preflight_lookup
-      # The module returns PSKs in tunnel options and customer_gateway_configuration.
-      no_log: true
-  rescue:
-    - name: Report the hidden VPN preflight failure
-      ansible.builtin.fail:
-        msg: >-
-          The project VPN lookup failed in {{ evpn_aws_infra_aws_region }} ({{ ansible_failed_result.msg | default('') }});
-          the rest of its output is hidden because it carries keys. Check the controller credentials, the region and
-          ec2:DescribeVpnConnections, then rerun.
-
-- name: Require teardown before reprovisioning a project VPN
-  ansible.builtin.assert:
-    that: >-
-      _evpn_aws_infra_vpn_preflight_lookup.vpn_connections | rejectattr('state', 'equalto', 'deleted') | list | length == 0
-    fail_msg: A project VPN already exists; run teardown-aws.yml first before provisioning new VPCs and a TGW.

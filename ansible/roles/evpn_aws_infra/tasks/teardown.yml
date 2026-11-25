@@ -16,7 +16,7 @@
     region: "{{ evpn_aws_infra_aws_region }}"
     filters:
       "tag:Project": "{{ evpn_aws_infra_project_name }}"
-      instance-state-name: ["running", "stopped"]
+      instance-state-name: ["pending", "running", "stopping", "stopped"]
   register: _evpn_aws_infra_instances
 
 - name: Terminate EC2 instances
@@ -27,23 +27,45 @@
     wait: true
   when: _evpn_aws_infra_instances.instances | length > 0
 
-- name: Find TGW attachments
+# Instances already shutting down are not waited for above, and their network interfaces would block the
+# security group and subnet deletes.
+- name: Wait for EC2 instances to finish terminating
+  amazon.aws.ec2_instance_info:
+    region: "{{ evpn_aws_infra_aws_region }}"
+    filters:
+      "tag:Project": "{{ evpn_aws_infra_project_name }}"
+      instance-state-name: ["shutting-down"]
+  register: _evpn_aws_infra_terminating
+  until: _evpn_aws_infra_terminating.instances | length == 0
+  retries: 30
+  delay: 10
+
+# An attachment still changing state cannot be deleted yet or still holds the TGW, so wait until each is settled:
+# deletable (available, pendingAcceptance) or terminal (failed, rejected, deleted).
+- name: Find TGW attachments once settled
   amazon.aws.ec2_transit_gateway_vpc_attachment_info:
     region: "{{ evpn_aws_infra_aws_region }}"
     filters:
       "tag:Project": "{{ evpn_aws_infra_project_name }}"
   register: _evpn_aws_infra_tgw_attachments
+  until: >-
+    _evpn_aws_infra_tgw_attachments.attachments
+    | rejectattr('state', 'in', ['available', 'pendingAcceptance', 'failed', 'rejected', 'deleted']) | list | length == 0
+  retries: 30
+  delay: 10
 
+# Failed and rejected attachments cannot be deleted. AWS removes them within two hours; if they still block the TGW
+# delete, run teardown-aws.yml again after that.
 - name: Delete TGW attachments
   amazon.aws.ec2_transit_gateway_vpc_attachment:
     id: "{{ item.transit_gateway_attachment_id }}"
     state: absent
     region: "{{ evpn_aws_infra_aws_region }}"
     wait: true
-  loop: "{{ _evpn_aws_infra_tgw_attachments.attachments }}"
+  loop: >-
+    {{ _evpn_aws_infra_tgw_attachments.attachments | selectattr('state', 'in', ['available', 'pendingAcceptance']) | list }}
   loop_control:
     label: "{{ item.transit_gateway_attachment_id }}"
-  when: _evpn_aws_infra_tgw_attachments.attachments | length > 0
 
 - name: Find Transit Gateways
   amazon.aws.ec2_transit_gateway_info:
@@ -107,7 +129,8 @@
 
 - name: Delete IGWs
   amazon.aws.ec2_vpc_igw:
-    vpc_id: "{{ item.attachments[0].vpc_id }}"
+    # By ID, so a gateway a failed run created but never attached is deleted too.
+    internet_gateway_id: "{{ item.internet_gateway_id }}"
     state: absent
     region: "{{ evpn_aws_infra_aws_region }}"
   loop: "{{ _evpn_aws_infra_igws.internet_gateways }}"
