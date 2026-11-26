@@ -11,7 +11,7 @@
     content: |
       bgpd=yes
       bfdd=yes
-      zebra_options="-K 120"
+      zebra_options="--graceful_restart"
     mode: "0644"
     force: false
 

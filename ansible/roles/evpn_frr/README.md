@@ -14,6 +14,5 @@ therefore retries an earlier failure even if the candidate file is unchanged.
 Reload errors fail the deploy. FRR 10.4 can save partial progress before it
 returns the error.
 
-The appliance configures Zebra with `-K 120` on startup, giving it 120 seconds to
-reconcile its previous kernel routes during a restart. The reconciliation role
-does not restart FRR to change the running configuration.
+The appliance starts Zebra with `--graceful_restart` and uses FRR's default
+route cleanup timer. Configuration updates are applied live.

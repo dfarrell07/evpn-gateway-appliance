@@ -42,7 +42,7 @@ RUN dnf install -y \
 # Host /etc/frr is mounted over the image's config, so the packaged daemons
 # file inside the FRR image is hidden. Give Zebra time to reconcile its previous
 # kernel routes when it starts, alongside BGP graceful restart in the templates.
-RUN mkdir -p /etc/frr && printf '%s\n' 'bgpd=yes' 'bfdd=yes' 'zebra_options="-K 120"' > /etc/frr/daemons
+RUN mkdir -p /etc/frr && printf '%s\n' 'bgpd=yes' 'bfdd=yes' 'zebra_options="--graceful_restart"' > /etc/frr/daemons
 
 # Rebuild each payload from its stage rootfs as a one-layer image in the dir: layout
 # payload-load.sh reads. The mount shows the merged rootfs, so whiteouts are already
