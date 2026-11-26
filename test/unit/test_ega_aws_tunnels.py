@@ -1177,15 +1177,136 @@ class KernelHost:
 
 class RemovalTests(unittest.TestCase):
     def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
         self.host = KernelHost(self)
 
     def remove(self, runner=None):
         output, errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             result = tunnels.main(["--remove"], runner=runner or self.host.run,
-                                  directory=Path("/nonexistent-ipsec-directory"))
+                                  directory=self.directory)
         self.assertNotIn(XFRM_KEY, output.getvalue() + errors.getvalue())
         return result, output.getvalue(), errors.getvalue()
+
+    def test_busy_lock_runs_no_listing_or_deletion(self):
+        real_flock = fcntl.flock
+
+        def nonblocking(fd, operation):
+            self.assertEqual(operation, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return real_flock(fd, operation)
+
+        with (self.directory / "ega-aws.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with patch.object(tunnels.fcntl, "flock", side_effect=nonblocking):
+                self.assertEqual(self.remove(), (1, "", "another replacement of the AWS IPsec "
+                                 "connections is still running (or an ip command it started is "
+                                 "stuck); rerun teardown after it finishes\n"))
+            self.assertEqual(self.host.events, [])
+        self.assertEqual(self.remove(), (0, "changed\n", ""))
+
+    def test_deletes_inherit_lock_and_keep_its_inode(self):
+        lock_path = self.directory / "ega-aws.lock"
+        lock_inode = None
+
+        def popen(args, **kwargs):
+            nonlocal lock_inode
+            inode = lock_path.stat().st_ino
+            if lock_inode is None:
+                lock_inode = inode
+            self.assertEqual(inode, lock_inode)
+            with lock_path.open("a") as contender:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if tuple(args) not in self.host.tables:
+                self.assertEqual(len(kwargs["pass_fds"]), 1)
+                self.assertEqual(os.fstat(kwargs["pass_fds"][0]).st_ino, inode)
+            else:
+                self.assertEqual(kwargs["pass_fds"], ())
+            process = fake_popen.return_value.__enter__.return_value
+            process.returncode = 0
+            process.communicate.return_value = (self.host.run(args), XFRM_KEY)
+            return fake_popen.return_value
+
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.object(tunnels.subprocess, "Popen", side_effect=popen) as fake_popen, \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(tunnels.main(["--remove"], directory=self.directory), 0)
+        self.assertEqual((output.getvalue(), errors.getvalue()), ("changed\n", ""))
+        self.assertEqual(lock_path.stat().st_ino, lock_inode)
+        with lock_path.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_marked_policy_and_state_keep_lookup_mark(self):
+        for listing, delete in ((POLICY_LIST, POLICY_DELETES[0]), (STATE_LIST, STATE_DELETES[0])):
+            with self.subTest(listing=listing):
+                self.host = KernelHost(self)
+                record, _ = self.host.tables[listing][0]
+                marked = (*delete, "mark", "0x100", "mask", "0xffffff00")
+                self.host.tables[listing][0] = (record + "\tmark 0x100/0xffffff00\n", marked)
+                self.assertEqual(self.remove(), (0, "changed\n", ""))
+                self.assertIn(marked, self.host.deletes())
+
+    def test_colliding_state_is_refused_and_other_deletes_continue(self):
+        for if_id in ("\tif_id 0x7\n", "", "\tif_id 0x2\n"):
+            for marked in (False, True):
+                with self.subTest(if_id=if_id, marked=marked):
+                    self.host = KernelHost(self)
+                    record, delete = self.host.tables[STATE_LIST][0]
+                    mark = "\tmark 0x100/0xffffffff\n" if marked else ""
+                    self.host.tables[STATE_LIST][0] = (record + mark, delete)
+                    # Source and if_id do not participate in the kernel's ESP delete lookup.
+                    foreign = ("src 192.0.2.99 dst 192.0.2.21\n"
+                               "\tproto esp spi 0x101 reqid 17000 mode tunnel\n"
+                               f"\taead rfc4106(gcm(aes)) {XFRM_KEY} 128\n" + if_id + mark)
+                    self.host.tables[STATE_LIST].append((foreign, None))
+                    self.assertEqual(self.remove(), (1, "changed\n",
+                                     "ip xfrm state delete: ambiguous state identity\n"))
+                    self.assertEqual(self.host.deletes(),
+                                     POLICY_DELETES + STATE_DELETES[1:] + LINK_DELETES)
+
+    def test_output_mark_alone_is_not_a_lookup_mark(self):
+        for listing, delete in ((POLICY_LIST, POLICY_DELETES[0]), (STATE_LIST, STATE_DELETES[0])):
+            with self.subTest(listing=listing):
+                self.host = KernelHost(self)
+                record, _ = self.host.tables[listing][0]
+                record = record.replace("\toutput-mark 0x1/0xffffffff\n", "")
+                self.host.tables[listing][0] = (record + "\toutput-mark 0x100/0xffffffff\n", delete)
+                self.assertEqual(self.remove(), (0, "changed\n", ""))
+                self.assertIn(delete, self.host.deletes())
+
+    def test_state_lookup_marks_control_collisions(self):
+        for other_mark, ambiguous in (("0x200/0xffffffff", False),
+                                      ("0x100/0xff00", True), (None, True)):
+            with self.subTest(other_mark=other_mark):
+                self.host = KernelHost(self)
+                record, delete = self.host.tables[STATE_LIST][0]
+                marked_delete = (*delete, "mark", "0x100", "mask", "0xffffff00")
+                self.host.tables[STATE_LIST][0] = (record + "\tmark 0x100/0xffffff00\n", marked_delete)
+                foreign = record.replace("if_id 0x1", "if_id 0x7")
+                if other_mark:
+                    foreign += f"\tmark {other_mark}\n"
+                self.host.tables[STATE_LIST].append((foreign, None))
+                self.assertEqual(self.remove(), (1, "changed\n",
+                                 "ip xfrm state delete: ambiguous state identity\n") if ambiguous
+                                 else (0, "changed\n", ""))
+                self.assertEqual(self.host.deletes(), POLICY_DELETES
+                                 + ([] if ambiguous else [marked_delete])
+                                 + STATE_DELETES[1:] + LINK_DELETES)
+
+    def test_if_id_prefix_is_not_owned(self):
+        for listing, deletes in ((POLICY_LIST, POLICY_DELETES), (STATE_LIST, STATE_DELETES),
+                                  (LINK_LIST, LINK_DELETES)):
+            for if_id in ("0x10", "0x11"):
+                with self.subTest(listing=listing, if_id=if_id):
+                    self.host = KernelHost(self)
+                    record, _ = self.host.tables[listing][0]
+                    self.host.tables[listing][0] = (record.replace("if_id 0x1", f"if_id {if_id}"), None)
+                    self.assertEqual(self.remove(), (0, "changed\n", ""))
+                    self.assertEqual(self.host.deletes(), [command for command in
+                                     POLICY_DELETES + STATE_DELETES + LINK_DELETES
+                                     if command != deletes[0]])
 
     def test_real_leftovers_preserve_foreign_and_pluto_defaults(self):
         defaults = self.host.tables[POLICY_LIST][6:]
@@ -1267,15 +1388,15 @@ class RemovalTests(unittest.TestCase):
             process = popen.return_value.__enter__.return_value
             process.returncode = 0
 
-            def runner(args):
+            def runner(args, **kwargs):
                 process.communicate.return_value = (self.host.run(args), XFRM_KEY)
-                return real_run(args)
+                return real_run(args, **kwargs)
 
             output, errors = io.StringIO(), io.StringIO()
             with patch.object(tunnels, "run_command", side_effect=runner), \
                     patch.object(sys, "argv", [str(PROGRAM), "--remove"]), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-                self.assertEqual(tunnels.main(), 0)
+                self.assertEqual(tunnels.main(directory=self.directory), 0)
             self.assertEqual(output.getvalue(), "changed\n")
             self.assertEqual(errors.getvalue(), "")
 
