@@ -132,6 +132,8 @@ run_scenario() (
 	# files that a scenario inventory symlinks from another one.
 	rm -rf "${lab_dir}/inventory"
 	cp -rL "$inventory_src" "${lab_dir}/inventory"
+	# The monitoring test checks the exporter's series against the list the rules are checked against.
+	cp "${self_dir}/../../monitoring/frrk8s-metrics.txt" "${lab_dir}/inventory/"
 
 	# Each scenario owns its ordered setup, deploy and validation playbooks.
 	read -r -a playbooks <<< "$EGA_PLAYBOOKS"

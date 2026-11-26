@@ -23,5 +23,7 @@ lives here instead.
 | --- | --- | --- |
 | `network.evpn_gateway_test.simulate` | before `network.evpn_gateway.deploy` | build the simulated on-prem environment; for IPsec, add the TGW in memory and configure the AWS VPN endpoint there |
 | `network.evpn_gateway_test.healthcheck` | after the deploy | run the simulated-host data-plane checks |
+| `network.evpn_gateway_test.path_probe` | after `healthcheck` | drop VXLAN packets with BGP and the remote VTEP still up, check probe failure and recovery, then check that clearing the target removes the probe |
+| `network.evpn_gateway_test.monitoring` | after `path_probe` | check the legacy exporter is removed, frr-metrics on/off, that it recovers after an FRR crash, loopback binding, an Established BGP session, received prefixes and that every served `frrk8s_` family is in `monitoring/frrk8s-metrics.txt` |
 | `network.evpn_gateway_test.teardown` | on cleanup (non-clab runs) | remove the simulated on-prem environment |
 | `network.evpn_gateway_test.teardown_check` | after `network.evpn_gateway.teardown` (dx and ipsec scenarios) | no FRR static routes remain on the appliance |
