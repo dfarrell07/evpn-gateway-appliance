@@ -13,7 +13,7 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
 ## AWS Site-to-Site VPN (`tunnel.type: ipsec`)
 
 This transport is not yet qualified for production (MTU/MSS controls are CORENET-7709;
-FIPS validation, hardening and qualification CORENET-7708 and CORENET-7511, including the egress filter and fail-closed boot below). Set `tunnel.onprem_ip` to the appliance VTEP address,
+FIPS validation, hardening and qualification CORENET-7708 and CORENET-7511). Set `tunnel.onprem_ip` to the appliance VTEP address,
 `tunnel.network_cidr` to the network advertised to AWS (default `10.44.44.0/24`, containing the VTEP),
 `bgp.onprem_asn` to the customer gateway ASN, and `infra_relay_host` to the relay, which needs a
 `private_ip` host variable. `tunnel.cloud_ip` and `tunnel.port` are WireGuard-only.
@@ -41,19 +41,16 @@ check that `lslocks` no longer lists `/etc/ipsec.d/ega-aws.lock`, then rerun dep
 instead: a new file is a second lock, so two replacements could run at once.
 Libreswan loads both tunnels' keys at once, so after a bad key change the other tunnel also fails at its next
 re-authentication: correct the keys and redeploy promptly. While neither tunnel provides a route to a VPC,
-policy rules drop traffic to both VPC prefixes, so a covering route cannot send it unencrypted. A route more
-specific than a VPC prefix still wins, even with both tunnels up, and sends that traffic (VXLAN and EVPN BGP
-included) unencrypted: install none, and keep DHCP classless static routes (option 121) off the uplink, until
-CORENET-7511's egress filter. The rules live on the VTEP's NetworkManager profile, so at boot they apply once NetworkManager
-activates it, together with the VTEP address. Until then, appliance-originated traffic to the VPC prefixes could
-leave unencrypted; VXLAN cannot, because the VTEP address does not exist yet. On real VM boots NetworkManager
-installed the rules with or before the uplink's default route and no cleartext left, but that ordering is not
-guaranteed (a fail-closed boot is CORENET-7511). Changing a VPC prefix or `tunnel.onprem_ip` needs a teardown first, because nmstate keeps the old rules. FRR applies configuration
+policy rules drop traffic to both VPC prefixes, so a covering route cannot send it unencrypted. An nftables egress
+filter (`ega-aws-egress.service`, table `inet ega_aws_egress`) also drops traffic to the VPC prefixes that would
+leave by any interface but `ipsec1` or `ipsec2`, so neither a more-specific route (a static route, or a DHCP
+classless static route on the uplink) nor the time at boot before NetworkManager installs the rules can send it
+unencrypted; the unit loads the table before `network-pre.target`, and its drop counters show any attempt. Changing a VPC prefix or `tunnel.onprem_ip` needs a teardown first, because nmstate keeps the old rules. FRR applies configuration
 changes in place (`evpn_frr`); a new AWS inside address or ASN resets that tunnel's BGP session. Teardown
-removes only the role's connections, keys and rules, plus any XFRM policies, states and interfaces (`ipsec1`,
-`ipsec2`) left with the reserved if_id 1 or 2, even when pluto is stopped; it removes `ega-aws.conf` last, so a
-rerun retries a failed removal, and leaves if_ids 1 and 2 alone on a host without that file. It leaves other Libreswan connections
-running and the Libreswan service enabled; with no appliance connections it carries no traffic, so disable it if nothing else uses it. IPsec
+removes only the role's connections, keys, rules and egress filter, plus any XFRM policies, states and interfaces
+(`ipsec1`, `ipsec2`) left with the reserved if_id 1 or 2, even when pluto is stopped; it removes `ega-aws.conf`
+last, so a rerun retries a failed removal, and leaves if_ids 1 and 2 alone on a host without that file. It leaves
+other Libreswan connections running and the Libreswan service enabled; with no appliance connections it carries no traffic, so disable it if nothing else uses it. IPsec
 assumes one relay (relay HA is CORENET-7503).
 
 The host needs reachability to both AWS endpoints on UDP 500 and 4500 (or ESP without NAT); the role

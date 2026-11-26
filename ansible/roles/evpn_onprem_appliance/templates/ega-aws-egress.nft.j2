@@ -1,0 +1,22 @@
+# Managed by evpn_onprem_appliance: traffic to the VPC prefixes leaves only through the AWS VPN tunnels,
+# whatever the routing table says (a more-specific route, or boot before NetworkManager installs the rules).
+# Declaring the table, deleting it and redefining it replaces it in one transaction.
+table inet ega_aws_egress
+delete table inet ega_aws_egress
+table inet ega_aws_egress {
+	set vpc {
+		type ipv4_addr
+		flags interval
+		elements = { {{ [infra_vpc_cidr | default('10.100.0.0/16'), workload_vpc_cidr | default('10.200.0.0/16')] | join(', ') }} }
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+		ip daddr @vpc oifname != { "ipsec1", "ipsec2" } counter drop
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+		ip daddr @vpc oifname != { "ipsec1", "ipsec2" } counter drop
+	}
+}

@@ -11,7 +11,7 @@
     name: >-
       {{ ['podman', 'tcpdump', 'traceroute', 'mtr', 'bind-utils', 'nmstate']
          + (['wireguard-tools'] if tunnel.type == 'wireguard' else [])
-         + (['libreswan'] if tunnel.type == 'ipsec' else []) }}
+         + (['libreswan', 'nftables'] if tunnel.type == 'ipsec' else []) }}
     state: present
   when: ansible_facts.pkg_mgr in ['dnf', 'dnf5', 'yum']
 

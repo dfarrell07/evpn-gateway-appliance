@@ -85,6 +85,30 @@
       {{ peers }}
   no_log: true
 
+# Traffic to the VPC prefixes may leave only through ipsec1 or ipsec2, whatever the routes say; the unit loads the
+# table before network-pre.target at boot, and a reload replaces it atomically.
+- name: Deploy the AWS VPN egress filter
+  ansible.builtin.template:
+    src: ega-aws-egress.nft.j2
+    dest: /etc/nftables/ega-aws-egress.nft
+    mode: "0644"
+    validate: nft -c -f %s
+  register: _evpn_onprem_appliance_egress_rules
+
+- name: Install the AWS VPN egress filter unit
+  ansible.builtin.copy:
+    src: ega-aws-egress.service
+    dest: /etc/systemd/system/ega-aws-egress.service
+    mode: "0644"
+  register: _evpn_onprem_appliance_egress_unit
+
+- name: Enable and apply the AWS VPN egress filter
+  ansible.builtin.systemd:
+    name: ega-aws-egress.service
+    enabled: true
+    daemon_reload: "{{ _evpn_onprem_appliance_egress_unit.changed }}"
+    state: "{{ 'reloaded' if _evpn_onprem_appliance_egress_rules.changed else 'started' }}"
+
 # Start before the connections exist, so the first deploy negotiates each tunnel once, in the handler.
 - name: Enable and start IPsec
   ansible.builtin.systemd:

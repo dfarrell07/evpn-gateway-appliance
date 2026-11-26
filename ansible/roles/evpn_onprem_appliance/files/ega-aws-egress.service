@@ -1,0 +1,18 @@
+[Unit]
+Description=EGA: send traffic to the AWS VPC prefixes only through the VPN tunnels
+# Before any interface comes up, so nothing can reach a VPC prefix unencrypted at boot. Not stopped at
+# shutdown either: NetworkManager leaves routes in place, so the table stays until the kernel goes down.
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/nftables/ega-aws-egress.nft
+ExecReload=/usr/sbin/nft -f /etc/nftables/ega-aws-egress.nft
+ExecStop=/usr/sbin/nft delete table inet ega_aws_egress
+
+[Install]
+WantedBy=sysinit.target

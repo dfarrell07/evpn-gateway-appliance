@@ -34,6 +34,29 @@
   changed_when: false
   when: tunnel.type | default('wireguard') == 'ipsec'
 
+# By now IKE, ESP, BGP and VXLAN have all run through the tunnels, so the egress filter must not have dropped
+# anything. A route more specific than a VPC prefix through the uplink must not carry VPC traffic in the clear: the
+# filter drops it (CORENET-7511's scenario), and the relay is reachable again once the route is gone.
+- name: "HEALTH [onprem-sim]: VPC traffic never leaves outside the tunnels"
+  ansible.builtin.shell: |
+    set -eu
+    relay={{ hostvars[groups['cloud_infra'][0]].private_ip }}
+    set -- $(ip -4 route show default | head -1)
+    gw=$3 dev=$5
+    drops() { nft list chain inet ega_aws_egress output | grep -o 'packets [0-9]*' | awk '{print $2}'; }
+    before=$(drops)
+    [ "$before" = 0 ] || { echo "the egress filter dropped $before packets in normal operation"; exit 1; }
+    ip route add "$relay/32" via "$gw" dev "$dev"
+    trap 'ip route del "$relay/32" via "$gw" dev "$dev" 2>/dev/null || true' EXIT
+    ip route get "$relay" | grep -q " dev $dev " || { echo "the test route is not in use"; exit 1; }
+    if ping -c 2 -W 1 -I {{ tunnel.onprem_ip }} "$relay" >/dev/null; then echo "reached the relay outside the tunnels"; exit 1; fi
+    [ "$(drops)" -gt "$before" ] || { echo "the egress filter counted no drops"; exit 1; }
+    ip route del "$relay/32" via "$gw" dev "$dev"
+    trap - EXIT
+    ping -c 3 -W 2 -I {{ tunnel.onprem_ip }} "$relay" >/dev/null || { echo "relay unreachable through the tunnels"; exit 1; }
+  changed_when: false
+  when: tunnel.type | default('wireguard') == 'ipsec'
+
 # With both tunnels down, the policy rules must drop VPC-bound traffic instead of letting the default route send it
 # unencrypted. Block both AWS endpoints until BGP withdraws both VPC routes (hold time 30 s), ping the relay and the
 # workload VTEP from the VTEP address, and require that no packet to a VPC prefix leaves unencrypted; then restore

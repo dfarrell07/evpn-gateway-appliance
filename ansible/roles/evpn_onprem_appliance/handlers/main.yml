@@ -4,6 +4,10 @@
     name: wg-quick@wg0
     state: restarted
 
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
 # Connection or key changes replace the appliance tunnels one at a time, keeping unrelated connections up.
 # Handlers flush after FRR is reconciled, so FRR already peers with any new inside addresses or ASN.
 - name: Replace AWS IPsec connections
