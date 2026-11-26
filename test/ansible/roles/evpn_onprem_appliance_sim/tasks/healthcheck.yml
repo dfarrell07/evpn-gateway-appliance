@@ -33,8 +33,9 @@
 
 # With both tunnels down, the policy rules must drop VPC-bound traffic instead of letting the default route send it
 # unencrypted. Block both AWS endpoints until BGP withdraws the VPC routes (hold time 30 s), keep pinging the relay
-# from the VTEP address, and require that no packet to a VPC prefix leaves by any other interface; then restore and
-# wait for the relay to answer again (measured recovery 36-57 s).
+# from the VTEP address, and require that no packet to a VPC prefix leaves unencrypted; then restore and wait for the
+# relay to answer again (measured recovery 36-57 s). IPsec-bound packets pass postrouting a second time with the
+# uplink as their interface before encryption, so the count leaves out packets with an IPsec route.
 - name: "HEALTH [onprem-sim]: both tunnels down sends no VPC traffic in the clear"
   ansible.builtin.shell: |
     set -eu
@@ -47,7 +48,7 @@
     table inet ega_sim_down {
       chain out { type filter hook output priority -10; policy accept; ip daddr { $aws } drop; }
       chain leak { type filter hook postrouting priority 100; policy accept;
-        ip daddr { $vpcs } oifname != { "ipsec1", "ipsec2" } counter; }
+        ip daddr { $vpcs } oifname != { "ipsec1", "ipsec2" } rt ipsec missing counter; }
     }
     EOF
     for _ in $(seq 1 18); do
@@ -57,7 +58,7 @@
     ! ip route show "{{ infra_vpc_cidr | default('10.100.0.0/16') }}" | grep -q ipsec || { echo "VPC routes outlived 90 s"; exit 1; }
     for _ in $(seq 1 10); do ping -c 1 -W 1 -I {{ tunnel.onprem_ip }} "$relay" >/dev/null 2>&1 || true; done
     leaked=$(nft list chain inet ega_sim_down leak | grep -o 'packets [0-9]*' | awk '{print $2}')
-    [ "$leaked" = 0 ] || { echo "$leaked VPC-bound packets left outside the tunnels"; exit 1; }
+    [ "$leaked" = 0 ] || { echo "$leaked VPC-bound packets left unencrypted"; exit 1; }
     cleanup
     for _ in $(seq 1 24); do ping -c 1 -W 2 -I {{ tunnel.onprem_ip }} "$relay" >/dev/null 2>&1 && exit 0; sleep 5; done
     echo "the relay did not answer within 120 s of restoring the tunnels"; exit 1
