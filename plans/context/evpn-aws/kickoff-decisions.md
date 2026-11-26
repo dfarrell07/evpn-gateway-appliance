@@ -5,7 +5,7 @@ criteria are requirements; an item below is a decision only once it records an
 owner, date and evidence. Everything else is a proposal for discussion, and role
 owners are proposed unless a row records an assignment. Status rechecked on 2026-10-15; decision 16
 updated 2026-11-10; owners for decisions 15 and 18 assigned 2026-11-17; decisions 20 and 21 recorded
-2026-11-17 and 2026-11-18.
+2026-11-17 and 2026-11-18; decision 1's 7504 meanings approved for Networking 2026-11-25.
 Review directions retain their dates.
 
 ## Decisions at a glance
@@ -17,7 +17,7 @@ and publication needs its destination. Resolve the remaining choices alongside r
 
 | # | Decision | Owner | Needed for | Status |
 | --- | --- | --- | --- | --- |
-| 1 | Reconcile Jira criteria: 7501's VIF wording, 7504's metric meanings, 7505's "approved upstream" images | PM / Networking | [Start now](#start-now-without-waiting-for-engineering) | Review direction 2026-10-01; accountable owner and remaining corrections/clarifications pending |
+| 1 | Reconcile Jira criteria: 7501's VIF wording, 7504's metric meanings, 7505's "approved upstream" images | PM / Networking | [Start now](#start-now-without-waiting-for-engineering) | Review direction 2026-10-01; 7504's metric meanings approved in review for Networking (Jaime Caamaño Ruiz, team lead, 2026-11-25; PM approval not recorded, [#45](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694248751)); 7501 and 7505 corrections and their owner pending |
 | 2 | Official product name, the long-lead approvals, and the supported architectures the Engineering ID request asks for | PM / Product Security / releng | [Start now](#start-now-without-waiting-for-engineering); Engineering ID | Open |
 | 3 | What to import publicly, and owners for the source defects | Source owners / releng | [Gate A](#gate-a--source-ci) | Open |
 | 4 | Source CI: Prow contexts, tide, GitHub Actions, Konflux GitHub App | Engineering / Networking | [Gate A](#gate-a--source-ci) | Review direction 2026-10-02; Prow merged, with `ci/prow/images` and `ci/prow/verify` required since release#86670 (2026-10-13); hosted lanes and Konflux contexts/App remain open |
@@ -32,7 +32,7 @@ and publication needs its destination. Resolve the remaining choices alongside r
 | 13 | AMI channel and entitlement | PM / cloud publishing / releng | [Gate C-stage](#gate-c-stage--trial-publication) | Open; action item assigned 2026-10-01 |
 | 14 | Stage publication objects and how the collection finds the released AMI | Releng / channel owners / Architecture | [Gate C-stage](#gate-c-stage--trial-publication) | Open |
 | 15 | Collection publisher and destination | Jaime Caamaño Ruiz (team lead) | [Gate C-stage](#gate-c-stage--trial-publication) | Open; owner assigned 2026-11-17 |
-| 16 | Metric source for 7504's VNI/MAC views and the standalone `frr-metrics` question | Daniel Farrell (CORENET-7504) | Source choice, independently of implementation/qualification | Closed 2026-11-10: frr-k8s `frr-metrics` for BGP/BFD and basic EVPN, with standalone operation; [Networking review](https://github.com/openshift/evpn-gateway-appliance/pull/24#issuecomment-6768033317), following the [2026-10-01 direction](https://github.com/openshift/evpn-gateway-appliance/pull/2#issuecomment-5936707328) |
+| 16 | Metric source for 7504's VNI/MAC views and the standalone `frr-metrics` question | Daniel Farrell (CORENET-7504) | Source choice, independently of implementation/qualification | Closed 2026-11-10: frr-k8s `frr-metrics` for BGP/BFD and basic EVPN, with standalone operation; [Networking review](https://github.com/openshift/evpn-gateway-appliance/pull/24#issuecomment-6768033317), following the [2026-10-01 direction](https://github.com/openshift/evpn-gateway-appliance/pull/2#issuecomment-5936707328); scope placement of DF and IPsec status open ([Observability](#gate-c-stage--trial-publication)) |
 | 17 | Product identity: Engineering ID, CPE, registry paths, ProdSec stream | PM / Product Security / releng | [Gate C-stage](#gate-c-stage--trial-publication) for the Engineering ID; [Gate C-prod](#gate-c-prod--supported-release) for the rest | Open |
 | 18 | Support matrix, including the AWS/OCP support decision and ROSA | Jaime Caamaño Ruiz (team lead) | [Gate C-prod](#gate-c-prod--supported-release) | Open; owner assigned 2026-11-17 |
 | 19 | Qualification evidence and sign-offs | Networking / QE / Product Security / docs | [Gate C-prod](#gate-c-prod--supported-release) | Open |
@@ -66,13 +66,18 @@ item for decisions 7, 8 and 13 to `@knobunc`.
 
 ### Start now, without waiting for engineering
 
-- **Jira conflicts (review direction 2026-10-01; accountable owner pending).** Rechecked
+- **Jira conflicts (review direction 2026-10-01; 7504 part approved for Networking 2026-11-25; 7501 and 7505 owner pending).** Rechecked
   2026-11-04: 7501 still names a private VIF with a TGW, which needs a transit VIF;
   7505's "approved upstream" images still need reconciliation with decision 10's Red Hat
-  payload direction. 7504 now explicitly requires EVPN metrics in the frr-k8s binary;
-  its remaining [metric clarification](frr-metrics-plan.md#requirements) concerns occupancy
-  versus learning events and UPDATE activity versus route-event churn. Remaining Jira
-  corrections and semantic agreement need an owner. *Owner: PM / Networking.*
+  payload direction. 7504 now explicitly requires EVPN metrics in the frr-k8s binary.
+  Approved in [review](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694248751) for Networking on 2026-11-25 by Jaime Caamaño Ruiz (team lead; PM approval not recorded), as
+  proposed by Daniel Farrell (CORENET-7504 assignee, 2026-11-17): route churn is each BGP peer's rate of UPDATE messages sent and received, not
+  prefix adds or withdrawals, and MAC learning each L2 VNI's MAC and ARP/ND entry counts over
+  time, not learn or age-out rates; neither has an alert
+  ([plan](frr-metrics-plan.md#requirements)). Basis: the
+  [CORENET-7504](https://redhat.atlassian.net/browse/CORENET-7504) description and
+  [#44](https://github.com/openshift/evpn-gateway-appliance/pull/44)'s FRR dashboard. The
+  CORENET-7501 and CORENET-7505 Jira corrections still need an accountable owner. *Owner: PM / Networking.*
 - **Product name.** "EVPN Gateway Appliance (EGA)" is a working name. The prototype's
   [L2-stretch plan](https://gitlab.cee.redhat.com/datucker/evpn-on-cloud/-/blob/1c8e88873af8/docs/evpn-l2-stretch-plan.md)
   weighed "Connectivity", "Gateway", "Bridge" and "Edge", noted that "Gateway" suggests L3 routing,
@@ -167,7 +172,9 @@ item for decisions 7, 8 and 13 to `@knobunc`.
 - **Payload.** The 2026-10-01 review directs FRR and `frr-metrics` to [option
   A](pipeline-spec.md#runtime-payload-corenet-7505), the Red Hat–built `frr-rhel9` image
   (2026-10-01). Merged #6 embeds the OCP 4.22 image under `frr-container.service`,
-  leaving its metrics unit unused; #16 is closed ([source audit](source-audit.md)).
+  leaving its metrics unit unused; #16 is closed ([source audit](source-audit.md)). #53 runs
+  `frr-metrics` confined at FRR's fixed MCS level, not with `label=disable`
+  ([runtime shape](frr-metrics-details.md#runtime-shape-of-frr-metrics)).
   Merged source does not approve the payload. Record owner/date approval
   before treating it as finalized. `openshift4/frr-rhel9` is published;
   `openshift5/frr-rhel9`, which the 5.1 target needs, was not in Pyxis on 2026-10-01. Still open:
@@ -235,13 +242,17 @@ item for decisions 7, 8 and 13 to `@knobunc`.
   observations, with standalone operation. Evidence: the [2026-10-01 Networking direction](https://github.com/openshift/evpn-gateway-appliance/pull/2#issuecomment-5936707328),
   live 7504/7505 criteria (rechecked 2026-11-10), and [Jaime's 2026-11-10 review asking to close 16](https://github.com/openshift/evpn-gateway-appliance/pull/24#issuecomment-6768033317).
   This closes source selection independently of implementation and qualification.
-  [#519/#528](frr-metrics-plan.md#status-and-next-steps) propose standalone serving and basic
-  EVPN additions; they are unmerged. Upstream shared use is conditional on nondivergent behavior
+  [#519](https://github.com/metallb/frr-k8s/pull/519) (merged 2026-11-10) adds standalone serving
+  and [#528](frr-metrics-plan.md#status-and-next-steps) (merged 2026-11-24) basic EVPN additions.
+  Upstream shared use is conditional on nondivergent behavior
   and metrics ([maintainer reply](https://github.com/metallb/frr-k8s/pull/519#issuecomment-6612226284)).
-  Remaining work stays separate: learning/churn meanings in decision 1; DF/ES coverage and
-  alert policy in 7504/7502; implementation/downstream ownership, selected image and interim
-  runtime in 7504/7505 and decision 10; endpoint privilege/access and its tests in CORENET-7704;
-  CloudWatch, scrape integration, dashboards and qualification in 7504. A different source
+  Learning/churn meanings are approved for Networking under decision 1 (2026-11-25). Remaining work stays separate: the [CORENET-7504](https://redhat.atlassian.net/browse/CORENET-7504) description moves the
+  Ethernet-segment series and DF alert to CORENET-7502 and appliance-side per-tunnel IPsec status to
+  CORENET-7500; neither story's criteria include that work, and 7502 has not accepted it; proposed, pending the Jira edit: a new multihoming observability
+  story (needing 7502's Ethernet segments) for the ES/DF series and DF alert, and its own optional story for IPsec
+  status ([DF](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694286753), [IPsec](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694118382)); implementation/downstream ownership,
+  the FRR and `frr-metrics` payload (CORENET-7505/7506) under decision 10; endpoint privilege/access and its tests in CORENET-7704;
+  CloudWatch, scrape integration, dashboards, alerts and qualification in 7504. A different source
   needs amended Jira criteria. Selecting this source does not complete those requirements.
 
 - **AWS Site-to-Site VPN.** Decision 20 closed 2026-11-17. Accountable owner: **Daniel Farrell**
