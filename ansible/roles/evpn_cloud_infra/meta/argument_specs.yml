@@ -70,10 +70,6 @@ argument_specs:
             type: int
             default: 1000
             description: Defensive maximum-prefix limit applied to EVPN neighbors.
-      frr_image:
-        type: str
-        required: true
-        description: Container image reference for the FRR relay. Pin by tag or digest.
       stretches:
         type: list
         elements: dict

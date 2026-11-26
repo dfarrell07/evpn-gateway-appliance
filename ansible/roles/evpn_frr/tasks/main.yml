@@ -1,0 +1,65 @@
+---
+- name: Create the FRR candidate directory
+  ansible.builtin.file:
+    path: /etc/frr/desired
+    state: directory
+    mode: "0755"
+
+- name: Seed the FRR daemon selection if it is missing
+  ansible.builtin.copy:
+    dest: /etc/frr/daemons
+    content: |
+      bgpd=yes
+      bfdd=yes
+      zebra_options="--graceful_restart"
+    mode: "0644"
+    force: false
+
+- name: Enable integrated FRR configuration
+  ansible.builtin.copy:
+    dest: /etc/frr/vtysh.conf
+    content: "service integrated-vtysh-config\n"
+    mode: "0644"
+
+- name: Seed a minimal startup configuration if it is missing
+  ansible.builtin.copy:
+    dest: /etc/frr/frr.conf
+    content: |
+      frr defaults traditional
+      !
+      end
+    force: false
+    mode: "0644"
+
+- name: Start the FRR service
+  ansible.builtin.systemd:
+    name: frr-container.service
+    state: started
+    enabled: true
+
+- name: Wait for the FRR BGP daemon
+  ansible.builtin.command:
+    argv: [podman, exec, frr, vtysh, -d, bgpd, -c, show bgp summary json]
+  register: _evpn_frr_ready
+  until: _evpn_frr_ready.rc == 0
+  retries: 30
+  delay: 1
+  changed_when: false
+
+- name: Render the desired FRR configuration
+  ansible.builtin.template:
+    src: "{{ ansible_parent_role_paths[0] }}/templates/{{ evpn_frr_config_template }}"
+    dest: /etc/frr/desired/frr.conf
+    mode: "0644"
+
+- name: Check the candidate against running FRR
+  ansible.builtin.command:
+    argv: [podman, exec, frr, /usr/lib/frr/frr-reload.py, --test, /etc/frr/desired/frr.conf]
+  changed_when: false
+
+# FRR owns the live delta and the startup file. Always apply so a retry can
+# reconcile partial changes even when the desired file is unchanged.
+- name: Reload and save the desired FRR configuration
+  ansible.builtin.command:
+    argv: [podman, exec, frr, /usr/lib/frr/frr-reload.py, --reload, --overwrite, /etc/frr/desired/frr.conf]
+  changed_when: true

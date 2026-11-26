@@ -1,0 +1,12 @@
+frr defaults traditional
+!
+router bgp 65000
+ bgp router-id 192.0.2.1
+ neighbor 192.0.2.2 remote-as 65001
+ neighbor 192.0.2.2 description {{ evpn_frr_fixture_description | default('initial') }}
+exit
+!
+{% if evpn_frr_fixture_invalid | default(false) | bool %}
+not-a-valid-frr-command
+{% endif %}
+end

@@ -99,10 +99,6 @@ argument_specs:
         description: >-
           Name of the tagged VLAN trunk interface to attach. The role enslaves it
           to the trunk bridge and builds a per-stretch VLAN sub-interface on it.
-      frr_image:
-        type: str
-        required: true
-        description: Container image reference for the FRR VTEP. Pin by tag or digest.
       bgp:
         type: dict
         required: true

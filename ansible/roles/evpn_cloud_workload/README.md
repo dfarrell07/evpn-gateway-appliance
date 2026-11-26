@@ -11,7 +11,7 @@ and peering with the infra relay.
 > (`context.md`, "The prototype at a glance").
 
 See [`meta/argument_specs.yml`](meta/argument_specs.yml) for the full input
-schema (`stretches`, `bgp`, `frr_image`).
+schema (`stretches`, `bgp`).
 
 ## Requirements
 

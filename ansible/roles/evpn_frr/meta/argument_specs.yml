@@ -1,0 +1,9 @@
+---
+argument_specs:
+  main:
+    short_description: Reconcile the desired configuration on an appliance running systemd-managed FRR.
+    options:
+      evpn_frr_config_template:
+        type: str
+        required: true
+        description: Template filename relative to the calling role's templates directory.

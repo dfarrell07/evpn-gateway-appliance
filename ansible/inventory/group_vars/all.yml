@@ -64,8 +64,5 @@ monitoring:
   frr_exporter: true
   node_exporter: true
 
-# ── FRR container image ──────────────────────────────────────
-frr_image: quay.io/frrouting/frr:10.5.3   # pinned, not :latest; the templates now read their "frr version" line from this tag (kickoff-decisions.md #10).
-
 # ── AWS admin-plane access (evpn_aws_infra role) ───────────────
 # evpn_aws_infra_admin_cidr: 203.0.113.4/32   # required by provision-aws.yml, no safe default (source-audit.md §1).

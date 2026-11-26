@@ -1,0 +1,17 @@
+---
+- name: Reconcile FRR on a fresh appliance
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Check the startup configuration on the fresh image
+      ansible.builtin.stat:
+        path: /etc/frr/frr.conf
+      register: initial_startup
+
+    - name: Require first-start bootstrapping
+      ansible.builtin.assert:
+        that: not initial_startup.stat.exists
+
+    - name: Apply the initial configuration through its caller
+      ansible.builtin.include_role:
+        name: evpn_frr_fixture

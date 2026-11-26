@@ -5,7 +5,7 @@ VLAN trunk interface, per-stretch VXLAN interfaces and bridges, and FRR
 configured as the on-prem VTEP.
 
 See [`meta/argument_specs.yml`](meta/argument_specs.yml) for the full input
-schema (`tunnel`, `stretches`, `trunk_interface`, `frr_image`, `bgp`,
+schema (`tunnel`, `stretches`, `trunk_interface`, `bgp`,
 `infra_vpc_cidr`, `workload_vpc_cidr`, `ocp_pod_network_cidr`). The latter
 three (plus `tunnel.network_cidr`) all default to the lab/dev values below if
 left unset — only override them if your VPC/pod-network CIDRs differ.
@@ -48,5 +48,4 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
         onprem_gateway: 10.42.1.1
         cloud_gateway: 10.42.1.2
     trunk_interface: trunk0
-    frr_image: quay.io/frrouting/frr:10.5.3
 ```

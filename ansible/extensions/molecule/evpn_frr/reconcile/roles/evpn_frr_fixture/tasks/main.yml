@@ -1,0 +1,6 @@
+---
+- name: Apply the caller's FRR template
+  ansible.builtin.include_role:
+    name: network.evpn_gateway.evpn_frr
+  vars:
+    evpn_frr_config_template: frr.conf.j2
