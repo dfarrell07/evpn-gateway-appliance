@@ -246,11 +246,9 @@ item for decisions 7, 8 and 13 to `@knobunc`.
   and [#528](frr-metrics-plan.md#status-and-next-steps) (merged 2026-11-24) basic EVPN additions.
   Upstream shared use is conditional on nondivergent behavior
   and metrics ([maintainer reply](https://github.com/metallb/frr-k8s/pull/519#issuecomment-6612226284)).
-  Learning/churn meanings are approved for Networking under decision 1 (2026-11-25). Remaining work stays separate: the [CORENET-7504](https://redhat.atlassian.net/browse/CORENET-7504) description moves the
-  Ethernet-segment series and DF alert to CORENET-7502 and appliance-side per-tunnel IPsec status to
-  CORENET-7500; neither story's criteria include that work, and 7502 has not accepted it; proposed, pending the Jira edit: a new multihoming observability
-  story (needing 7502's Ethernet segments) for the ES/DF series and DF alert, and its own optional story for IPsec
-  status ([DF](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694286753), [IPsec](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694118382)); implementation/downstream ownership,
+  Learning/churn meanings are approved for Networking under decision 1 (2026-11-25). Remaining work stays separate: the Ethernet-segment series and DF alert are
+  [CORENET-7763](https://redhat.atlassian.net/browse/CORENET-7763) (blocked by 7502's Ethernet segments) and appliance-side per-tunnel IPsec status is the optional
+  [CORENET-7764](https://redhat.atlassian.net/browse/CORENET-7764) ([DF](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694286753), [IPsec](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694118382)); implementation/downstream ownership,
   the FRR and `frr-metrics` payload (CORENET-7505/7506) under decision 10; endpoint privilege/access and its tests in CORENET-7704;
   CloudWatch, scrape integration, dashboards, alerts and qualification in 7504. A different source
   needs amended Jira criteria. Selecting this source does not complete those requirements.

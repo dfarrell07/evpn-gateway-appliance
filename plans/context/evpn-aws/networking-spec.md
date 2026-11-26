@@ -120,6 +120,10 @@ actually handles each packet before asserting MTU or HA.
 6. Keep on-prem all-active multihoming (LACP/shared Ethernet Segment, Type-1/4,
    DF/BFD, duplicate-BUM suppression) separate from cloud relay ECMP/recovery.
    Exercise traffic, route recovery, serial upgrades and failed-upgrade rollback.
+   Proposed for CORENET-7503 (measured 2026-11-26): a relay FRR restart during an IPsec tunnel
+   replace brings EVPN back after about 32s, waiting out the 30s connect-retry for a SYN lost
+   in the TGW SA swap; `timers connect 10` on both ends of the appliance-relay sessions cuts it
+   to 12.5s. Keep the hold time above the 30s AWS single-tunnel failover; BFD is the fuller fix.
 7. Qualify the supported OCP feature combinations: Network Policy allow/deny and
    return traffic across the fabric, selected service types, and ARP suppression
    for learned remote bindings. Basic ping and route presence cannot prove these.
@@ -134,7 +138,7 @@ actually handles each packet before asserting MTU or HA.
 8. Replace `frr_exporter` with `frr-metrics` in CORENET-7504, as
    [chunk A](frr-metrics-plan.md#a-run-frr-metrics-instead-of-the-legacy-exporter-s) plans;
    frr-k8s #519 lets the binary run outside Kubernetes. #528 adds the VNI/MAC series, EGA #44
-   alerts on VTEP membership, #48 on VTEP forwarding and, per the 7504 description, CORENET-7502 on DF
+   alerts on VTEP membership, #48 on VTEP forwarding and [CORENET-7763](https://redhat.atlassian.net/browse/CORENET-7763) on DF
    ([chunk E](frr-metrics-plan.md#e-ethernet-segment-and-df-m)). Agree the expected labels
    first. Candidate tests must distinguish
    missing required series from intentionally empty healthy/conditional query results;

@@ -8,12 +8,12 @@ and alerts. Refreshed 2026-11-25; [details](frr-metrics-details.md) hold source 
 | 7504 criterion | Delivered by |
 | --- | --- |
 | 1. Replace the legacy FRR exporter with the frr-k8s metrics binary | Chunk A (EGA #53, open) |
-| 2. Expose required EVPN metrics in the frr-k8s metrics binary | frr-k8s #528 (merged); DF and Ethernet-segment metrics: CORENET-7502 per Jira (chunk E) |
-| 3. Appliance, VLAN and tunnel status views | EGA #44 (interfaces, AWS VPN tunnel state); the 7504 description moves appliance-side per-tunnel IPsec status to CORENET-7500, whose criteria don't include it; proposed, pending the Jira edit: its own optional story ([review](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694118382)). #44's dashboard does not match the `ipsecN` devices open [#52](https://github.com/openshift/evpn-gateway-appliance/pull/52) adds; a 7504 follow-up adds them once #52 merges |
+| 2. Expose required EVPN metrics in the frr-k8s metrics binary | frr-k8s #528 (merged); DF and Ethernet-segment metrics: [CORENET-7763](https://redhat.atlassian.net/browse/CORENET-7763) (chunk E) |
+| 3. Appliance, VLAN and tunnel status views | EGA #44 (interfaces, AWS VPN tunnel state); appliance-side per-tunnel IPsec status: [CORENET-7764](https://redhat.atlassian.net/browse/CORENET-7764), optional ([review](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694118382)). #44's dashboard does not match the `ipsecN` devices open [#52](https://github.com/openshift/evpn-gateway-appliance/pull/52) adds; a 7504 follow-up adds them once #52 merges |
 | 4. BGP sessions, prefix counts and route churn | #528 (per-family prefixes, merged) and EGA #44 (sessions, prefixes, churn) |
 | 5. VNI and MAC learning behavior | #528 (VNI series, merged) and EGA #44 (learning) |
 | 6. DX, VPN, BFD, latency and bandwidth health | EGA #44 (BFD, interface bandwidth, DX and VPN state and throughput) and [#48](https://github.com/openshift/evpn-gateway-appliance/pull/48) (RTT to one overlay target, which no alert reads; AWS publishes no DX or VPN latency metric) |
-| 7. Alerts for BGP, VTEP, BFD and transport failures | EGA #44 (BGP, BFD, VTEP membership, DX and VPN state) and #48 (VTEP forwarding); DF: CORENET-7502 per Jira (chunk E) |
+| 7. Alerts for BGP, VTEP, BFD and transport failures | EGA #44 (BGP, BFD, VTEP membership, DX and VPN state) and #48 (VTEP forwarding); DF: [CORENET-7763](https://redhat.atlassian.net/browse/CORENET-7763) (chunk E) |
 
 [Decision 1](kickoff-decisions.md#start-now-without-waiting-for-engineering) records the meanings of route churn (row 4) and
 MAC learning (row 5), approved in review for Networking on 2026-11-25 (PM approval not recorded); #44's FRR dashboard plots both, and neither has
@@ -50,7 +50,7 @@ keep its severity and hold time; #44's `monitoring/README.md` covers the differe
 ## Implementation chunks
 
 Closing 7504 needs chunk A with its #528 dependency, #48, scrape integration and qualification;
-E is CORENET-7502's per Jira (S: days; M: one to three weeks).
+E is [CORENET-7763](https://redhat.atlassian.net/browse/CORENET-7763)'s (S: days; M: one to three weeks).
 
 ### A. Run frr-metrics instead of the legacy exporter (S)
 
@@ -70,10 +70,10 @@ E is CORENET-7502's per Jira (S: days; M: one to three weeks).
 
 ### E. Ethernet segment and DF (M)
 
-The [CORENET-7504](https://redhat.atlassian.net/browse/CORENET-7504) description (2026-11-17) moves this to CORENET-7502, which delivers EVPN multihoming
+The [CORENET-7504](https://redhat.atlassian.net/browse/CORENET-7504) description (2026-11-17) moved this to CORENET-7502, which delivers EVPN multihoming
 ([networking spec](networking-spec.md) item 6) and proposes Ethernet segment configuration in open
-[#43](https://github.com/openshift/evpn-gateway-appliance/pull/43); 7502's criteria do not include it and 7502 has not accepted it. Proposed, pending the Jira edit: a new
-multihoming observability story, which needs 7502's Ethernet segments, takes it ([review](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694286753)).
+[#43](https://github.com/openshift/evpn-gateway-appliance/pull/43). Since 2026-11-26 it is
+[CORENET-7763](https://redhat.atlassian.net/browse/CORENET-7763), blocked by 7502's Ethernet segments ([review](https://github.com/openshift/evpn-gateway-appliance/pull/45#discussion_r4694286753)).
 The proposed source is EGA's own: frr-k8s generates no Ethernet segments, and its maintainer said a
 standalone implementation might make sense for metrics frr-k8s can't produce
 ([#519](https://github.com/metallb/frr-k8s/pull/519#issuecomment-6612226284)); it needs no openshift/frr sync.
@@ -85,7 +85,7 @@ handover allowance; no single node sees the others' election. It adapts the rule
 [`corenet-7504-evpn-df`](https://github.com/dfarrell07/evpn-gateway-appliance/tree/9d88b8f9aee70317f325c630d77965877420fcf6),
 written for a source that omits the role of a down, bypassed or not-ready segment; zebra reports
 a down segment as non-DF and a bypassed or not-ready one as DF. The owning story sets the DF
-handover allowance; until Jira changes, DF stays allocated to CORENET-7502.
+handover allowance.
 
 ## Asks and upstream order
 
