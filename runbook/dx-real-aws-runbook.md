@@ -181,6 +181,9 @@ it against network_cidr, the VPC CIDRs and the stretch subnets; nothing in AWS u
 tunnel: {type: direct-connect, mtu_mode: safe, onprem_ip: <VTEP, inside network_cidr>, network_cidr: <tunnel CIDR>, next_hop: <router on uplink>}
 ```
 
+Put `evpn_aws_infra_dx_gateway_id`, `evpn_aws_infra_aws_region` and `evpn_aws_infra_project_name` in
+`group_vars/all.yml` too, not only `$VARS`: health checks run `dx_status` by default for direct-connect and read them there.
+
 The preflight checks these before deploy (record any it refuses): next_hop outside network_cidr, the VPC CIDRs and every
 stretch subnet; on the appliance, `ip -j route get <next_hop>` shows a unicast route with a `dev` (the uplink, MTU >= 1550,
 not the trunk, `trunk-br`, a `trunk.<vlan>` or a `br-vni` bridge) and no `gateway`; within the VPC CIDRs only FRR's static
