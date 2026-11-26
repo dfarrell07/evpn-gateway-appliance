@@ -32,7 +32,8 @@ installed; bootc images must ship it with XFRM interface support (tested with 5.
 over each, advertising only `tunnel.network_cidr` and accepting only the two VPC prefixes; EVPN peers with the relay
 from `tunnel.onprem_ip`. Other traffic the appliance sends to the VPCs takes the tunnel's 169.254 inside address as
 its source, which AWS does not route back, so test reachability from the VTEP address (`ping -I <tunnel.onprem_ip>`).
-A connection or key change replaces the tunnels one at a time, a down one first, and fails if a tunnel or its
+When one tunnel fails, flows using it stop until BGP notices, up to the 30 s BGP hold time, and then move to
+the other tunnel. A connection or key change replaces the tunnels one at a time, a down one first, and fails if a tunnel or its
 BGP session is not back within 90 s; later deploys retry until a replacement succeeds. A deploy interrupted
 before FRR restarts leaves its new configuration unloaded; restart `frr-container.service` (or FRR) then. If
 deploy reports that another replacement is still running when none is, an `ipsec` command it started is stuck
