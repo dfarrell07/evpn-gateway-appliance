@@ -1,9 +1,13 @@
 ---
-- name: Check appliance IPsec teardown
+# After network.evpn_gateway.teardown: the appliance keeps no IPsec kernel objects of the role's (XFRM states and
+# policies with if_id 1 or 2, and the ipsec1 and ipsec2 interfaces).
+- name: Check the appliance teardown
   hosts: onprem_appliances
   become: true
+  gather_facts: false
   tasks:
-    - name: Count leftover appliance XFRM states and policies without exposing keys
+    # `ip xfrm state` prints keys, so only the count leaves the host.
+    - name: "TEARDOWN [onprem]: Count leftover IPsec XFRM states and policies"
       ansible.builtin.shell: |
         set -o pipefail
         ip xfrm {{ item }} | awk '/^[[:space:]]*if_id 0x[12]([[:space:]]|$)/ {n++} END {print n+0}'
@@ -16,7 +20,7 @@
       changed_when: false
       no_log: true
 
-    - name: Check for leftover appliance IPsec links
+    - name: "TEARDOWN [onprem]: Look for leftover IPsec interfaces"
       ansible.builtin.stat:
         path: "/sys/class/net/{{ item }}"
         get_attributes: false
@@ -27,9 +31,9 @@
         - ipsec2
       register: _ipsec_links
 
-    - name: Assert appliance IPsec kernel objects are absent
+    - name: "TEARDOWN [onprem]: No IPsec XFRM state, policy or interface remains"
       ansible.builtin.assert:
         that:
           - _ipsec_xfrm_counts.results | map(attribute='stdout') | map('int') | list == [0, 0]
           - _ipsec_links.results | selectattr('stat.exists') | list | length == 0
-        fail_msg: Appliance IPsec teardown left XFRM policies, states or interfaces behind.
+        fail_msg: Appliance IPsec teardown left XFRM states, policies or interfaces behind.
