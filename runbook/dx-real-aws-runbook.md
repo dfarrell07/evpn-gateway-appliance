@@ -1,7 +1,7 @@
 # DX real-AWS runbook (CORENET-7501/7708), ready for the account
 
 Owner: DX laptop + DX Mac. Status 2026-11-25: prepared, NOT run. No spend, no credentials until Daniel's account exists.
-Code under test: #57's head, fork `corenet-7708-direct-connect` (f30e6a1 on 2026-11-25: #57 on #56 3f5d8de on #52 08816aa;
+Code under test: #57's head, fork `corenet-7708-direct-connect` (353dbe8 on 2026-11-25: #57 on #56 163c07f on #52 15d5462;
 rechecked against this runbook on that date). Recheck the head before the run and report the SHA.
 
 ## What runs without a circuit, and what doesn't
@@ -36,7 +36,8 @@ aws sts get-caller-identity --query Arn --output text   # sanity only
 
 Region: one Region for everything (`us-east-1` unless Daniel picks another). A DX gateway is global.
 `ansible.cfg` names a missing `inventory/hosts.yml`, so plays run on implicit localhost with `inventory/group_vars/all.yml`
-(WireGuard `tunnel`, stretches, VPC CIDRs). Run vars in `$VARS`:
+(WireGuard `tunnel`, stretches, VPC CIDRs, and `evpn_health_check_accept_internet_mode_limits: false` and
+`evpn_health_check_workload_mtu: 0`, which `$VARS` overrides). Run vars in `$VARS`:
 
 ```yaml
 evpn_aws_infra_aws_region: us-east-1
@@ -44,7 +45,7 @@ evpn_aws_infra_project_name: "{{ lookup('env', 'RUN') }}"
 evpn_aws_infra_admin_cidr: <controller public IP>/32
 evpn_aws_infra_ssh_key_name: <key pair in the account>
 evpn_health_check_accept_internet_mode_limits: true   # S2 base stack is WireGuard
-evpn_health_check_workload_mtu: 1300   # the preflight requires it; fits every transport's budget
+evpn_health_check_workload_mtu: 1300   # required on every transport ("Set evpn_health_check_workload_mtu"); fits every budget
 ```
 
 ## IAM
@@ -57,7 +58,8 @@ mode). DX additions, exactly what the role calls:
 - Preflight/provision (`dx_preflight.yml`, `dx_vifs.yml`, `dx_association.yml`): `ec2:DescribeTransitGateways` (the
   project-TGW guard), `directconnect:DescribeDirectConnectGateways`, `DescribeDirectConnectGatewayAttachments`,
   `DescribeVirtualInterfaces`, `DescribeDirectConnectGatewayAssociations`, `CreateDirectConnectGatewayAssociation`.
-- Health/dx_status (`dx_status.yml`, which includes `dx_vifs.yml`): `directconnect:DescribeDirectConnectGatewayAttachments`,
+- Health/dx_status (`dx_status.yml`, which includes `dx_vifs.yml`; health checks run it by default for direct-connect,
+  `evpn_health_check_dx_telemetry`): `directconnect:DescribeDirectConnectGatewayAttachments`,
   `DescribeVirtualInterfaces`, `DescribeDirectConnectGatewayAssociations`, `ec2:DescribeTransitGateways`,
   `ec2:SearchTransitGatewayRoutes`.
 - Teardown, every mode (`teardown_dx.yml`, `teardown_dx_association.yml`): `ec2:DescribeTransitGateways`,
@@ -95,7 +97,8 @@ tunnel: {type: direct-connect, mtu_mode: safe, onprem_ip: 10.44.44.1, network_ci
 evpn_aws_infra_dx_gateway_id: <GW, GW_BAD or a random UUID, per case>
 ```
 
-Run S1 before S2: `dx_preflight.yml` first refuses while the project has any TGW ("already has TGWs"). Run
+Run S1 before S2: `dx_preflight.yml` first refuses while the project has a pending, available or modifying TGW ("already
+has TGWs"). Run
 `ansible-playbook playbooks/provision-aws.yml -e @$VARS -e @/var/tmp/ega-dx-aws-dx-<case>.yml` for each case; each must
 fail before the first create, with the message shown:
 
