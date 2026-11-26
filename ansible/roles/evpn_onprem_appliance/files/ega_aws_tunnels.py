@@ -127,20 +127,29 @@ def parse_tunnels(argv: list[str] | None) -> list[Tunnel]:
     return sorted(peers, key=lambda peer: peer.number)
 
 
-def write_record(directory: Path) -> None:
-    """Atomically publish sha256sum-compatible hashes with mode 0600."""
+def record_lines(directory: Path) -> list[str]:
+    """Return sha256sum-compatible lines for the connection and key files."""
     lines = []
     for name in ("ega-aws.conf", "ega-aws.secrets"):
         path = directory / name
         with path.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
         lines.append(f"{digest}  {path}\n")
+    return lines
+
+
+def write_record(directory: Path, loaded: list[str]) -> None:
+    """Atomically publish the loaded files' hashes with mode 0600, unless the files changed since."""
+    if record_lines(directory) != loaded:
+        # Another deploy rewrote them meanwhile; pluto may hold neither version, so leave no record.
+        raise RuntimeError("ega-aws.conf or ega-aws.secrets changed while the tunnels were being replaced, "
+                           "so they are not recorded as applied. Rerun deploy.")
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", dir=directory,
                                          prefix=".ega-aws.applied.", delete=False) as record:
             temporary = Path(record.name)
-            record.writelines(lines)
+            record.writelines(loaded)
             record.flush()
             os.fsync(record.fileno())
         os.replace(temporary, directory / "ega-aws.applied")
@@ -226,6 +235,8 @@ class Replacer:
         """Invalidate first; record only after both tunnels have recovered."""
         # From here pluto may hold keys or connections no file matches.
         (self.directory / "ega-aws.applied").unlink(missing_ok=True)
+        # The files as loaded; the record must describe these, not whatever is on disk at the end.
+        loaded_files = record_lines(self.directory)
         self.runner(["ipsec", "rereadsecrets"])
         # A bad key, loaded for both by rereadsecrets, still reaches the other
         # tunnel at its next re-authentication.
@@ -269,7 +280,7 @@ class Replacer:
                 raise RuntimeError(f"{peer.name}: {what} did not come up within 90 s; "
                                    f"stopped before any further tunnel. {RETRY}")
         # Deploy replaces the tunnels again until this record matches (tasks/ipsec.yml).
-        write_record(self.directory)
+        write_record(self.directory, loaded_files)
 
 
 def main(argv: list[str] | None = None, *, runner: Runner | None = None,

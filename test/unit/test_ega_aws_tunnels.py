@@ -142,6 +142,27 @@ class ReplacementTests(unittest.TestCase):
             self.assertFalse(self.record.exists())
         return result, errors.getvalue()
 
+    def test_files_rewritten_during_replacement_are_not_recorded(self):
+        # A concurrent deploy rewrites the keys after this one loaded its own: neither is recorded as applied.
+        for name in ("ega-aws.secrets", "ega-aws.conf"):
+            with self.subTest(name=name):
+                self.host = FakeHost(self, self.directory)
+                (self.directory / name).write_bytes(b"TEST_ONLY before\n")
+                self.host.on_up = lambda number, name=name: (
+                    (self.directory / name).write_bytes(b"TEST_ONLY rewritten\n") if number == 2 else None)
+                result, errors = self.deploy()
+                self.assertEqual(result, 1)
+                self.assertEqual(errors, "ega-aws.conf or ega-aws.secrets changed while the tunnels were being "
+                                 "replaced, so they are not recorded as applied. Rerun deploy.\n")
+                self.assertEqual(self.host.mutations()[:2], load_events(1))
+
+    def test_unchanged_files_are_recorded_as_loaded(self):
+        self.assertEqual(self.deploy(), (0, ""))
+        expected = "".join(
+            f"{hashlib.sha256((self.directory / name).read_bytes()).hexdigest()}  {self.directory / name}\n"
+            for name in ("ega-aws.conf", "ega-aws.secrets"))
+        self.assertEqual(self.record.read_text(), expected)
+
     def test_first_deploy_loads_both_then_waits_without_reloading(self):
         polls = {
             peer.number: [("ipsec", "trafficstatus"),
