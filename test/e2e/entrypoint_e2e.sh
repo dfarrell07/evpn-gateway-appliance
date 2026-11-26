@@ -137,7 +137,7 @@ run_scenario() (
 	read -r -a playbooks <<< "$EGA_PLAYBOOKS"
 	for playbook in "${playbooks[@]}"; do
 		# deploy leaves the lab up for inspection, so it skips the product teardown.
-		if [ "$stage" = deploy ] && [[ "$playbook" == *.teardown ]]; then
+		if [ "$stage" = deploy ] && [[ "$playbook" == *.teardown || "$playbook" == *.teardown_check ]]; then
 			echo ">> stage=deploy; skipping ${playbook}"
 			continue
 		fi

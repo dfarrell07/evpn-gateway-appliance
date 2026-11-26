@@ -1,0 +1,35 @@
+---
+- name: Check appliance IPsec teardown
+  hosts: onprem_appliances
+  become: true
+  tasks:
+    - name: Count leftover appliance XFRM states and policies without exposing keys
+      ansible.builtin.shell: |
+        set -o pipefail
+        ip xfrm {{ item }} | awk '/^[[:space:]]*if_id 0x[12]([[:space:]]|$)/ {n++} END {print n+0}'
+      args:
+        executable: /bin/bash
+      loop:
+        - state
+        - policy
+      register: _ipsec_xfrm_counts
+      changed_when: false
+      no_log: true
+
+    - name: Check for leftover appliance IPsec links
+      ansible.builtin.stat:
+        path: "/sys/class/net/{{ item }}"
+        get_attributes: false
+        get_checksum: false
+        get_mime: false
+      loop:
+        - ipsec1
+        - ipsec2
+      register: _ipsec_links
+
+    - name: Assert appliance IPsec kernel objects are absent
+      ansible.builtin.assert:
+        that:
+          - _ipsec_xfrm_counts.results | map(attribute='stdout') | map('int') | list == [0, 0]
+          - _ipsec_links.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: Appliance IPsec teardown left XFRM policies, states or interfaces behind.

@@ -160,8 +160,9 @@ Libreswan responders and FRR in place of the AWS VPN endpoint, with a public tes
 handoff. It does not prove IKE/ESP proposal compatibility with AWS (the simulator copies
 the appliance's), AWS telemetry, NAT-T, rekey or maintenance behavior, ECMP or route
 limits, and its Libreswan responder (`uniqueids=no`) can keep an older Child SA until it expires (an hour)
-after a tunnel is replaced or torn down. It ends with the product teardown, which `EGA_STAGE=deploy` skips (as it does any
-`*.teardown` playbook) so the lab stays deployed for inspection.
+after a tunnel is replaced or torn down. It ends with the product teardown and a check that the appliance's
+XFRM policies, states and interfaces are gone. `EGA_STAGE=deploy` skips `*.teardown` and `*.teardown_check`
+playbooks so the lab stays deployed for inspection.
 
 ## run_remote.sh — remote target (or local, no target)
 

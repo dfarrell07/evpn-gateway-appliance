@@ -990,6 +990,8 @@ class CommandAndArgumentTests(unittest.TestCase):
         self.addCleanup(libc.prctl, 36, was_subreaper.value, 0, 0, 0)
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
+            (directory / "ega-aws.conf").write_bytes(b"test configuration\n")
+            (directory / "ega-aws.secrets").write_bytes(b"TEST_ONLY\n")
             pidfile = directory / "command.pid"
             wrapper = directory / "ipsec"
             wrapper.write_text(
@@ -1109,6 +1111,201 @@ class CommandAndArgumentTests(unittest.TestCase):
                 runner.assert_not_called()
                 open_lock.assert_not_called()
                 self.assertFalse((unused_directory / "ega-aws.lock").exists())
+
+
+POLICY_LIST = ("ip", "-s", "xfrm", "policy")
+STATE_LIST = ("ip", "xfrm", "state")
+LINK_LIST = ("ip", "-d", "link", "show", "type", "xfrm")
+POLICY_DELETES = [
+    ("ip", "xfrm", "policy", "delete", "index", index, "dir", direction,
+     "ptype", "main", "if_id", if_id)
+    for index, direction, if_id in (("9", "out", "0x1"), ("18", "fwd", "0x1"),
+                                     ("24", "in", "0x1"), ("33", "out", "0x2"),
+                                     ("42", "fwd", "0x2"), ("48", "in", "0x2"))
+]
+STATE_DELETES = [
+    ("ip", "xfrm", "state", "delete", "src", src, "dst", dst, "proto", "esp", "spi", spi)
+    for src, dst, spi in (("192.0.2.11", "192.0.2.21", "0x101"),
+                          ("192.0.2.21", "192.0.2.11", "0x102"),
+                          ("192.0.2.11", "192.0.2.22", "0x201"),
+                          ("192.0.2.22", "192.0.2.11", "0x202"))
+]
+LINK_DELETES = [("ip", "link", "del", "ipsec1"), ("ip", "link", "del", "ipsec2")]
+XFRM_KEY = "0xTEST_ONLY_EGA_XFRM_KEY"
+
+
+class KernelHost:
+    """Keep captured records until their explicitly expected delete succeeds."""
+
+    def __init__(self, case):
+        self.case = case
+        self.events = []
+        self.failures = set()
+        self.tables = {}
+        for command, fixture, prefix, deletes in (
+                (POLICY_LIST, "policy", "src ", POLICY_DELETES),
+                (STATE_LIST, "state", "src ", STATE_DELETES),
+                (LINK_LIST, "links", "", LINK_DELETES)):
+            output = (FIXTURES / f"xfrm-{fixture}.txt").read_text()
+            records = ([prefix + record for record in output.removeprefix(prefix).split("\n" + prefix)]
+                       if prefix else ["21: " + output.split("21: ", 1)[1].split("22: ")[0],
+                                       "22: " + output.split("22: ", 1)[1].split("27: ")[0],
+                                       "27: " + output.split("27: ", 1)[1]])
+            self.tables[command] = [(record, deletes[i] if i < len(deletes) else None)
+                                    for i, record in enumerate(records)]
+
+    def run(self, args):
+        command = tuple(args)
+        self.events.append(command)
+        self.case.assertEqual(args[0], "ip", "--remove must work without pluto or ipsec")
+        if command in self.failures:
+            with failed_command(subprocess.CalledProcessError(
+                    7, args, output=XFRM_KEY, stderr=XFRM_KEY)):
+                return tunnels.run_command(args)
+        if command in self.tables:
+            return "\n".join(record for record, _ in self.tables[command])
+        for records in self.tables.values():
+            for i, (_, delete) in enumerate(records):
+                if command == delete:
+                    records.pop(i)
+                    return ""
+        self.case.fail(f"Unexpected kernel command: {args}")
+
+    def deletes(self):
+        return [event for event in self.events if event not in self.tables]
+
+
+class RemovalTests(unittest.TestCase):
+    def setUp(self):
+        self.host = KernelHost(self)
+
+    def remove(self, runner=None):
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            result = tunnels.main(["--remove"], runner=runner or self.host.run,
+                                  directory=Path("/nonexistent-ipsec-directory"))
+        self.assertNotIn(XFRM_KEY, output.getvalue() + errors.getvalue())
+        return result, output.getvalue(), errors.getvalue()
+
+    def test_real_leftovers_preserve_foreign_and_pluto_defaults(self):
+        defaults = self.host.tables[POLICY_LIST][6:]
+        foreign_state = self.host.tables[STATE_LIST][-1:]
+        foreign_link = self.host.tables[LINK_LIST][-1:]
+        self.assertEqual(self.remove(), (0, "changed\n", ""))
+        self.assertEqual(self.host.deletes(), POLICY_DELETES + STATE_DELETES + LINK_DELETES)
+        self.assertEqual(self.host.tables[POLICY_LIST], defaults)
+        self.assertEqual(self.host.tables[STATE_LIST], foreign_state)
+        self.assertEqual(self.host.tables[LINK_LIST], foreign_link)
+        self.assertGreaterEqual(sum("socket " in record for record, _ in defaults), 8)
+        self.assertEqual(sum("proto ipv6-icmp" in record for record, _ in defaults), 6)
+
+    def test_second_removal_is_unchanged(self):
+        self.assertEqual(self.remove(), (0, "changed\n", ""))
+        self.host.events.clear()
+        self.assertEqual(self.remove(), (0, "unchanged\n", ""))
+        self.assertEqual(self.host.deletes(), [])
+
+    def test_partial_leftovers_without_pluto(self):
+        for listing, deletes in ((POLICY_LIST, POLICY_DELETES), (STATE_LIST, STATE_DELETES),
+                                  (LINK_LIST, LINK_DELETES)):
+            with self.subTest(listing=listing):
+                self.host = KernelHost(self)
+                for command in self.host.tables:
+                    if command != listing:
+                        self.host.tables[command] = []
+                self.assertEqual(self.remove(), (0, "changed\n", ""))
+                self.assertEqual(self.host.deletes(), deletes)
+
+    def test_link_requires_reserved_name_xfrm_type_and_matching_id(self):
+        for before, after in (("ipsec1@NONE", "ipsec11@NONE"), ("xfrm if_id", "dummy if_id"),
+                              ("if_id 0x1", "if_id 0x2"), ("ipsec1@NONE", "ipsec10@NONE")):
+            with self.subTest(after=after):
+                self.host = KernelHost(self)
+                record, _ = self.host.tables[LINK_LIST][0]
+                self.host.tables[LINK_LIST][0] = (record.replace(before, after), None)
+                self.assertEqual(self.remove(), (0, "changed\n", ""))
+                self.assertNotIn(LINK_DELETES[0], self.host.deletes())
+                self.assertIn(LINK_DELETES[1], self.host.deletes())
+
+    def test_policy_index_and_type_disambiguate_identical_selectors(self):
+        record, _ = self.host.tables[POLICY_LIST][0]
+        record = record.replace("index 9", "index 65").replace("ptype main", "ptype sub")
+        extra = list(POLICY_DELETES[0])
+        extra[5], extra[9] = "65", "sub"
+        self.host.tables[POLICY_LIST].append((record, tuple(extra)))
+        self.assertEqual(self.remove(), (0, "changed\n", ""))
+        self.assertEqual(self.host.deletes()[:7], POLICY_DELETES + [tuple(extra)])
+
+    def test_delete_failures_attempt_later_items_and_return_nonzero(self):
+        failures = [POLICY_DELETES[1], STATE_DELETES[1], LINK_DELETES[0]]
+        self.host.failures.update(failures)
+        result, output, errors = self.remove()
+        self.assertEqual((result, output), (1, "changed\n"))
+        self.assertEqual(self.host.deletes(), POLICY_DELETES + STATE_DELETES + LINK_DELETES)
+        self.assertEqual(errors, "ip xfrm policy delete failed (exit status 7); "
+                         "ip xfrm state delete failed (exit status 7); "
+                         "ip link del failed (exit status 7)\n")
+        self.host.failures.clear()
+        self.assertEqual(self.remove(), (0, "changed\n", ""))
+        self.assertEqual(self.remove(), (0, "unchanged\n", ""))
+
+    def test_listing_failure_still_attempts_other_kinds(self):
+        for listing, skipped in ((POLICY_LIST, POLICY_DELETES), (STATE_LIST, STATE_DELETES),
+                                  (LINK_LIST, LINK_DELETES)):
+            with self.subTest(listing=listing):
+                self.host = KernelHost(self)
+                self.host.failures.add(listing)
+                result, output, errors = self.remove()
+                self.assertEqual((result, output), (1, "changed\n"))
+                self.assertIn("exit status 7", errors)
+                self.assertEqual(self.host.deletes(), [command for command in
+                                 POLICY_DELETES + STATE_DELETES + LINK_DELETES if command not in skipped])
+
+    def test_successful_state_listing_never_prints_keys(self):
+        real_run = tunnels.run_command
+        with patch.object(tunnels.subprocess, "Popen") as popen:
+            process = popen.return_value.__enter__.return_value
+            process.returncode = 0
+
+            def runner(args):
+                process.communicate.return_value = (self.host.run(args), XFRM_KEY)
+                return real_run(args)
+
+            output, errors = io.StringIO(), io.StringIO()
+            with patch.object(tunnels, "run_command", side_effect=runner), \
+                    patch.object(sys, "argv", [str(PROGRAM), "--remove"]), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                self.assertEqual(tunnels.main(), 0)
+            self.assertEqual(output.getvalue(), "changed\n")
+            self.assertEqual(errors.getvalue(), "")
+
+    def check_secret_failure(self, command):
+        for exception in (subprocess.CalledProcessError(7, command,
+                                                       output=XFRM_KEY, stderr=XFRM_KEY),
+                          subprocess.TimeoutExpired(command, 60,
+                                                    output=XFRM_KEY.encode(), stderr=XFRM_KEY.encode())):
+            with self.subTest(exception=exception), failed_command(exception):
+                output, errors = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                    with self.assertRaises(tunnels.CommandError) as caught:
+                        tunnels.run_command(list(command))
+                self.assertNotIn(XFRM_KEY, str(caught.exception) + output.getvalue() + errors.getvalue())
+                self.host = KernelHost(self)
+
+                def runner(args):
+                    if tuple(args) == command:
+                        return tunnels.run_command(args)
+                    return self.host.run(args)
+
+                result, stdout, stderr = self.remove(runner)
+                self.assertEqual((result, stdout), (1, "changed\n"))
+                self.assertIn("ip xfrm state", stderr)
+
+    def test_state_delete_failure_never_exposes_keys(self):
+        self.check_secret_failure(STATE_DELETES[1])
+
+    def test_state_listing_failure_never_exposes_keys(self):
+        self.check_secret_failure(STATE_LIST)
 
 
 if __name__ == "__main__":

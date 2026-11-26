@@ -1,4 +1,4 @@
-"""Replace AWS IPsec tunnels one at a time, waiting for each Child SA and BGP."""
+"""Replace AWS IPsec tunnels one at a time, or remove their kernel leftovers with --remove."""
 
 import argparse
 from collections.abc import Callable
@@ -66,6 +66,10 @@ class CommandError(RuntimeError):
 def run_command(args: list[str], *, lock_fd: int | None = None) -> str:
     """Bound polls to 5 s and mutations to 60 s; expose only replace/up stderr."""
     command = " ".join(args)
+    if args[:2] == ["ip", "xfrm"]:
+        command = " ".join(args[:4])
+    elif args[:3] == ["ip", "link", "del"]:
+        command = "ip link del"
     polling = (args == ["ipsec", "trafficstatus"]
                or args[:4] == ["podman", "exec", "frr", "vtysh"])
     timeout = POLL_TIMEOUT if polling else COMMAND_TIMEOUT
@@ -283,10 +287,71 @@ class Replacer:
         write_record(self.directory, loaded_files)
 
 
+def removal_commands(kind: str, output: str) -> list[list[str]]:
+    """Select only our if_ids; never copy a state record into diagnostics."""
+    commands = []
+    boundary = r"(?=^\d+: )" if kind == "link" else r"(?=^src )"
+    for record in re.split(boundary, output, flags=re.MULTILINE):
+        prefix = r"^\s*xfrm " if kind == "link" else r"^\s*"
+        owned = re.search(prefix + r"if_id (0x[0-9a-f]+|[0-9]+)\b", record, re.MULTILINE)
+        if owned is None or int(owned[1], 0) not in (1, 2):
+            continue
+        if kind == "link":
+            link = re.match(r"\d+: (ipsec[12])(?:@[^:]+)?:", record)
+            if link is not None and int(link[1][-1]) == int(owned[1], 0):
+                commands.append(["ip", "link", "del", link[1]])
+        elif kind == "policy":
+            # iproute2 7.0 supports index + if_id on delete, but not if_id on deleteall.
+            # An index avoids rebuilding selectors (ports, proto, dev, etc.); if_id
+            # and ptype are also checked by the kernel's xfrm_policy_byid lookup.
+            identity = re.search(r"\bdir (in|out|fwd).*\bindex ([0-9]+)\b", record)
+            ptype = re.search(r"\bptype (main|sub)\b", record)
+            if identity is None:
+                raise CommandError("ip -s xfrm policy: missing policy identity")
+            commands.append(["ip", "xfrm", "policy", "delete", "index", identity[2],
+                             "dir", identity[1], "ptype", ptype[1] if ptype else "main",
+                             "if_id", owned[1]])
+        else:
+            addresses = re.match(r"src (\S+) dst (\S+)", record)
+            identity = re.search(r"^\s*proto (esp|ah|comp|route2|hao) spi (0x[0-9a-f]+|[0-9]+)\b",
+                                 record, re.MULTILINE)
+            if addresses is None or identity is None:
+                raise CommandError("ip xfrm state: missing state identity")
+            commands.append(["ip", "xfrm", "state", "delete", "src", addresses[1],
+                             "dst", addresses[2], "proto", identity[1], "spi", identity[2]])
+    return commands
+
+
+def remove(runner: Runner) -> int:
+    """Attempt every kernel deletion, even after failures, without contacting pluto."""
+    changed = False
+    errors = []
+    for kind, listing in (("policy", ["ip", "-s", "xfrm", "policy"]),
+                          ("state", ["ip", "xfrm", "state"]),
+                          ("link", ["ip", "-d", "link", "show", "type", "xfrm"])):
+        try:
+            commands = removal_commands(kind, runner(listing))
+        except CommandError as error:
+            errors.append(str(error))
+            continue
+        for command in commands:
+            try:
+                runner(command)
+                changed = True
+            except CommandError as error:
+                errors.append(str(error))
+    print("changed" if changed else "unchanged")
+    if errors:
+        print("; ".join(dict.fromkeys(errors)), file=sys.stderr)
+    return 1 if errors else 0
+
+
 def main(argv: list[str] | None = None, *, runner: Runner | None = None,
          sleep: Sleep = time.sleep, monotonic: Clock = time.monotonic,
          directory: Path = Path("/etc/ipsec.d")) -> int:
     """Validate arguments and report failures to stderr."""
+    if (sys.argv[1:] if argv is None else argv) == ["--remove"]:
+        return remove(run_command if runner is None else runner)
     try:
         peers = parse_tunnels(argv)
     except SystemExit as error:

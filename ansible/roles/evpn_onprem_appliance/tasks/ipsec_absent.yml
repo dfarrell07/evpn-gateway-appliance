@@ -23,7 +23,7 @@
     path: /etc/ipsec.d/ega-aws.applied
     state: absent
 
-# delete removes the connection and its SAs, without stopping unrelated Libreswan connections.
+# Unload our connections without stopping unrelated Libreswan connections.
 - name: Stop and unload appliance IPsec connections
   ansible.builtin.command: "ipsec delete {{ item }}"
   timeout: 60
@@ -34,6 +34,29 @@
     - _evpn_onprem_appliance_ipsec_socket.stat.exists
     - ('"' ~ item ~ '"') in _evpn_onprem_appliance_ipsec_connections.stdout
   changed_when: true
+
+- name: Check for appliance IPsec interfaces even when Libreswan is stopped
+  ansible.builtin.stat:
+    path: "/sys/class/net/{{ item }}"
+    get_attributes: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - ipsec1
+    - ipsec2
+  register: _evpn_onprem_appliance_ipsec_links
+
+# Libreswan delete can leave policies, states and interfaces behind. Do not restart pluto.
+- name: Remove appliance IPsec kernel leftovers
+  ansible.builtin.script:
+    cmd: ega_aws_tunnels.py --remove
+    executable: /usr/bin/python3
+  register: _evpn_onprem_appliance_ipsec_remove
+  changed_when: _evpn_onprem_appliance_ipsec_remove.stdout | trim == 'changed'
+  failed_when: _evpn_onprem_appliance_ipsec_remove.rc != 0
+  when: >-
+    _evpn_onprem_appliance_ipsec_socket.stat.exists or
+    _evpn_onprem_appliance_ipsec_links.results | selectattr('stat.exists') | list | length > 0
 
 - name: Remove appliance Libreswan configuration
   ansible.builtin.file:
