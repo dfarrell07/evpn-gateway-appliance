@@ -72,12 +72,14 @@ def run_command(args: list[str], *, lock_fd: int | None = None) -> str:
         command = "ip link del"
     polling = (args == ["ipsec", "trafficstatus"]
                or args[:4] == ["podman", "exec", "frr", "vtysh"])
+    listing = args in (["ip", "-s", "xfrm", "policy"], ["ip", "xfrm", "state"],
+                       ["ip", "-d", "link", "show", "type", "xfrm"])
     timeout = POLL_TIMEOUT if polling else COMMAND_TIMEOUT
     try:
         with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               text=True, errors="replace", start_new_session=True,
                               # Only changes keep the lock; a stuck poll must not block later deploys.
-                              pass_fds=() if lock_fd is None or polling else (lock_fd,)) as process:
+                              pass_fds=() if lock_fd is None or polling or listing else (lock_fd,)) as process:
             try:
                 stdout, stderr = process.communicate(timeout=timeout)
             except subprocess.TimeoutExpired as error:
@@ -287,11 +289,36 @@ class Replacer:
         write_record(self.directory, loaded_files)
 
 
-def removal_commands(kind: str, output: str) -> list[list[str]]:
+def lookup_mark(record: str) -> tuple[str, str] | None:
+    """Keep the lookup mark separate from output-mark."""
+    mark = re.search(r"(?:^|\s)mark (0x[0-9a-f]+|[0-9]+)/(0x[0-9a-f]+|[0-9]+)\b", record)
+    return (mark[1], mark[2]) if mark else None
+
+
+def state_identity(record: str) -> tuple[str, str, str, str]:
+    """Read only the non-secret fields needed for a state delete."""
+    addresses = re.match(r"src (\S+) dst (\S+)", record)
+    identity = re.search(r"^\s*proto (esp|ah|comp|route2|hao) spi (0x[0-9a-f]+|[0-9]+)\b",
+                         record, re.MULTILINE)
+    if addresses is None or identity is None:
+        raise CommandError("ip xfrm state: missing state identity")
+    return addresses[1], addresses[2], identity[1], identity[2]
+
+
+def removal_commands(kind: str, output: str) -> tuple[list[list[str]], list[str]]:
     """Select only our if_ids; never copy a state record into diagnostics."""
     commands = []
+    errors = []
     boundary = r"(?=^\d+: )" if kind == "link" else r"(?=^src )"
-    for record in re.split(boundary, output, flags=re.MULTILINE):
+    records = [record for record in re.split(boundary, output, flags=re.MULTILINE) if record.strip()]
+    state_lookups = []
+    if kind == "state":
+        for record in records:
+            _src, dst, proto, spi = state_identity(record)
+            mark = lookup_mark(record)
+            value, mask = (int(part, 0) for part in mark) if mark else (0, 0)
+            state_lookups.append(((dst, proto, int(spi, 0)), value & mask, mask))
+    for position, record in enumerate(records):
         prefix = r"^\s*xfrm " if kind == "link" else r"^\s*"
         owned = re.search(prefix + r"if_id (0x[0-9a-f]+|[0-9]+)\b", record, re.MULTILINE)
         if owned is None or int(owned[1], 0) not in (1, 2):
@@ -312,14 +339,21 @@ def removal_commands(kind: str, output: str) -> list[list[str]]:
                              "dir", identity[1], "ptype", ptype[1] if ptype else "main",
                              "if_id", owned[1]])
         else:
-            addresses = re.match(r"src (\S+) dst (\S+)", record)
-            identity = re.search(r"^\s*proto (esp|ah|comp|route2|hao) spi (0x[0-9a-f]+|[0-9]+)\b",
-                                 record, re.MULTILINE)
-            if addresses is None or identity is None:
-                raise CommandError("ip xfrm state: missing state identity")
-            commands.append(["ip", "xfrm", "state", "delete", "src", addresses[1],
-                             "dst", addresses[2], "proto", identity[1], "spi", identity[2]])
-    return commands
+            src, dst, proto, spi = state_identity(record)
+            # ESP delete ignores src and if_id. Any other matching lookup is ambiguous,
+            # including an unmarked state (mask 0), which accepts every query mark.
+            key, value, _mask = state_lookups[position]
+            if any(key == other_key and value & other_mask == other_value
+                   for i, (other_key, other_value, other_mask) in enumerate(state_lookups)
+                   if i != position):
+                errors.append("ip xfrm state delete: ambiguous state identity")
+                continue
+            commands.append(["ip", "xfrm", "state", "delete", "src", src,
+                             "dst", dst, "proto", proto, "spi", spi])
+        mark = lookup_mark(record)
+        if kind != "link" and mark:
+            commands[-1].extend(["mark", mark[0], "mask", mark[1]])
+    return commands, errors
 
 
 def remove(runner: Runner) -> int:
@@ -330,7 +364,8 @@ def remove(runner: Runner) -> int:
                           ("state", ["ip", "xfrm", "state"]),
                           ("link", ["ip", "-d", "link", "show", "type", "xfrm"])):
         try:
-            commands = removal_commands(kind, runner(listing))
+            commands, refused = removal_commands(kind, runner(listing))
+            errors.extend(refused)
         except CommandError as error:
             errors.append(str(error))
             continue
@@ -350,17 +385,21 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None,
          sleep: Sleep = time.sleep, monotonic: Clock = time.monotonic,
          directory: Path = Path("/etc/ipsec.d")) -> int:
     """Validate arguments and report failures to stderr."""
-    if (sys.argv[1:] if argv is None else argv) == ["--remove"]:
-        return remove(run_command if runner is None else runner)
-    try:
-        peers = parse_tunnels(argv)
-    except SystemExit as error:
-        return 0 if error.code == 0 else 1
+    removing = (sys.argv[1:] if argv is None else argv) == ["--remove"]
+    if not removing:
+        try:
+            peers = parse_tunnels(argv)
+        except SystemExit as error:
+            return 0 if error.code == 0 else 1
     try:
         with (directory / "ega-aws.lock").open("a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
+                if removing:
+                    raise RuntimeError("another replacement of the AWS IPsec connections is still "
+                                       "running (or an ip command it started is stuck); rerun "
+                                       "teardown after it finishes") from error
                 raise RuntimeError("another replacement of the AWS IPsec connections is still "
                                    "running (or an ipsec command it started is stuck); rerun "
                                    "deploy after it finishes, or see the evpn_onprem_appliance "
@@ -368,6 +407,8 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None,
             # Surviving commands must keep the lock if this parent is terminated.
             if runner is None:
                 runner = partial(run_command, lock_fd=lock.fileno())
+            if removing:
+                return remove(runner)
             Replacer(peers, runner=runner, sleep=sleep, monotonic=monotonic,
                      directory=directory).apply()
     except (RuntimeError, OSError) as error:
